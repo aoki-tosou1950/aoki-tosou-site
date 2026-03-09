@@ -24,8 +24,9 @@
       color: rgba(255,255,255,0.75);
       text-decoration: none;
       font-size: 13px;
-      display: block;
+      display: inline-block;
       margin-bottom: 4px;
+      padding: 4px 0;
     }
     .site-header a:hover { color: white; }
     .site-header h1 { font-size: 18px; letter-spacing: 1px; }
@@ -123,7 +124,7 @@
     .btn-detail {
       display: block;
       text-align: center;
-      padding: 10px;
+      padding: 12px;
       border: 2px solid #0d3b66;
       color: #0d3b66;
       border-radius: 6px;
@@ -137,7 +138,7 @@
     .btn-line {
       display: block;
       text-align: center;
-      padding: 10px;
+      padding: 12px;
       background: #06c755;
       color: white;
       border-radius: 6px;
@@ -148,24 +149,101 @@
     }
     .btn-line:hover { background: #05a847; }
 
-    /* トップへ戻るリンク */
-    .back-link {
-      text-align: center;
-      margin-top: 36px;
+    /* ページ下部CTA */
+    .bottom-cta {
+      margin-top: 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
-    .back-link a {
-      color: #0d3b66;
+
+    .bottom-cta .btn-line-large {
+      display: block;
+      text-align: center;
+      padding: 16px;
+      background: #06c755;
+      color: white;
+      border-radius: 8px;
+      font-size: 17px;
+      font-weight: bold;
       text-decoration: none;
+      box-shadow: 0 4px 14px rgba(6,199,85,0.30);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .bottom-cta .btn-line-large:hover {
+      background: #05a847;
+      transform: translateY(-2px);
+    }
+
+    .bottom-cta .btn-top {
+      display: block;
+      text-align: center;
+      padding: 14px;
+      background: #0d3b66;
+      color: white;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: bold;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .bottom-cta .btn-top:hover {
+      background: #08263f;
+      transform: translateY(-2px);
+    }
+
+    /* モバイル固定ボトムバー */
+    .mobile-bottom-bar {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      border-top: 1px solid #dde2e8;
+      padding: 10px 16px;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.10);
+      z-index: 100;
+      gap: 10px;
+    }
+    .mobile-bottom-bar a {
+      flex: 1;
+      display: block;
+      text-align: center;
+      padding: 12px 8px;
+      border-radius: 6px;
       font-size: 14px;
-      border-bottom: 1px solid #0d3b66;
-      padding-bottom: 2px;
+      font-weight: bold;
+      text-decoration: none;
+    }
+    .mobile-bottom-bar .bar-line {
+      background: #06c755;
+      color: white;
+    }
+    .mobile-bottom-bar .bar-top {
+      background: #0d3b66;
+      color: white;
     }
 
     /* スマホ */
-    @media (max-width: 480px) {
+    @media (max-width: 600px) {
       .site-header h1 { font-size: 16px; }
       .page-hero h2   { font-size: 20px; }
-      .works-grid     { grid-template-columns: 1fr; }
+      .works-grid     { grid-template-columns: 1fr; gap: 16px; }
+      .card-title     { font-size: 16px; }
+      .btn-detail, .btn-line { padding: 14px; font-size: 15px; }
+
+      /* 固定ボトムバーの分だけ余白を確保 */
+      main { padding-bottom: 90px; }
+
+      .mobile-bottom-bar {
+        display: flex;
+      }
+
+      /* ページ下部CTAはモバイルでは非表示（固定バーで代替） */
+      .bottom-cta {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -255,10 +333,27 @@
 
   </div><!-- /.works-grid -->
 
-  <div class="back-link">
-    <a href="index.html">← トップページに戻る</a>
+  <!-- ページ下部CTA（PC・タブレット向け） -->
+  <div class="bottom-cta">
+    <a class="btn-line-large" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">
+      💬 LINEで無料相談・見積もり依頼
+    </a>
+    <a class="btn-top" href="index.html">
+      ← トップページに戻る
+    </a>
   </div>
+
 </main>
+
+<!-- モバイル固定ボトムバー -->
+<div class="mobile-bottom-bar">
+  <a class="bar-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">
+    💬 LINEで相談
+  </a>
+  <a class="bar-top" href="index.html">
+    🏠 トップへ
+  </a>
+</div>
 
 </body>
 </html>
