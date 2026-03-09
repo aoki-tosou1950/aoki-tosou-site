@@ -3,29 +3,162 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>有限会社青木塗装工業</title>
+  <title>有限会社 青木塗装工業</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background: #f4f6f8;
+      color: #333;
+      line-height: 1.7;
+    }
+
+    /* ヘッダー */
+    .site-header {
+      background: #0d3b66;
+      color: white;
+      text-align: center;
+      padding: 28px 20px;
+    }
+    .site-header h1 { font-size: 22px; letter-spacing: 1px; margin-bottom: 4px; }
+    .site-header p  { font-size: 13px; opacity: 0.8; }
+
+    /* コンテンツ */
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 32px 16px 48px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 24px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 17px;
+      border-left: 4px solid #0d3b66;
+      padding-left: 10px;
+      margin-bottom: 14px;
+    }
+
+    .card p, .card li {
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    .card a { color: #0d3b66; }
+
+    /* 施工事例バナー */
+    .works-banner {
+      display: block;
+      background: #0d3b66;
+      color: white;
+      border-radius: 10px;
+      padding: 24px 20px;
+      text-decoration: none;
+      text-align: center;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .works-banner:hover {
+      background: #08263f;
+      transform: translateY(-2px);
+    }
+    .works-banner .label {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-bottom: 4px;
+    }
+    .works-banner .title {
+      font-size: 20px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .works-banner .sub {
+      font-size: 13px;
+      opacity: 0.82;
+      margin-top: 6px;
+    }
+
+    /* LINEボタン */
+    .btn-line {
+      display: block;
+      background: #06c755;
+      color: white;
+      text-align: center;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      text-decoration: none;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+    .btn-line:hover { background: #05a847; }
+
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      margin-top: 12px;
+    }
+  </style>
 </head>
 <body>
-  <h1>有限会社青木塗装工業</h1>
 
-  <p>創業：1979年（昭和54年）</p>
-  <p>所在地：大分県大分市大字常行180-5</p>
-  <p>建設業許可番号：（般－5）第12027号</p>
-  <p>電話番号：097-594-0076（24時間365日対応）</p>
-  <p>メールアドレス：<a href="mailto:info@aoki-tosou.net">info@aoki-tosou.net</a></p>
-  <p>主な業務：外壁塗装、防水工事、一般住宅からアパート・施設の改修工事まで</p>
+<header class="site-header">
+  <h1>有限会社 青木塗装工業</h1>
+  <p>外壁塗装・屋根塗装・防水工事のプロ集団</p>
+</header>
 
-  <p>LINE公式アカウントも運用中です。</p>
-  <p>
-    <a href="https://page.line.me/148ilxnm" target="_blank">
-      <button style="padding: 8px 16px; font-size: 16px; cursor: pointer;">LINEで問い合わせ</button>
+<div class="container">
+
+  <!-- 施工事例バナー -->
+  <a class="works-banner" href="works.html">
+    <p class="label">📸 実績紹介</p>
+    <p class="title">施工事例を見る</p>
+    <p class="sub">外壁塗装・屋根塗装・防水工事など →</p>
+  </a>
+
+  <!-- 会社情報 -->
+  <div class="card">
+    <h2>会社情報</h2>
+    <p>創業：1979年（昭和54年）</p>
+    <p>所在地：大分県大分市大字常行180-5</p>
+    <p>建設業許可番号：（般－5）第12027号</p>
+    <p>電話番号：097-594-0076（24時間365日対応）</p>
+    <p>メールアドレス：<a href="mailto:info@aoki-tosou.net">info@aoki-tosou.net</a></p>
+    <p>主な業務：外壁塗装、防水工事、一般住宅からアパート・施設の改修工事まで</p>
+  </div>
+
+  <!-- LINEお問い合わせ -->
+  <div class="card">
+    <h2>LINEでお気軽にご相談ください</h2>
+    <p>見積もり依頼・施工のご相談は公式LINEが便利です。</p>
+    <a class="btn-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">
+      💬 LINEで問い合わせる
     </a>
-  </p>
+  </div>
 
-  <hr>
+  <!-- 注記 -->
+  <div class="card">
+    <h2>法人情報</h2>
+    <p><strong>法人正式表記（英語）：AOKI TOSO KOGYO, Y.K.</strong></p>
+    <p style="margin-top:8px;font-size:13px;color:#666;">
+      ※本サイト・LINEミニアプリ上では日本語名「有限会社青木塗装工業」および通称「Aoki Tosou」を併用しています。<br>
+      表記ゆれについてはApple Developer ProgramのD-U-N-S準拠の名称と整合しています。
+    </p>
+  </div>
 
-  <p><strong>法人正式表記（英語）：AOKI TOSO KOGYO, Y.K.</strong></p>
-  <p>※本サイト・LINEミニアプリ上では日本語名「有限会社青木塗装工業」および通称「Aoki Tosou」を併用しています。</p>
-  <p>表記ゆれについてはApple Developer ProgramのD-U-N-S準拠の名称と整合しています。</p>
+  <p class="footer">© 有限会社 青木塗装工業</p>
+
+</div>
+
 </body>
 </html>
