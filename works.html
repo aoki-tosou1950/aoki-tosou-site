@@ -116,9 +116,6 @@
     /* カードフッター（ボタン） */
     .card-footer {
       margin-top: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
     }
 
     .btn-detail {
@@ -135,44 +132,9 @@
     }
     .btn-detail:hover { background: #0d3b66; color: white; }
 
-    .btn-line {
-      display: block;
-      text-align: center;
-      padding: 12px;
-      background: #06c755;
-      color: white;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: bold;
-      text-decoration: none;
-      transition: background 0.2s;
-    }
-    .btn-line:hover { background: #05a847; }
-
     /* ページ下部CTA */
     .bottom-cta {
       margin-top: 40px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .bottom-cta .btn-line-large {
-      display: block;
-      text-align: center;
-      padding: 16px;
-      background: #06c755;
-      color: white;
-      border-radius: 8px;
-      font-size: 17px;
-      font-weight: bold;
-      text-decoration: none;
-      box-shadow: 0 4px 14px rgba(6,199,85,0.30);
-      transition: background 0.2s, transform 0.2s;
-    }
-    .bottom-cta .btn-line-large:hover {
-      background: #05a847;
-      transform: translateY(-2px);
     }
 
     .bottom-cta .btn-top {
@@ -192,37 +154,34 @@
       transform: translateY(-2px);
     }
 
-    /* モバイル固定ボトムバー */
-    .mobile-bottom-bar {
-      display: none;
+    /* 右下固定LINEボタン（FAB） */
+    .fab-line {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: white;
-      border-top: 1px solid #dde2e8;
-      padding: 10px 16px;
-      box-shadow: 0 -4px 16px rgba(0,0,0,0.10);
-      z-index: 100;
-      gap: 10px;
-    }
-    .mobile-bottom-bar a {
-      flex: 1;
-      display: block;
-      text-align: center;
-      padding: 12px 8px;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: bold;
-      text-decoration: none;
-    }
-    .mobile-bottom-bar .bar-line {
+      bottom: 24px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       background: #06c755;
       color: white;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: bold;
+      padding: 14px 20px;
+      border-radius: 50px;
+      box-shadow: 0 6px 20px rgba(6,199,85,0.45);
+      z-index: 200;
+      transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+      white-space: nowrap;
     }
-    .mobile-bottom-bar .bar-top {
-      background: #0d3b66;
-      color: white;
+    .fab-line:hover {
+      background: #05a847;
+      transform: translateY(-3px);
+      box-shadow: 0 10px 28px rgba(6,199,85,0.55);
+    }
+    .fab-line .fab-icon {
+      font-size: 20px;
+      line-height: 1;
     }
 
     /* スマホ */
@@ -231,18 +190,16 @@
       .page-hero h2   { font-size: 20px; }
       .works-grid     { grid-template-columns: 1fr; gap: 16px; }
       .card-title     { font-size: 16px; }
-      .btn-detail, .btn-line { padding: 14px; font-size: 15px; }
+      .btn-detail     { padding: 14px; font-size: 15px; }
 
-      /* 固定ボトムバーの分だけ余白を確保 */
+      /* FABの分だけ余白を確保 */
       main { padding-bottom: 90px; }
 
-      .mobile-bottom-bar {
-        display: flex;
-      }
-
-      /* ページ下部CTAはモバイルでは非表示（固定バーで代替） */
-      .bottom-cta {
-        display: none;
+      .fab-line {
+        bottom: 16px;
+        right: 16px;
+        font-size: 14px;
+        padding: 13px 18px;
       }
     }
   </style>
@@ -276,7 +233,6 @@
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="caseXXX.html">詳細を見る →</a>
-          <a class="btn-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">💬 LINEで相談する</a>
         </div>
       </div>
     </div>
@@ -294,7 +250,6 @@
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="case001.html">詳細を見る →</a>
-          <a class="btn-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">💬 LINEで相談する</a>
         </div>
       </div>
     </div>
@@ -310,7 +265,6 @@
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="case002.html">詳細を見る →</a>
-          <a class="btn-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">💬 LINEで相談する</a>
         </div>
       </div>
     </div>
@@ -326,18 +280,14 @@
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="case003.html">詳細を見る →</a>
-          <a class="btn-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">💬 LINEで相談する</a>
         </div>
       </div>
     </div>
 
   </div><!-- /.works-grid -->
 
-  <!-- ページ下部CTA（PC・タブレット向け） -->
+  <!-- ページ下部CTA -->
   <div class="bottom-cta">
-    <a class="btn-line-large" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">
-      💬 LINEで無料相談・見積もり依頼
-    </a>
     <a class="btn-top" href="index.html">
       ← トップページに戻る
     </a>
@@ -345,15 +295,10 @@
 
 </main>
 
-<!-- モバイル固定ボトムバー -->
-<div class="mobile-bottom-bar">
-  <a class="bar-line" href="https://line.me/R/oaMessage/?accountId=148ilxnm" target="_blank">
-    💬 LINEで相談
-  </a>
-  <a class="bar-top" href="index.html">
-    🏠 トップへ
-  </a>
-</div>
+<!-- 右下固定LINEボタン -->
+<a class="fab-line" href="https://page.line.me/148lixnm" target="_blank">
+  <span class="fab-icon">💬</span>LINEで相談する
+</a>
 
 </body>
 </html>
