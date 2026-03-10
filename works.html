@@ -2,34 +2,54 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>施工事例 | 有限会社 青木塗装工業</title>
+  <meta name="description" content="施工事例一覧｜有限会社青木塗装工業。大分市を中心に外壁塗装・屋根塗装・防水工事の実績をご紹介します。">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://aoki-tosou.net/works.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="施工事例 | 有限会社 青木塗装工業">
+  <meta property="og:description" content="施工事例一覧｜有限会社青木塗装工業。大分市を中心に外壁塗装・屋根塗装・防水工事の実績をご紹介します。">
+  <meta property="og:url" content="https://aoki-tosou.net/works.html">
+  <meta property="og:site_name" content="有限会社 青木塗装工業">
+  <meta property="og:locale" content="ja_JP">
+  <meta name="twitter:card" content="summary">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
       background: #f4f6f8;
       color: #333;
       line-height: 1.6;
     }
 
     /* ヘッダー */
-    .site-header {
-      background: #0d3b66;
-      color: white;
-      padding: 14px 20px;
+    .site-header { background: #0d3b66; color: white; }
+    .header-inner {
+      max-width: 960px; margin: 0 auto; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .site-header a {
-      color: rgba(255,255,255,0.75);
-      text-decoration: none;
-      font-size: 13px;
-      display: inline-block;
-      margin-bottom: 4px;
-      padding: 4px 0;
+    .header-logo {
+      color: white; text-decoration: none; font-size: 15px;
+      font-weight: bold; letter-spacing: 0.5px; flex-shrink: 0;
     }
-    .site-header a:hover { color: white; }
-    .site-header h1 { font-size: 18px; letter-spacing: 1px; }
+    .site-nav { display: flex; gap: 20px; }
+    .site-nav a {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 13px; padding: 4px 0; border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .site-nav a:hover,
+    .site-nav a[aria-current="page"] { color: white; border-bottom-color: white; }
+    @media (max-width: 600px) {
+      .header-logo { font-size: 13px; }
+      .site-nav a { font-size: 12px; }
+      .site-nav { gap: 14px; }
+    }
 
     /* ページタイトル */
     .page-hero {
@@ -243,21 +263,58 @@
     }
     .fab-line .fab-icon { font-size: 20px; line-height: 1; }
 
+    /* フッター */
+    .site-footer {
+      background: #0d3b66; color: white; text-align: center; padding: 32px 20px;
+    }
+    .footer-name { font-size: 15px; font-weight: bold; margin-bottom: 14px; }
+    .footer-line {
+      display: inline-block; background: #06c755; color: white; text-decoration: none;
+      padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold;
+      margin-bottom: 16px; transition: background 0.2s;
+    }
+    .footer-line:hover { background: #05a847; }
+    .footer-copy { font-size: 12px; opacity: 0.65; }
+
     /* スマホ */
     @media (max-width: 600px) {
-      .site-header h1 { font-size: 16px; }
       .page-hero h2   { font-size: 20px; }
       .works-grid     { grid-template-columns: 1fr; gap: 16px; }
       .card-title     { font-size: 15px; }
       .fab-line       { bottom: 16px; right: 16px; font-size: 14px; padding: 13px 18px; }
     }
   </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "トップ",
+        "item": "https://aoki-tosou.net/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "施工事例",
+        "item": "https://aoki-tosou.net/works.html"
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
 <header class="site-header">
-  <a href="index.html">← トップページへ</a>
-  <h1>有限会社 青木塗装工業</h1>
+  <div class="header-inner">
+    <a class="header-logo" href="index.html">有限会社 青木塗装工業</a>
+    <nav class="site-nav" aria-label="グローバルナビゲーション">
+      <a href="index.html">トップ</a>
+      <a href="works.html" aria-current="page">施工事例</a>
+    </nav>
+  </div>
 </header>
 
 <div class="page-hero">
@@ -275,12 +332,12 @@
       <div class="card-photos">
         <div class="card-photo">
           <div class="card-photo-label">Before</div>
-          <img src="images/caseXXX/caseXXX_before.jpg" alt="施工前"
+          <img src="images/caseXXX/caseXXX_before.jpg" alt="施工前" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
         <div class="card-photo">
           <div class="card-photo-label after">After</div>
-          <img src="images/caseXXX/caseXXX_after.jpg" alt="施工後"
+          <img src="images/caseXXX/caseXXX_after.jpg" alt="施工後" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
       </div>
@@ -303,12 +360,12 @@
       <div class="card-photos">
         <div class="card-photo">
           <div class="card-photo-label">Before</div>
-          <img src="images/case001/case001_before.jpg" alt="施工前"
+          <img src="images/case001/case001_before.jpg" alt="施工前" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
         <div class="card-photo">
           <div class="card-photo-label after">After</div>
-          <img src="images/case001/case001_after.jpg" alt="施工後"
+          <img src="images/case001/case001_after.jpg" alt="施工後" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
       </div>
@@ -330,12 +387,12 @@
       <div class="card-photos">
         <div class="card-photo">
           <div class="card-photo-label">Before</div>
-          <img src="images/case002/case002_before.jpg" alt="施工前"
+          <img src="images/case002/case002_before.jpg" alt="施工前" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
         <div class="card-photo">
           <div class="card-photo-label after">After</div>
-          <img src="images/case002/case002_after.jpg" alt="施工後"
+          <img src="images/case002/case002_after.jpg" alt="施工後" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
       </div>
@@ -356,12 +413,12 @@
       <div class="card-photos">
         <div class="card-photo">
           <div class="card-photo-label">Before</div>
-          <img src="images/case003/case003_before.jpg" alt="施工前"
+          <img src="images/case003/case003_before.jpg" alt="施工前" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
         <div class="card-photo">
           <div class="card-photo-label after">After</div>
-          <img src="images/case003/case003_after.jpg" alt="施工後"
+          <img src="images/case003/case003_after.jpg" alt="施工後" loading="lazy"
                onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
         </div>
       </div>
@@ -421,8 +478,16 @@
 
 </main>
 
+<footer class="site-footer">
+  <p class="footer-name">有限会社 青木塗装工業</p>
+  <a class="footer-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
+    💬 LINEで相談する
+  </a>
+  <p class="footer-copy">© 有限会社 青木塗装工業</p>
+</footer>
+
 <!-- 右下固定LINEボタン -->
-<a class="fab-line" href="https://page.line.me/148lixnm" target="_blank">
+<a class="fab-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
   <span class="fab-icon">💬</span>LINEで相談する
 </a>
 

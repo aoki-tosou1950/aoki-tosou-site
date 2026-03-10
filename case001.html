@@ -2,34 +2,54 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>K様集合住宅 屋根外壁改修工事 | 有限会社 青木塗装工業</title>
+  <meta name="description" content="K様集合住宅 屋根外壁改修工事｜有限会社青木塗装工業の施工事例。大分市での屋根塗装・外壁塗装の実績。">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://aoki-tosou.net/case001.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="K様集合住宅 屋根外壁改修工事 | 有限会社 青木塗装工業">
+  <meta property="og:description" content="K様集合住宅 屋根外壁改修工事｜有限会社青木塗装工業の施工事例。大分市での屋根塗装・外壁塗装の実績。">
+  <meta property="og:url" content="https://aoki-tosou.net/case001.html">
+  <meta property="og:site_name" content="有限会社 青木塗装工業">
+  <meta property="og:locale" content="ja_JP">
+  <meta name="twitter:card" content="summary">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
       background: #f4f6f8;
       color: #333;
       line-height: 1.7;
     }
 
     /* ヘッダー */
-    .site-header {
-      background: #0d3b66;
-      color: white;
-      padding: 14px 20px;
+    .site-header { background: #0d3b66; color: white; }
+    .header-inner {
+      max-width: 960px; margin: 0 auto; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .site-header a {
-      color: rgba(255,255,255,0.75);
-      text-decoration: none;
-      font-size: 13px;
-      display: inline-block;
-      margin-bottom: 4px;
-      padding: 4px 0;
+    .header-logo {
+      color: white; text-decoration: none; font-size: 15px;
+      font-weight: bold; letter-spacing: 0.5px; flex-shrink: 0;
     }
-    .site-header a:hover { color: white; }
-    .site-header h1 { font-size: 18px; letter-spacing: 1px; }
+    .site-nav { display: flex; gap: 20px; }
+    .site-nav a {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 13px; padding: 4px 0; border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .site-nav a:hover,
+    .site-nav a[aria-current="page"] { color: white; border-bottom-color: white; }
+    @media (max-width: 600px) {
+      .header-logo { font-size: 13px; }
+      .site-nav a { font-size: 12px; }
+      .site-nav { gap: 14px; }
+    }
 
     /* ページヒーロー */
     .page-hero {
@@ -96,6 +116,12 @@
       justify-content: center;
       color: #aaa;
       font-size: 13px;
+    }
+    .photo-box img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      display: block;
     }
 
     /* 施工情報テーブル */
@@ -178,21 +204,64 @@
     }
     .btn-back:hover { background: #0d3b66; color: white; }
 
+    /* フッター */
+    .site-footer {
+      background: #0d3b66; color: white; text-align: center; padding: 32px 20px;
+    }
+    .footer-name { font-size: 15px; font-weight: bold; margin-bottom: 14px; }
+    .footer-line {
+      display: inline-block; background: #06c755; color: white; text-decoration: none;
+      padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold;
+      margin-bottom: 16px; transition: background 0.2s;
+    }
+    .footer-line:hover { background: #05a847; }
+    .footer-copy { font-size: 12px; opacity: 0.65; }
+
     /* スマホ */
     @media (max-width: 600px) {
-      .site-header h1 { font-size: 16px; }
       .page-hero h2   { font-size: 18px; }
       .photos         { grid-template-columns: 1fr; }
       .section        { padding: 18px 16px; }
       .info-table th  { width: 42%; }
     }
   </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "トップ",
+        "item": "https://aoki-tosou.net/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "施工事例",
+        "item": "https://aoki-tosou.net/works.html"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": "K様集合住宅 屋根外壁改修工事",
+        "item": "https://aoki-tosou.net/case001.html"
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
 
 <header class="site-header">
-  <a href="works.html">← 施工事例一覧へ</a>
-  <h1>有限会社 青木塗装工業</h1>
+  <div class="header-inner">
+    <a class="header-logo" href="index.html">有限会社 青木塗装工業</a>
+    <nav class="site-nav" aria-label="グローバルナビゲーション">
+      <a href="index.html">トップ</a>
+      <a href="works.html" aria-current="page">施工事例</a>
+    </nav>
+  </div>
 </header>
 
 <div class="page-hero">
@@ -245,13 +314,21 @@
 
   <!-- LINEボタン・戻るボタン -->
   <div class="section">
-    <a class="btn-line" href="https://page.line.me/148lixnm" target="_blank">
+    <a class="btn-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
       💬 LINEで無料相談・見積もり依頼
     </a>
     <a class="btn-back" href="works.html">← 施工事例一覧に戻る</a>
   </div>
 
 </main>
+
+<footer class="site-footer">
+  <p class="footer-name">有限会社 青木塗装工業</p>
+  <a class="footer-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
+    💬 LINEで相談する
+  </a>
+  <p class="footer-copy">© 有限会社 青木塗装工業</p>
+</footer>
 
 </body>
 </html>
