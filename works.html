@@ -46,14 +46,14 @@
     main {
       max-width: 960px;
       margin: 0 auto;
-      padding: 28px 16px 48px;
+      padding: 28px 16px 80px;
     }
 
     /* カードグリッド */
     .works-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 22px;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 24px;
     }
 
     /* カード */
@@ -71,14 +71,31 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.13);
     }
 
-    /* 施工写真 */
-    .works-card img {
+    /* 施工前後画像エリア */
+    .card-photos {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    .card-photo {
+      display: flex;
+      flex-direction: column;
+    }
+    .card-photo-label {
+      background: #0d3b66;
+      color: white;
+      text-align: center;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 4px 6px;
+    }
+    .card-photo-label.after { background: #06c755; }
+    .card-photo img {
       width: 100%;
       aspect-ratio: 4 / 3;
       object-fit: cover;
       display: block;
     }
-    .no-image {
+    .card-photo .no-image {
       width: 100%;
       aspect-ratio: 4 / 3;
       background: #e8ecf0;
@@ -86,7 +103,7 @@
       align-items: center;
       justify-content: center;
       color: #aaa;
-      font-size: 13px;
+      font-size: 12px;
     }
 
     /* カード本文 */
@@ -95,13 +112,18 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
 
     .card-title {
       font-size: 15px;
       font-weight: bold;
       line-height: 1.5;
+    }
+
+    .card-region {
+      font-size: 12px;
+      color: #666;
     }
 
     .tag-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -113,6 +135,24 @@
       font-size: 12px;
     }
 
+    /* 詳細を見るボタン */
+    .card-footer {
+      margin-top: auto;
+      padding-top: 4px;
+    }
+    .btn-detail {
+      display: block;
+      text-align: center;
+      padding: 11px;
+      border: 2px solid #0d3b66;
+      color: #0d3b66;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      text-decoration: none;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-detail:hover { background: #0d3b66; color: white; }
 
     /* 安心材料セクション */
     .trust-section {
@@ -159,7 +199,6 @@
     .bottom-cta {
       margin-top: 24px;
     }
-
     .bottom-cta .btn-top {
       display: block;
       text-align: center;
@@ -202,27 +241,15 @@
       transform: translateY(-3px);
       box-shadow: 0 10px 28px rgba(6,199,85,0.55);
     }
-    .fab-line .fab-icon {
-      font-size: 20px;
-      line-height: 1;
-    }
+    .fab-line .fab-icon { font-size: 20px; line-height: 1; }
 
     /* スマホ */
     @media (max-width: 600px) {
       .site-header h1 { font-size: 16px; }
       .page-hero h2   { font-size: 20px; }
       .works-grid     { grid-template-columns: 1fr; gap: 16px; }
-      .card-title     { font-size: 16px; }
-
-      /* FABの分だけ余白を確保 */
-      main { padding-bottom: 90px; }
-
-      .fab-line {
-        bottom: 16px;
-        right: 16px;
-        font-size: 14px;
-        padding: 13px 18px;
-      }
+      .card-title     { font-size: 15px; }
+      .fab-line       { bottom: 16px; right: 16px; font-size: 14px; padding: 13px 18px; }
     }
   </style>
 </head>
@@ -245,13 +272,27 @@
          ▼ 新しい施工事例を追加するときはここをコピーして使ってください
          ============================================================
     <div class="works-card">
-      <img src="images/caseXXX/caseXXX_after.jpg" alt="事例タイトル"
-           onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+      <div class="card-photos">
+        <div class="card-photo">
+          <div class="card-photo-label">Before</div>
+          <img src="images/caseXXX/caseXXX_before.jpg" alt="施工前"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+        <div class="card-photo">
+          <div class="card-photo-label after">After</div>
+          <img src="images/caseXXX/caseXXX_after.jpg" alt="施工後"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+      </div>
       <div class="card-body">
-        <p class="card-title">○○様邸 外壁塗装工事（大分市）</p>
+        <p class="card-title">○○様邸 外壁塗装工事</p>
+        <p class="card-region">📍 大分市</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
           <span class="tag">屋根塗装</span>
+        </div>
+        <div class="card-footer">
+          <a class="btn-detail" href="caseXXX.html">詳細を見る →</a>
         </div>
       </div>
     </div>
@@ -259,37 +300,79 @@
 
     <!-- 事例001 -->
     <div class="works-card">
-      <img src="images/case001/case001_after.jpg" alt="K様集合住宅 屋根外壁改修工事（大分市）"
-           onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+      <div class="card-photos">
+        <div class="card-photo">
+          <div class="card-photo-label">Before</div>
+          <img src="images/case001/case001_before.jpg" alt="施工前"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+        <div class="card-photo">
+          <div class="card-photo-label after">After</div>
+          <img src="images/case001/case001_after.jpg" alt="施工後"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+      </div>
       <div class="card-body">
-        <p class="card-title">K様集合住宅 屋根外壁改修工事（大分市）</p>
+        <p class="card-title">K様集合住宅 屋根外壁改修工事</p>
+        <p class="card-region">📍 大分市</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
           <span class="tag">屋根塗装</span>
+        </div>
+        <div class="card-footer">
+          <a class="btn-detail" href="case001.html">詳細を見る →</a>
         </div>
       </div>
     </div>
 
     <!-- 事例002 -->
     <div class="works-card">
-      <img src="images/case002/case002_after.jpg" alt="S様邸 外壁塗装工事（大分市）"
-           onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+      <div class="card-photos">
+        <div class="card-photo">
+          <div class="card-photo-label">Before</div>
+          <img src="images/case002/case002_before.jpg" alt="施工前"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+        <div class="card-photo">
+          <div class="card-photo-label after">After</div>
+          <img src="images/case002/case002_after.jpg" alt="施工後"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+      </div>
       <div class="card-body">
-        <p class="card-title">S様邸 外壁塗装工事（大分市）</p>
+        <p class="card-title">S様邸 外壁塗装工事</p>
+        <p class="card-region">📍 大分市</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
+        </div>
+        <div class="card-footer">
+          <a class="btn-detail" href="case002.html">詳細を見る →</a>
         </div>
       </div>
     </div>
 
     <!-- 事例003 -->
     <div class="works-card">
-      <img src="images/case003/case003_after.jpg" alt="社会福祉法人様 外壁改修工事（大分市）"
-           onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+      <div class="card-photos">
+        <div class="card-photo">
+          <div class="card-photo-label">Before</div>
+          <img src="images/case003/case003_before.jpg" alt="施工前"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+        <div class="card-photo">
+          <div class="card-photo-label after">After</div>
+          <img src="images/case003/case003_after.jpg" alt="施工後"
+               onerror="this.outerHTML='<div class=\'no-image\'>画像準備中</div>'">
+        </div>
+      </div>
       <div class="card-body">
-        <p class="card-title">社会福祉法人様 外壁改修工事（大分市）</p>
+        <p class="card-title">社会福祉法人様 外壁改修工事</p>
+        <p class="card-region">📍 大分市</p>
         <div class="tag-wrap">
           <span class="tag">防水工事</span>
+        </div>
+        <div class="card-footer">
+          <a class="btn-detail" href="case003.html">詳細を見る →</a>
         </div>
       </div>
     </div>
@@ -333,9 +416,7 @@
 
   <!-- ページ下部CTA -->
   <div class="bottom-cta">
-    <a class="btn-top" href="index.html">
-      ← トップページに戻る
-    </a>
+    <a class="btn-top" href="index.html">← トップページに戻る</a>
   </div>
 
 </main>
