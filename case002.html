@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S様邸 外壁塗装工事 | 有限会社 青木塗装工業</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background: #f4f6f8;
+      color: #333;
+      line-height: 1.7;
+    }
+
+    /* ヘッダー */
+    .site-header {
+      background: #0d3b66;
+      color: white;
+      padding: 14px 20px;
+    }
+    .site-header a {
+      color: rgba(255,255,255,0.75);
+      text-decoration: none;
+      font-size: 13px;
+      display: inline-block;
+      margin-bottom: 4px;
+      padding: 4px 0;
+    }
+    .site-header a:hover { color: white; }
+    .site-header h1 { font-size: 18px; letter-spacing: 1px; }
+
+    /* ページヒーロー */
+    .page-hero {
+      background: #0d3b66;
+      color: white;
+      text-align: center;
+      padding: 32px 20px 28px;
+      border-top: 1px solid rgba(255,255,255,0.15);
+    }
+    .page-hero h2 { font-size: 20px; margin-bottom: 6px; line-height: 1.5; }
+    .page-hero p  { font-size: 13px; opacity: 0.82; }
+
+    /* メイン */
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 28px 16px 80px;
+    }
+
+    /* セクション共通 */
+    .section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+      margin-bottom: 22px;
+    }
+    .section h3 {
+      font-size: 16px;
+      font-weight: bold;
+      border-left: 4px solid #0d3b66;
+      padding-left: 10px;
+      margin-bottom: 16px;
+      color: #0d3b66;
+    }
+
+    /* 施工前後写真 */
+    .photos {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .photo-box {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+    }
+    .photo-label {
+      background: #0d3b66;
+      color: white;
+      text-align: center;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 6px;
+    }
+    .photo-label.after { background: #06c755; }
+    .photo-placeholder {
+      aspect-ratio: 4 / 3;
+      background: #e8ecf0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 13px;
+    }
+
+    /* 施工情報テーブル */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .info-table th,
+    .info-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eef0f3;
+      text-align: left;
+      vertical-align: top;
+    }
+    .info-table th {
+      width: 36%;
+      color: #555;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+    .info-table tr:last-child th,
+    .info-table tr:last-child td { border-bottom: none; }
+
+    /* タグ */
+    .tag-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      background: #0d3b66;
+      color: white;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    /* 担当者コメント */
+    .comment-box {
+      background: #f0f5fb;
+      border-left: 4px solid #0d3b66;
+      border-radius: 0 8px 8px 0;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .comment-box .author {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #666;
+      font-weight: bold;
+    }
+
+    /* LINEボタン */
+    .btn-line {
+      display: block;
+      text-align: center;
+      padding: 16px;
+      background: #06c755;
+      color: white;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(6,199,85,0.30);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-line:hover { background: #05a847; transform: translateY(-2px); }
+
+    /* 戻るボタン */
+    .btn-back {
+      display: block;
+      text-align: center;
+      padding: 13px;
+      border: 2px solid #0d3b66;
+      color: #0d3b66;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      text-decoration: none;
+      margin-top: 12px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-back:hover { background: #0d3b66; color: white; }
+
+    /* スマホ */
+    @media (max-width: 600px) {
+      .site-header h1 { font-size: 16px; }
+      .page-hero h2   { font-size: 18px; }
+      .photos         { grid-template-columns: 1fr; }
+      .section        { padding: 18px 16px; }
+      .info-table th  { width: 42%; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <a href="works.html">← 施工事例一覧へ</a>
+  <h1>有限会社 青木塗装工業</h1>
+</header>
+
+<div class="page-hero">
+  <h2>S様邸<br>外壁塗装工事</h2>
+  <p>施工地域：大分市｜外壁塗装</p>
+</div>
+
+<main>
+
+  <!-- 施工前後写真 -->
+  <div class="photos">
+    <div class="photo-box">
+      <div class="photo-label">施工前（Before）</div>
+      <div class="photo-placeholder">画像準備中</div>
+    </div>
+    <div class="photo-box">
+      <div class="photo-label after">施工後（After）</div>
+      <div class="photo-placeholder">画像準備中</div>
+    </div>
+  </div>
+
+  <!-- 施工情報 -->
+  <div class="section">
+    <h3>施工概要</h3>
+    <table class="info-table">
+      <tr>
+        <th>施工地域</th>
+        <td>大分市</td>
+      </tr>
+      <tr>
+        <th>施工内容</th>
+        <td>
+          <div class="tag-wrap">
+            <span class="tag">外壁塗装</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <th>使用塗料</th>
+        <td>外壁：シリコン系高耐候塗料（ダミー）</td>
+      </tr>
+      <tr>
+        <th>施工期間</th>
+        <td>約10日間（ダミー）</td>
+      </tr>
+      <tr>
+        <th>施工箇所</th>
+        <td>外壁全面・付帯部塗装・シーリング補修（ダミー）</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 担当者コメント -->
+  <div class="section">
+    <h3>担当者コメント</h3>
+    <div class="comment-box">
+      S様邸は、外壁の汚れや色あせが気になるとのことでご相談をいただきました。現地調査でチョーキング（白亜化）が確認されたため、下塗りに専用シーラーを使用し、密着性を高めた上で仕上げ塗りを行いました。落ち着いたカラーをお選びいただき、施工後はご近所の方にも「きれいになった」とお声がけいただいたそうです。（ダミーテキスト）
+      <div class="author">担当：青木塗装工業 施工チーム</div>
+    </div>
+  </div>
+
+  <!-- LINE相談ボタン -->
+  <div class="section">
+    <h3>この施工について相談する</h3>
+    <p style="font-size:14px;margin-bottom:14px;">同じようなお悩みをお持ちの方は、LINEでお気軽にご相談ください。無料で見積もりもご案内します。</p>
+    <a class="btn-line" href="https://page.line.me/148lixnm" target="_blank">
+      💬 LINEで無料相談・見積もり依頼
+    </a>
+    <a class="btn-back" href="works.html">← 施工事例一覧に戻る</a>
+  </div>
+
+</main>
+
+</body>
+</html>
