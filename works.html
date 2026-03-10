@@ -132,9 +132,50 @@
     }
     .btn-detail:hover { background: #0d3b66; color: white; }
 
+    /* 安心材料セクション */
+    .trust-section {
+      margin-top: 40px;
+      background: white;
+      border-radius: 12px;
+      padding: 28px 24px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+    }
+    .trust-section h3 {
+      font-size: 17px;
+      font-weight: bold;
+      border-left: 4px solid #0d3b66;
+      padding-left: 12px;
+      margin-bottom: 20px;
+      color: #0d3b66;
+    }
+    .trust-list {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .trust-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .trust-list li .trust-icon {
+      font-size: 22px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .trust-list li strong {
+      display: block;
+      font-size: 13px;
+      color: #0d3b66;
+      margin-bottom: 2px;
+    }
+
     /* ページ下部CTA */
     .bottom-cta {
-      margin-top: 40px;
+      margin-top: 24px;
     }
 
     .bottom-cta .btn-top {
@@ -285,6 +326,41 @@
     </div>
 
   </div><!-- /.works-grid -->
+
+  <!-- 安心材料セクション -->
+  <div class="trust-section">
+    <h3>青木塗装工業が選ばれる理由</h3>
+    <ul class="trust-list">
+      <li>
+        <span class="trust-icon">🏛️</span>
+        <div>
+          <strong>創業45年以上の実績</strong>
+          1979年（昭和54年）創業。大分市を中心に長年の信頼と実績があります。
+        </div>
+      </li>
+      <li>
+        <span class="trust-icon">📋</span>
+        <div>
+          <strong>建設業許可取得済み</strong>
+          （般－5）第12027号。有資格の職人が責任を持って施工します。
+        </div>
+      </li>
+      <li>
+        <span class="trust-icon">🏠</span>
+        <div>
+          <strong>住宅から大規模施設まで対応</strong>
+          一般住宅・アパート・社会福祉法人など幅広い施工実績があります。
+        </div>
+      </li>
+      <li>
+        <span class="trust-icon">📞</span>
+        <div>
+          <strong>24時間365日対応</strong>
+          お急ぎのご相談も受け付けています。LINEでも気軽にどうぞ。
+        </div>
+      </li>
+    </ul>
+  </div>
 
   <!-- ページ下部CTA -->
   <div class="bottom-cta">
