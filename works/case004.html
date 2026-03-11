@@ -56,7 +56,9 @@
     .footer-line { display: inline-block; background: #06c755; color: white; text-decoration: none; padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold; margin-bottom: 16px; transition: background 0.2s; }
     .footer-line:hover { background: #05a847; }
     .footer-copy { font-size: 12px; opacity: 0.65; }
-    @media (max-width: 600px) { .page-hero h2 { font-size: 18px; } .photos { grid-template-columns: 1fr; } .section { padding: 18px 16px; } .info-table th { width: 42%; } }
+    .site-nav .nav-line { color: #06c755; }
+    .site-nav .nav-line:hover { color: #06c755; border-bottom-color: #06c755; }
+    @media (max-width: 600px) { .header-logo { font-size: 12px; } .site-nav { gap: 10px; } .site-nav a { font-size: 11px; } .page-hero h2 { font-size: 18px; } .photos { grid-template-columns: 1fr; } .section { padding: 18px 16px; } .info-table th { width: 42%; } }
   </style>
 </head>
 <body>
@@ -65,8 +67,10 @@
   <div class="header-inner">
     <a class="header-logo" href="../index.html">有限会社 青木塗装工業</a>
     <nav class="site-nav" aria-label="グローバルナビゲーション">
-      <a href="../index.html">トップ</a>
+      <a href="../index.html">ホーム</a>
       <a href="../works.html" aria-current="page">施工事例</a>
+      <a href="../faq.html">よくある質問</a>
+      <a class="nav-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">LINE相談</a>
     </nav>
   </div>
 </header>

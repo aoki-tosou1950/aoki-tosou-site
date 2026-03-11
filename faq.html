@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>よくある質問｜大分市の外壁塗装・屋根塗装 | 有限会社 青木塗装工業</title>
+  <meta name="description" content="外壁塗装・屋根塗装・防水工事に関するよくある質問をまとめました。費用・工期・工法など、大分市の有限会社青木塗装工業がわかりやすくお答えします。">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://aoki-tosou.net/faq.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="よくある質問｜大分市の外壁塗装・屋根塗装 | 有限会社 青木塗装工業">
+  <meta property="og:description" content="外壁塗装・屋根塗装・防水工事に関するよくある質問をまとめました。費用・工期・工法など、大分市の有限会社青木塗装工業がわかりやすくお答えします。">
+  <meta property="og:url" content="https://aoki-tosou.net/faq.html">
+  <meta property="og:site_name" content="有限会社 青木塗装工業">
+  <meta property="og:locale" content="ja_JP">
+  <meta name="twitter:card" content="summary">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      background: #f4f6f8;
+      color: #333;
+      line-height: 1.7;
+    }
+
+    /* ヘッダー */
+    .site-header { background: #0d3b66; color: white; }
+    .header-inner {
+      max-width: 960px; margin: 0 auto; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .header-logo {
+      color: white; text-decoration: none; font-size: 15px;
+      font-weight: bold; letter-spacing: 0.5px; flex-shrink: 0;
+    }
+    .site-nav { display: flex; gap: 20px; }
+    .site-nav a {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 13px; padding: 4px 0; border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .site-nav a:hover,
+    .site-nav a[aria-current="page"] { color: white; border-bottom-color: white; }
+    .site-nav .nav-line { color: #06c755; }
+    .site-nav .nav-line:hover { color: #06c755; border-bottom-color: #06c755; }
+    @media (max-width: 600px) {
+      .header-logo { font-size: 12px; }
+      .site-nav { gap: 10px; }
+      .site-nav a { font-size: 11px; }
+    }
+
+    /* ページタイトル */
+    .page-hero {
+      background: #0d3b66;
+      color: white;
+      text-align: center;
+      padding: 36px 20px 32px;
+      border-top: 1px solid rgba(255,255,255,0.15);
+    }
+    .page-hero h2 { font-size: 22px; margin-bottom: 8px; }
+    .page-hero p  { font-size: 13px; opacity: 0.82; }
+
+    /* メイン */
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 28px 16px 80px;
+    }
+
+    /* FAQアイテム */
+    .faq-list { display: flex; flex-direction: column; gap: 16px; }
+
+    .faq-item {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+      overflow: hidden;
+    }
+
+    .faq-question {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 18px 20px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .faq-question::-webkit-details-marker { display: none; }
+
+    .faq-q-label {
+      flex-shrink: 0;
+      background: #0d3b66;
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .faq-arrow {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 12px;
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    details[open] .faq-arrow { transform: rotate(180deg); }
+
+    .faq-answer {
+      border-top: 1px solid #eef0f3;
+      padding: 16px 20px 18px;
+      font-size: 14px;
+      line-height: 1.75;
+      color: #444;
+      display: flex;
+      gap: 12px;
+    }
+
+    .faq-a-label {
+      flex-shrink: 0;
+      background: #06c755;
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    /* CTA */
+    .cta-section {
+      margin-top: 28px;
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+      text-align: center;
+    }
+    .cta-section p {
+      font-size: 14px;
+      margin-bottom: 14px;
+      color: #555;
+    }
+    .btn-line {
+      display: inline-block;
+      padding: 14px 32px;
+      background: #06c755;
+      color: white;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(6,199,85,0.30);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-line:hover { background: #05a847; transform: translateY(-2px); }
+
+    /* フッター */
+    .site-footer {
+      background: #0d3b66; color: white; text-align: center; padding: 32px 20px;
+    }
+    .footer-name { font-size: 15px; font-weight: bold; margin-bottom: 14px; }
+    .footer-line {
+      display: inline-block; background: #06c755; color: white; text-decoration: none;
+      padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold;
+      margin-bottom: 16px; transition: background 0.2s;
+    }
+    .footer-line:hover { background: #05a847; }
+    .footer-copy { font-size: 12px; opacity: 0.65; }
+
+    @media (max-width: 600px) {
+      .page-hero h2 { font-size: 20px; }
+      .faq-question { font-size: 14px; padding: 14px 16px; }
+      .faq-answer { padding: 14px 16px; }
+    }
+  </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "外壁塗装の費用はどのくらいですか？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "一般的な一戸建て（30〜40坪）の場合、外壁塗装は50〜100万円程度が目安です。建物の広さ・劣化状況・塗料のグレードによって変わります。まずは無料でお見積もりをご依頼ください。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "工事期間はどのくらいかかりますか？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "一戸建ての外壁・屋根塗装の場合、足場の設置・解体を含めて約10〜14日が目安です。建物の規模や天候によって変動することがあります。"
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "工事中、家にいる必要はありますか？",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "基本的に在宅いただく必要はありません。ただし、工事開始日・足場解体日などの立会いをお願いする場合があります。日程については事前に丁寧にご説明します。"
+        }
+      }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "ホーム", "item": "https://aoki-tosou.net/" },
+      { "@type": "ListItem", "position": 2, "name": "よくある質問", "item": "https://aoki-tosou.net/faq.html" }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="header-logo" href="index.html">有限会社 青木塗装工業</a>
+    <nav class="site-nav" aria-label="グローバルナビゲーション">
+      <a href="index.html">ホーム</a>
+      <a href="works.html">施工事例</a>
+      <a href="faq.html" aria-current="page">よくある質問</a>
+      <a class="nav-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">LINE相談</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page-hero">
+  <h2>よくある質問</h2>
+  <p>外壁塗装・屋根塗装・防水工事に関するご質問にお答えします。</p>
+</div>
+
+<main>
+  <div class="faq-list">
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        外壁塗装の費用はどのくらいですか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>一般的な一戸建て（30〜40坪）の場合、外壁塗装は50〜100万円程度が目安です。建物の広さ・劣化状況・塗料のグレードによって変わります。まずはお気軽にLINEで無料お見積もりをご依頼ください。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        工事期間はどのくらいかかりますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>一戸建ての外壁・屋根塗装の場合、足場の設置・解体を含めて約10〜14日が目安です。建物の規模や天候によって変動することがあります。施工前に工程表をお渡しし、進捗をご説明します。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        工事中、家にいる必要はありますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>基本的に在宅いただく必要はありません。ただし、工事開始日・足場解体日などで立会いをお願いする場合があります。日程については事前に丁寧にご説明します。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        塗料の種類はどうやって選べばいいですか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>塗料はシリコン・フッ素・無機など耐久年数やコストが異なります。建物の状態・ご予算・重視するポイント（耐久性・コスト・遮熱性など）をお聞きした上で最適なものをご提案します。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        雨の日は工事できますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>塗装工事は雨天時には行いません。天気予報を見ながらスケジュールを調整しますので、工期が多少前後することがあります。足場の設置・撤去や下地処理は雨天でも対応できる場合があります。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        外壁と屋根は一緒に塗装できますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>はい、同時施工が可能です。足場を一度で組めるため、個別に工事するより足場代が節約でき、トータルコストを抑えられます。外壁・屋根ともに劣化が見られる場合は、まとめてのご依頼をおすすめします。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        施工後の保証はありますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>施工後の保証については、工事内容・使用塗料の種類によって異なります。詳細はお見積もり時にご説明します。また、施工後も何かお気づきの点があればLINEにてお気軽にご連絡ください。</div>
+      </div>
+    </details>
+
+    <details class="faq-item">
+      <summary class="faq-question">
+        <span class="faq-q-label">Q</span>
+        見積もりだけでもお願いできますか？
+        <span class="faq-arrow">▼</span>
+      </summary>
+      <div class="faq-answer">
+        <span class="faq-a-label">A</span>
+        <div>もちろんです。お見積もりは無料で承っています。お見積もり後に必ずご発注いただく必要はありませんので、まずはお気軽にLINEからご相談ください。</div>
+      </div>
+    </details>
+
+  </div>
+
+  <div class="cta-section">
+    <p>他にご不明な点がございましたら、LINEでお気軽にお問い合わせください。</p>
+    <a class="btn-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
+      💬 LINEで無料相談・お見積もり依頼
+    </a>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <p class="footer-name">有限会社 青木塗装工業</p>
+  <a class="footer-line" href="https://page.line.me/148lixnm" target="_blank" rel="noopener noreferrer">
+    💬 LINEで相談する
+  </a>
+  <p class="footer-copy">© 有限会社 青木塗装工業</p>
+</footer>
+
+</body>
+</html>
