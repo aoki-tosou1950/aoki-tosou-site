@@ -1,29 +1,13 @@
-/* ===========================
-   共通フォント・文字サイズ設定
-   対象：高齢者向け可読性対応
-   =========================== */
-
 * {
   font-family: 'Noto Serif JP', serif !important;
+  font-size: 20px !important;
+  line-height: 2.0 !important;
 }
-
-body {
-  font-size: 18px !important;
-  line-height: 1.9 !important;
-}
-
-h1 { font-size: 42px !important; font-weight: 700 !important; }
-h2 { font-size: 32px !important; font-weight: 700 !important; }
-h3 { font-size: 26px !important; font-weight: 700 !important; }
-
-p, li, td, th, span, a { font-size: 18px !important; }
-
-.card-title, .works-title { font-size: 22px !important; font-weight: 700 !important; }
-
-button, .btn { font-size: 18px !important; }
-
+h1 { font-size: 52px !important; font-weight: 700 !important; }
+h2 { font-size: 38px !important; font-weight: 700 !important; }
+h3 { font-size: 28px !important; font-weight: 700 !important; }
 @media (max-width: 600px) {
-  body { font-size: 17px !important; }
-  h1 { font-size: 32px !important; }
-  h2 { font-size: 26px !important; }
+  * { font-size: 18px !important; }
+  h1 { font-size: 36px !important; }
+  h2 { font-size: 28px !important; }
 }
