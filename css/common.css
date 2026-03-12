@@ -11,3 +11,58 @@ h3 { font-size: 28px !important; font-weight: 700 !important; }
   h1 { font-size: 36px !important; }
   h2 { font-size: 28px !important; }
 }
+
+/* ===========================
+   ハンバーガーメニュー
+   =========================== */
+.site-header { position: relative; }
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+  z-index: 200;
+}
+.nav-toggle span {
+  display: block;
+  width: 26px;
+  height: 2px;
+  background: white;
+  border-radius: 2px;
+  transition: transform 0.3s, opacity 0.3s;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+.nav-toggle.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.open span:nth-child(2) { opacity: 0; }
+.nav-toggle.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+@media (max-width: 600px) {
+  .nav-toggle { display: flex !important; }
+  .site-nav {
+    display: none !important;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #0d3b66;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 8px 0;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    z-index: 100;
+  }
+  .site-nav.open { display: flex !important; }
+  .site-nav a {
+    padding: 14px 24px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.12) !important;
+    border-right: none !important;
+    font-size: 17px !important;
+  }
+  .site-nav a:last-child { border-bottom: none !important; }
+}

@@ -319,6 +319,9 @@
 <header class="site-header">
   <div class="header-inner">
     <a class="header-logo" href="index.html">有限会社 青木塗装工業</a>
+    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
     <nav class="site-nav" aria-label="グローバルナビゲーション">
       <a href="index.html">ホーム</a>
       <a href="works.html" aria-current="page">施工事例</a>
@@ -575,5 +578,24 @@
   <span class="fab-icon">💬</span>LINEで相談する
 </a>
 
+<script>
+  (function() {
+    var toggle = document.querySelector('.nav-toggle');
+    var nav = document.querySelector('.site-nav');
+    if (!toggle || !nav) return;
+    toggle.addEventListener('click', function() {
+      var open = nav.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.site-header')) {
+        nav.classList.remove('open');
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  })();
+</script>
 </body>
 </html>
