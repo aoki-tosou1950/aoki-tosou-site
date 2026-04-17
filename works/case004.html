@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>別府市 宿泊施設 防水工事｜施工事例 | 有限会社 青木塗装工業</title>
-  <meta name="description" content="別府市の営業中ホテルにおける屋上防水・外壁改修工事の施工事例。雨漏り調査から工法選定・施工まで詳しく紹介。大分・別府の防水工事は有限会社青木塗装工業へ。">
+  <meta name="description" content="別府市の営業中ホテルにて屋上防水・外壁改修工事を施工。雨漏り多発の原因を徹底調査し、通気緩衝工法を採用した防水改修から外壁・鉄部塗装まで一貫対応した事例をご紹介します。">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://aoki-tosou.net/works/case004.html">
   <meta property="og:type" content="article">
@@ -16,7 +16,7 @@
   <meta property="og:url" content="https://aoki-tosou.net/works/case004.html">
   <meta property="og:site_name" content="有限会社 青木塗装工業">
   <meta property="og:locale" content="ja_JP">
-  <meta property="og:image" content="https://aoki-tosou.net/images/case004/Original/after-main-01.jpg">
+  <meta property="og:image" content="https://aoki-tosou.net/images/case004/after-main-01.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,12 +33,17 @@
     .page-hero { background: #0d3b66; color: white; text-align: center; padding: 32px 20px 28px; border-top: 1px solid rgba(255,255,255,0.15); }
     .page-hero h2 { font-size: 28px; margin-bottom: 6px; line-height: 1.5; }
     .page-hero p  { font-size: 13px; opacity: 0.82; }
-    main { max-width: 760px; margin: 0 auto; padding: 28px 16px 80px; }
+    main { max-width: 960px; margin: 0 auto; padding: 28px 16px 80px; }
     .section { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 14px rgba(0,0,0,0.07); margin-bottom: 22px; }
-    .section h3 { font-size: 22px; font-weight: bold; border-left: 4px solid #0d3b66; padding-left: 10px; margin-bottom: 16px; color: #0d3b66; }
+    .section > h3 { font-size: 22px; font-weight: bold; border-left: 4px solid #0d3b66; padding-left: 10px; margin-bottom: 16px; color: #0d3b66; }
 
-    /* メイン比較写真（複数枚対応） */
-    .photos-main { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
+    /* メイン比較写真（複数枚グリッド） */
+    .photos-main {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 22px;
+    }
     .photo-box { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.07); }
     .photo-label { background: #0d3b66; color: white; text-align: center; font-size: 13px; font-weight: bold; padding: 6px; }
     .photo-label.after { background: #06c755; }
@@ -63,10 +68,21 @@
     .text-block p + p { margin-top: 12px; }
 
     /* ギャラリー */
-    .gallery-group { margin-bottom: 24px; }
+    .gallery-group { margin-bottom: 32px; }
     .gallery-group:last-child { margin-bottom: 0; }
-    .gallery-group-title { font-size: 14px; font-weight: bold; color: #555; border-bottom: 1px solid #e0e4e8; padding-bottom: 6px; margin-bottom: 12px; }
-    .gallery-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .gallery-group-title {
+      font-size: 17px;
+      font-weight: bold;
+      color: #0d3b66;
+      border-left: 3px solid #0d3b66;
+      padding-left: 10px;
+      margin-bottom: 14px;
+    }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
     .gallery-item { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 3px 10px rgba(0,0,0,0.07); }
     .gallery-label { color: white; text-align: center; font-size: 12px; font-weight: bold; padding: 5px 8px; background: #888; }
     .gallery-label.before { background: #0d3b66; }
@@ -118,6 +134,11 @@
     .footer-line { display: inline-block; background: #06c755; color: white; text-decoration: none; padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold; margin-bottom: 16px; transition: background 0.2s; }
     .footer-line:hover { background: #05a847; }
     .footer-copy { font-size: 12px; opacity: 0.65; }
+
+    /* タブレット（600px〜760px）：メイン比較 2列 */
+    @media (max-width: 760px) {
+      .photos-main { grid-template-columns: repeat(2, 1fr); }
+    }
 
     /* スマホ */
     @media (max-width: 600px) {
@@ -176,46 +197,46 @@
     </ol>
   </nav>
 
-  <!-- ① メイン比較写真（全4箇所） -->
+  <!-- ① メイン比較写真（4ペア・PC4列 / タブレット2列 / スマホ1列） -->
   <div class="photos-main">
     <div class="photo-box">
       <div class="photo-label">施工前</div>
-      <img src="../images/case004/Original/before-main-01.jpg" alt="別府市宿泊施設 屋上（R階）全景 施工前" width="800" height="600" loading="eager" decoding="async">
+      <img src="../images/case004/before-main-01.jpg" alt="別府市宿泊施設 屋上（R階）全景 施工前" width="800" height="600" loading="eager" decoding="async">
       <p class="photo-caption">屋上（R階）全景</p>
     </div>
     <div class="photo-box">
       <div class="photo-label after">施工後</div>
-      <img src="../images/case004/Original/after-main-01.jpg" alt="別府市宿泊施設 屋上（R階）全景 施工後" width="800" height="600" loading="eager" decoding="async">
+      <img src="../images/case004/after-main-01.jpg" alt="別府市宿泊施設 屋上（R階）全景 施工後" width="800" height="600" loading="eager" decoding="async">
       <p class="photo-caption">屋上（R階）全景</p>
     </div>
     <div class="photo-box">
       <div class="photo-label">施工前</div>
-      <img src="../images/case004/Original/before-main-02.jpg" alt="別府市宿泊施設 屋上（R階）近影 施工前" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/before-main-02.jpg" alt="別府市宿泊施設 屋上（R階）近影 施工前" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">屋上（R階）近影</p>
     </div>
     <div class="photo-box">
       <div class="photo-label after">施工後</div>
-      <img src="../images/case004/Original/after-main-02.jpg" alt="別府市宿泊施設 屋上（2階）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/after-main-02.jpg" alt="別府市宿泊施設 屋上（2階）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">屋上（2階）全景</p>
     </div>
     <div class="photo-box">
       <div class="photo-label">施工前</div>
-      <img src="../images/case004/Original/before-main-03.jpg" alt="別府市宿泊施設 外壁（東面）全景 施工前" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/before-main-03.jpg" alt="別府市宿泊施設 外壁（東面）全景 施工前" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">外壁（東面）全景</p>
     </div>
     <div class="photo-box">
       <div class="photo-label after">施工後</div>
-      <img src="../images/case004/Original/after-main-03.jpg" alt="別府市宿泊施設 外壁近影 施工後" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/after-main-03.jpg" alt="別府市宿泊施設 外壁近影 施工後" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">外壁近影</p>
     </div>
     <div class="photo-box">
       <div class="photo-label">施工前</div>
-      <img src="../images/case004/Original/before-main-04.jpg" alt="別府市宿泊施設 外壁（東面）近影 施工前" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/before-main-04.jpg" alt="別府市宿泊施設 外壁（東面）近影 施工前" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">外壁（東面）近影</p>
     </div>
     <div class="photo-box">
       <div class="photo-label after">施工後</div>
-      <img src="../images/case004/Original/after-main-04.jpg" alt="別府市宿泊施設 外壁（北面）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
+      <img src="../images/case004/after-main-04.jpg" alt="別府市宿泊施設 外壁（北面）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
       <p class="photo-caption">外壁（北面）全景</p>
     </div>
   </div>
@@ -303,139 +324,144 @@
     </ul>
   </div>
 
-  <!-- ギャラリー（detail のみ・4グループ） -->
+  <!-- ⑧ 施工写真（カテゴリ別・PC3列 / スマホ1列） -->
   <div class="section">
     <h3>施工写真</h3>
 
     <div class="gallery-group">
-      <p class="gallery-group-title">調査・劣化状況</p>
+      <h3 class="gallery-group-title">調査・劣化状況</h3>
       <div class="gallery-grid">
         <div class="gallery-item">
           <div class="gallery-label detail">調査①</div>
-          <img src="../images/case004/Original/detail-01.jpg" alt="R階パラペット天端 劣化状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-01.jpg" alt="R階パラペット天端 劣化状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">R階 パラペット天端</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">調査②</div>
-          <img src="../images/case004/Original/detail-02.jpg" alt="R階パラペット天端 近影" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-02.jpg" alt="R階パラペット天端 近影" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">R階 パラペット天端（近影）</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">調査③</div>
-          <img src="../images/case004/Original/detail-03.jpg" alt="2階屋上全景 調査状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-03.jpg" alt="2階屋上全景 調査状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">2階屋上全景</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">調査④</div>
-          <img src="../images/case004/Original/detail-04.jpg" alt="1階漏水箇所 近影" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-04.jpg" alt="1階漏水箇所 近影" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">1階 漏水箇所（近影）</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">調査⑤</div>
-          <img src="../images/case004/Original/detail-05.jpg" alt="2階屋上 切開調査状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-05.jpg" alt="2階屋上 切開調査状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">2階屋上 切開調査</p>
         </div>
       </div>
     </div>
 
     <div class="gallery-group">
-      <p class="gallery-group-title">防水施工</p>
+      <h3 class="gallery-group-title">防水施工</h3>
       <div class="gallery-grid">
         <div class="gallery-item">
           <div class="gallery-label detail">施工中①</div>
-          <img src="../images/case004/Original/detail-10.jpg" alt="屋上立上り撤去後 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-10.jpg" alt="屋上立上り撤去後 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">立上り撤去後 下地調整</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中②</div>
-          <img src="../images/case004/Original/detail-11.jpg" alt="屋上防水 下塗り施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-11.jpg" alt="屋上防水 下塗り施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">防水 下塗り施工後</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中③</div>
-          <img src="../images/case004/Original/detail-12.jpg" alt="屋上防水 通気緩衝シート施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-12.jpg" alt="屋上防水 通気緩衝シート施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">通気緩衝シート施工後</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中④</div>
-          <img src="../images/case004/Original/detail-13.jpg" alt="ウレタン塗膜防水 中塗り2回目施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-13.jpg" alt="ウレタン塗膜防水 中塗り2回目施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">ウレタン塗膜防水 中塗り2回目</p>
         </div>
       </div>
     </div>
 
     <div class="gallery-group">
-      <p class="gallery-group-title">外壁・鉄部</p>
+      <h3 class="gallery-group-title">外壁・鉄部</h3>
       <div class="gallery-grid">
         <div class="gallery-item">
           <div class="gallery-label before">施工前①</div>
-          <img src="../images/case004/Original/detail-06.jpg" alt="外壁近影 施工前" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-06.jpg" alt="外壁近影 施工前" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">外壁近影</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label before">施工前②</div>
-          <img src="../images/case004/Original/detail-07.jpg" alt="折板屋根部近影① 施工前" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-07.jpg" alt="折板屋根部近影① 施工前" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">折板屋根部近影①</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label before">施工前③</div>
-          <img src="../images/case004/Original/detail-09.jpg" alt="折板屋根部近影② 施工前" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-09.jpg" alt="折板屋根部近影② 施工前" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">折板屋根部近影②</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中①</div>
-          <img src="../images/case004/Original/detail-14.jpg" alt="パラペット天端補修後 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-14.jpg" alt="パラペット天端補修後 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">パラペット天端補修後 下地調整</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中②</div>
-          <img src="../images/case004/Original/detail-15.jpg" alt="2階屋上 下地補修施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-15.jpg" alt="2階屋上 下地補修施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">2階屋上 下地補修</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label after">施工後</div>
-          <img src="../images/case004/Original/detail-16.jpg" alt="外壁（北面）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-16.jpg" alt="外壁（北面）全景 施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">外壁（北面）全景 施工後</p>
         </div>
       </div>
     </div>
 
     <div class="gallery-group">
-      <p class="gallery-group-title">付帯・その他</p>
+      <h3 class="gallery-group-title">付帯・その他</h3>
       <div class="gallery-grid">
         <div class="gallery-item">
+          <div class="gallery-label detail">施工前</div>
+          <img src="../images/case004/detail-08.jpg" alt="駐車場内 施工前近影" width="800" height="600" loading="lazy" decoding="async">
+          <p class="gallery-caption">駐車場内（近影）</p>
+        </div>
+        <div class="gallery-item">
           <div class="gallery-label detail">施工中①</div>
-          <img src="../images/case004/Original/detail-17.jpg" alt="駐車場内 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-17.jpg" alt="駐車場内 下地調整施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">駐車場内 下地調整</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label after">施工後①</div>
-          <img src="../images/case004/Original/detail-18.jpg" alt="駐車場内天井スパンドレル・室外機塗装施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-18.jpg" alt="駐車場内天井スパンドレル・室外機塗装施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">駐車場内天井・室外機塗装後</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中②</div>
-          <img src="../images/case004/Original/detail-19.jpg" alt="駐車場ロードカラー施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-19.jpg" alt="駐車場ロードカラー施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">駐車場 ロードカラー施工状況</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label after">施工後②</div>
-          <img src="../images/case004/Original/detail-20.jpg" alt="駐車場内天井 施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-20.jpg" alt="駐車場内天井 施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">駐車場内天井 施工後</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label detail">施工中③</div>
-          <img src="../images/case004/Original/detail-21.jpg" alt="機械室 中塗り施工状況" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-21.jpg" alt="機械室 中塗り施工状況" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">機械室 中塗り施工状況</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label after">施工後③</div>
-          <img src="../images/case004/Original/detail-22.jpg" alt="機械室 上塗り施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-22.jpg" alt="機械室 上塗り施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">機械室 上塗り施工後</p>
         </div>
         <div class="gallery-item">
           <div class="gallery-label after">施工後④</div>
-          <img src="../images/case004/Original/detail-23.jpg" alt="駐車場折板屋根 上塗り施工後" width="800" height="600" loading="lazy" decoding="async">
+          <img src="../images/case004/detail-23.jpg" alt="駐車場折板屋根 上塗り施工後" width="800" height="600" loading="lazy" decoding="async">
           <p class="gallery-caption">駐車場折板屋根 上塗り施工後</p>
         </div>
       </div>
@@ -443,7 +469,7 @@
 
   </div>
 
-  <!-- ⑧ 施工後の状況 -->
+  <!-- ⑨ 施工後の状況 -->
   <div class="section">
     <h3>施工後の状況</h3>
     <ul class="result-list">
@@ -453,7 +479,7 @@
     </ul>
   </div>
 
-  <!-- ⑨ 今後のメンテナンス提案 -->
+  <!-- ⑩ 今後のメンテナンス提案 -->
   <div class="section">
     <h3>今後のメンテナンス提案</h3>
     <div class="maint-box">
@@ -465,7 +491,7 @@
     </div>
   </div>
 
-  <!-- ⑩ 監理技術者コメント（強調ボックス） -->
+  <!-- ⑪ 監理技術者コメント（強調ボックス） -->
   <div class="section">
     <h3>監理技術者より</h3>
     <div class="comment-box">
@@ -487,7 +513,7 @@
     </ul>
   </div>
 
-  <!-- ⑪ LINEで無料相談ボタン -->
+  <!-- ⑫ LINEで無料相談ボタン -->
   <div class="section">
     <a class="btn-works" href="../works.html">📸 他の施工事例を見る</a>
     <a class="btn-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">
