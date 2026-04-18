@@ -59,11 +59,13 @@
     .site-nav .nav-line:hover { color: #06c755; border-bottom-color: #06c755; }
 
     /* ① ファーストビュー（Before/After比較型）
-       PC: CSS Grid stacking で images・overlay を同一セルに重ねる
-       position:absolute + 100vw は使わない → 親要素の幅制限問題を根本回避 */
+       .hero 自体を flex row にして .hero-img-wrap を直接の flex 子要素にする。
+       .hero-images には display:contents を使い、ボックスを消去して
+       width制限・margin:auto・max-width などの親干渉を根本排除する。 */
     .hero {
-      display: grid;
-      grid-template: 1fr / 1fr;   /* 1セルのみ */
+      position: relative;
+      display: flex;
+      flex-direction: row;
       width: 100%;
       height: 70vh;
       min-height: 360px;
@@ -71,29 +73,23 @@
       margin: 0;
       padding: 0;
     }
-    /* 画像コンテナ：同一グリッドセル（images と overlay が重なる） */
+    /* display:contents で .hero-images のボックスを消去
+       → .hero-img-wrap が .hero の直接 flex 子要素になる */
     .hero-images {
-      grid-area: 1 / 1;
-      display: flex;
-      flex-direction: row;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
+      display: contents;
     }
-    /* 各パネル：flex で等幅、画像を完全充填 */
+    /* 各パネル：.hero の flex 子要素として等幅展開 */
     .hero-img-wrap {
       flex: 1;
       min-width: 0;
       position: relative;
       overflow: hidden;
-      height: 100%;
     }
     /* グラデーションオーバーレイ */
     .hero-img-wrap::after {
       content: '';
       position: absolute;
-      inset: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       background: linear-gradient(
         to bottom,
         rgba(0,0,0,0.08) 0%,
@@ -106,7 +102,7 @@
     /* 画像：親パネルを完全充填 */
     .hero-img-wrap img {
       position: absolute;
-      inset: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -129,19 +125,21 @@
       line-height: 1.5 !important;
     }
     .hero-img-label.after { background: rgba(6,199,85,0.88); }
-    /* パネル間の区切り線：同一グリッドセルに配置 */
+    /* パネル間の区切り線 */
     .hero-divider {
-      grid-area: 1 / 1;
-      justify-self: center;
-      align-self: stretch;
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 50%;
       width: 2px;
       background: rgba(255,255,255,0.35);
+      transform: translateX(-50%);
       z-index: 2;
       pointer-events: none;
     }
-    /* テキスト・CTAオーバーレイ：同一グリッドセルに配置（画像の上に重なる） */
+    /* テキスト・CTAオーバーレイ（画像に重なる） */
     .hero-overlay {
-      grid-area: 1 / 1;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -365,20 +363,20 @@
 
     /* スマホ */
     @media (max-width: 600px) {
-      /* ヒーロー：グリッドを解除してフレックス縦積みに切り替え */
+      /* ヒーロー：flex を column に切り替え */
       .hero {
-        display: flex;
         flex-direction: column;
         height: auto !important;
         min-height: 0 !important;
         overflow: visible;
       }
 
-      /* 画像エリア：グリッドセル配置を解除・縦積み */
+      /* display:contents を解除して flex コンテナに戻す
+         → .hero-img-wrap が .hero-images 内で縦積みになる */
       .hero-images {
-        grid-area: unset;
-        height: auto;
+        display: flex !important;
         flex-direction: column;
+        width: 100%;
         order: 0;
       }
 
@@ -399,7 +397,7 @@
       }
 
       /* 文字を画像下に置くのでグラデーションを軽減 */
-      .hero-images .hero-img-wrap::after {
+      .hero-img-wrap::after {
         background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.18) 100%);
       }
 
@@ -408,7 +406,7 @@
 
       /* テキスト・CTAを画像の下・青背景ブロックとして配置 */
       .hero-overlay {
-        grid-area: unset;
+        position: static;
         order: 2;
         background: #0d3b66;
         padding: 28px 20px 32px;
