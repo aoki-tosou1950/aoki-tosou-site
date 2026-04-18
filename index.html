@@ -55,26 +55,34 @@
     .hero {
       position: relative;
       width: 100%;
-      height: 60vh;
-      min-height: 340px;
+      height: 70vh;
+      min-height: 360px;
       overflow: hidden;
+      margin: 0;
+      padding: 0;
     }
-    /* 左右2カラム画像エリア */
+    /* 左右2カラム画像エリア（flex で高さ保証） */
     .hero-images {
       position: absolute;
-      inset: 0;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: row;
+      margin: 0;
+      padding: 0;
     }
     .hero-img-wrap {
+      flex: 1;
       position: relative;
       overflow: hidden;
+      height: 100%;
+      margin: 0;
+      padding: 0;
     }
     /* 黒グラデーションオーバーレイ（各パネル） */
     .hero-img-wrap::after {
       content: '';
       position: absolute;
-      inset: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       background: linear-gradient(
         to bottom,
         rgba(0,0,0,0.10) 0%,
@@ -82,12 +90,18 @@
         rgba(0,0,0,0.55) 100%
       );
       pointer-events: none;
+      z-index: 1;
     }
+    /* 画像を絶対配置で確実に全面展開 */
     .hero-img-wrap img {
+      position: absolute;
+      top: 0; left: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
+      margin: 0;
+      padding: 0;
     }
     /* Before/After ラベル */
     .hero-img-label {
@@ -344,8 +358,8 @@
     /* スマホ */
     @media (max-width: 600px) {
       .hero { height: 100vw; min-height: 0; }
-      .hero-images { grid-template-columns: 1fr; }
-      .hero-img-wrap { height: 50vw; }
+      .hero-images { flex-direction: column; }
+      .hero-img-wrap { flex: none; height: 50vw; width: 100%; }
       .hero-divider { display: none; }
       .hero-top-label { display: none; }
       .hero-catch { font-size: 28px !important; margin-bottom: 10px; }
