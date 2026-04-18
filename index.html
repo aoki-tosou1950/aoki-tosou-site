@@ -76,7 +76,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
+      width: 100vw;        /* %ではなくvpx基準で確実に全幅 */
+      max-width: none;
       height: 100%;
       display: flex;
       flex-direction: row;
@@ -84,13 +85,14 @@
       padding: 0;
     }
     .hero-img-wrap {
-      flex: 1 1 50%;
+      flex: 1;
+      width: 50%;
+      min-width: 0;
       position: relative;
       overflow: hidden;
       height: 100%;
       margin: 0;
       padding: 0;
-      min-width: 0;
     }
     /* 黒グラデーションオーバーレイ（各パネル） */
     .hero-img-wrap::after {
@@ -375,14 +377,83 @@
 
     /* スマホ */
     @media (max-width: 600px) {
-      .hero { height: 100vw !important; min-height: 0; }
-      .hero-images { flex-direction: column; }
-      .hero-img-wrap { flex: none; width: 100% !important; height: 50vw; }
+      /* ヒーロー：高さ自動・縦フロー構成 */
+      .hero {
+        height: auto !important;
+        min-height: 0 !important;
+        display: flex;
+        flex-direction: column;
+        overflow: visible;
+      }
+
+      /* 画像エリア：absoluteを解除して通常フローへ */
+      .hero-images {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: column;
+        display: flex;
+      }
+
+      /* 施工後（2番目）を先頭・大きく表示 */
+      .hero-images .hero-img-wrap:nth-child(2) {
+        order: -1;
+        height: 58vw;
+        flex: none;
+        width: 100% !important;
+      }
+
+      /* 施工前（1番目）を後ろ・小さく表示 */
+      .hero-images .hero-img-wrap:nth-child(1) {
+        order: 1;
+        height: 38vw;
+        flex: none;
+        width: 100% !important;
+      }
+
+      /* スマホでは文字を画像の下に置くためグラデーション不要 */
+      .hero-images .hero-img-wrap::after {
+        background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.18) 100%);
+      }
+
+      /* テキスト・CTAオーバーレイ：絶対配置を解除・青背景ブロックとして画像の下へ */
+      .hero-overlay {
+        position: static !important;
+        background: #0d3b66;
+        padding: 28px 20px 32px;
+        pointer-events: auto;
+        width: 100%;
+        height: auto !important;
+        color: white;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
       .hero-divider { display: none; }
-      .hero-top-label { display: none; }
-      .hero-catch { font-size: 28px !important; margin-bottom: 10px; }
-      .hero-sub { font-size: 13px !important; margin-bottom: 20px; }
-      .hero-btn { padding: 12px 28px; font-size: 14px !important; }
+
+      .hero-top-label {
+        display: block;
+        font-size: 12px !important;
+        color: rgba(255,255,255,0.78);
+        margin-bottom: 8px;
+        text-shadow: none;
+      }
+      .hero-catch {
+        font-size: 28px !important;
+        margin-bottom: 10px;
+        text-shadow: none;
+      }
+      .hero-sub {
+        font-size: 13px !important;
+        margin-bottom: 24px;
+        text-shadow: none;
+      }
+      .hero-btn { padding: 14px 32px; font-size: 15px !important; }
+
       .trust-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .badge { padding: 16px 8px 14px; }
       .badge-num { font-size: 24px !important; }
