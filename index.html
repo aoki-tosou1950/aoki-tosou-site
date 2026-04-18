@@ -17,7 +17,7 @@
   <meta property="og:site_name" content="有限会社 青木塗装工業">
   <meta property="og:locale" content="ja_JP">
   <meta property="og:image" content="https://aoki-tosou.net/images/ogp-default.jpg">
-  <meta name="twitter:card" content="summary">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -37,115 +37,250 @@
       display: flex; align-items: center; justify-content: space-between; gap: 16px;
     }
     .header-logo {
-      color: white; text-decoration: none; font-size: 15px;
+      color: white; text-decoration: none; font-size: 15px !important;
       font-weight: bold; letter-spacing: 0.5px; flex-shrink: 0;
     }
     .site-nav { display: flex; gap: 20px; }
     .site-nav a {
       color: rgba(255,255,255,0.8); text-decoration: none;
-      font-size: 13px; padding: 4px 0; border-bottom: 2px solid transparent;
-      transition: color 0.2s, border-color 0.2s;
+      font-size: 13px !important; padding: 4px 0;
+      border-bottom: 2px solid transparent; transition: color 0.2s, border-color 0.2s;
     }
     .site-nav a:hover,
     .site-nav a[aria-current="page"] { color: white; border-bottom-color: white; }
     .site-nav .nav-line { color: #06c755; }
     .site-nav .nav-line:hover { color: #06c755; border-bottom-color: #06c755; }
-    @media (max-width: 600px) {
-      body { font-size: 16px; }
-      .header-logo { font-size: 12px; }
-      .site-nav { gap: 10px; }
-      .site-nav a { font-size: 11px; }
-    }
 
-    /* コンテンツ */
-    .container {
-      max-width: 680px;
-      margin: 0 auto;
-      padding: 32px 16px 48px;
-    }
-
-    .card {
-      background: white;
-      border-radius: 10px;
-      padding: 24px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
-      margin-bottom: 20px;
-    }
-
-    h1 { font-size: 48px; font-weight: 700; }
-
-    .card h2 {
-      font-size: 32px;
-      border-left: 4px solid #0d3b66;
-      padding-left: 10px;
-      margin-bottom: 14px;
-    }
-
-    .card p, .card li {
-      font-size: 18px;
-      margin-bottom: 6px;
-    }
-
-    .card a { color: #0d3b66; }
-
-    /* 施工事例バナー */
-    .works-banner {
-      display: block;
+    /* ① ファーストビュー */
+    .hero {
       background: #0d3b66;
       color: white;
-      border-radius: 10px;
-      padding: 24px 20px;
-      text-decoration: none;
       text-align: center;
+      padding: 72px 20px 64px;
+      border-top: 1px solid rgba(255,255,255,0.15);
+    }
+    .hero-inner { max-width: 600px; margin: 0 auto; }
+    .hero-label {
+      font-size: 13px !important;
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 0.12em;
       margin-bottom: 20px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.10);
-      transition: background 0.2s, transform 0.2s;
     }
-    .works-banner:hover {
-      background: #08263f;
-      transform: translateY(-2px);
-    }
-    .works-banner .label {
-      opacity: 0.8;
-      margin-bottom: 4px;
-    }
-    .works-banner .title {
+    .hero-catch {
+      font-size: 44px !important;
       font-weight: bold;
-      letter-spacing: 1px;
+      line-height: 1.35 !important;
+      margin-bottom: 18px;
+      letter-spacing: 0.04em;
     }
-    .works-banner .sub {
-      opacity: 0.82;
-      margin-top: 6px;
+    .hero-sub {
+      font-size: 15px !important;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 0.1em;
+      margin-bottom: 36px;
     }
-
-    /* LINEボタン */
-    .btn-line {
-      display: block;
+    .hero-btn {
+      display: inline-block;
       background: #06c755;
       color: white;
+      text-decoration: none;
+      padding: 16px 40px;
+      border-radius: 50px;
+      font-size: 16px !important;
+      font-weight: bold;
+      box-shadow: 0 4px 20px rgba(6,199,85,0.45);
+      transition: background 0.2s, transform 0.2s;
+      letter-spacing: 0.05em;
+    }
+    .hero-btn:hover { background: #05a847; transform: translateY(-2px); }
+
+    /* ② 信頼バッジ */
+    .trust-section {
+      background: white;
+      padding: 28px 16px;
+      border-bottom: 1px solid #e4e8ed;
+    }
+    .trust-grid {
+      max-width: 960px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .badge {
       text-align: center;
-      padding: 14px;
-      border-radius: 8px;
-      font-size: 16px;
+      padding: 20px 10px 18px;
+      border-radius: 10px;
+      background: #f0f5fb;
+      border-top: 3px solid #0d3b66;
+    }
+    .badge-num {
+      font-size: 28px !important;
+      font-weight: bold;
+      color: #0d3b66;
+      line-height: 1.2 !important;
+      margin-bottom: 6px;
+    }
+    .badge-title {
+      font-size: 13px !important;
+      font-weight: bold;
+      color: #333;
+      line-height: 1.5 !important;
+      margin-bottom: 4px;
+    }
+    .badge-sub {
+      font-size: 11px !important;
+      color: #666;
+      line-height: 1.6 !important;
+    }
+
+    /* ③ 施工事例 */
+    .cases-section {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 36px 16px 52px;
+    }
+    .section-heading {
+      font-size: 22px !important;
+      font-weight: bold;
+      color: #0d3b66;
+      border-left: 4px solid #0d3b66;
+      padding-left: 10px;
+      margin-bottom: 8px;
+      line-height: 1.4 !important;
+    }
+    .section-heading-sub {
+      font-size: 13px !important;
+      color: #888;
+      margin-bottom: 20px;
+      padding-left: 14px;
+    }
+    .cases-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .case-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+    }
+    .case-photos { display: grid; grid-template-columns: 1fr 1fr; }
+    .case-photo { position: relative; }
+    .case-photo-label {
+      position: absolute;
+      top: 0; left: 0;
+      background: #0d3b66;
+      color: white;
+      font-size: 11px !important;
+      font-weight: bold;
+      padding: 3px 8px;
+      z-index: 1;
+      line-height: 1.6 !important;
+    }
+    .case-photo-label.after { background: #06c755; }
+    .case-photo img {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block;
+    }
+    .case-body { padding: 14px 14px 16px; flex: 1; display: flex; flex-direction: column; }
+    .case-title {
+      font-size: 14px !important;
+      font-weight: bold;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+      line-height: 1.55 !important;
+    }
+    .case-region {
+      font-size: 12px !important;
+      color: #888;
+      margin-bottom: 8px;
+      line-height: 1.4 !important;
+    }
+    .tag-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+    .tag {
+      background: #0d3b66;
+      color: white;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11px !important;
+      line-height: 1.6 !important;
+    }
+    .btn-detail {
+      display: block;
+      text-align: center;
+      padding: 9px;
+      background: #0d3b66;
+      color: white;
+      border-radius: 6px;
+      font-size: 13px !important;
       font-weight: bold;
       text-decoration: none;
+      margin-top: auto;
       transition: background 0.2s;
-      margin-top: 8px;
     }
-    .btn-line:hover { background: #05a847; }
+    .btn-detail:hover { background: #08263f; }
+    .btn-all-works {
+      display: block;
+      text-align: center;
+      padding: 14px 20px;
+      border: 2px solid #0d3b66;
+      color: #0d3b66;
+      border-radius: 8px;
+      font-size: 15px !important;
+      font-weight: bold;
+      text-decoration: none;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-all-works:hover { background: #0d3b66; color: white; }
 
     /* フッター */
-    .site-footer {
-      background: #0d3b66; color: white; text-align: center; padding: 32px 20px;
-    }
-    .footer-name { font-size: 15px; font-weight: bold; margin-bottom: 14px; }
+    .site-footer { background: #0d3b66; color: white; text-align: center; padding: 32px 20px; }
+    .footer-name { font-size: 15px !important; font-weight: bold; margin-bottom: 14px; }
     .footer-line {
       display: inline-block; background: #06c755; color: white; text-decoration: none;
-      padding: 10px 24px; border-radius: 50px; font-size: 14px; font-weight: bold;
-      margin-bottom: 16px; transition: background 0.2s;
+      padding: 10px 24px; border-radius: 50px; font-size: 14px !important;
+      font-weight: bold; margin-bottom: 16px; transition: background 0.2s;
     }
     .footer-line:hover { background: #05a847; }
-    .footer-copy { font-size: 12px; opacity: 0.65; }
+    .footer-copy { font-size: 12px !important; opacity: 0.65; }
+
+    /* ④ LINE 固定ボタン */
+    .line-fixed {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #06c755;
+      color: white;
+      text-decoration: none;
+      padding: 13px 20px;
+      border-radius: 50px;
+      font-size: 14px !important;
+      font-weight: bold;
+      line-height: 1.3 !important;
+      box-shadow: 0 4px 18px rgba(6,199,85,0.5);
+      z-index: 999;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .line-fixed:hover { background: #05a847; transform: translateY(-2px); }
+
+    /* スマホ */
+    @media (max-width: 600px) {
+      .hero { padding: 52px 20px 44px; }
+      .hero-catch { font-size: 32px !important; }
+      .hero-sub { font-size: 14px !important; margin-bottom: 28px; }
+      .hero-btn { padding: 14px 30px; font-size: 15px !important; }
+      .trust-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .badge { padding: 16px 8px 14px; }
+      .badge-num { font-size: 24px !important; }
+      .cases-grid { grid-template-columns: 1fr; }
+      .case-title { font-size: 15px !important; }
+      .cases-section { padding: 28px 16px 48px; }
+      .line-fixed { bottom: 16px; right: 16px; padding: 12px 16px; font-size: 13px !important; }
+    }
   </style>
   <script type="application/ld+json">
   {
@@ -189,48 +324,125 @@
   </div>
 </header>
 
-<div class="container">
-
-  <!-- 施工事例バナー -->
-  <a class="works-banner" href="works.html">
-    <p class="label">📸 実績紹介</p>
-    <p class="title">施工事例を見る</p>
-    <p class="sub">外壁塗装・屋根塗装・防水工事など →</p>
-  </a>
-
-  <!-- 会社情報 -->
-  <div class="card">
-    <h2>会社情報</h2>
-    <p>創業：1979年（昭和54年）</p>
-    <p>所在地：大分県大分市大字常行180-5</p>
-    <p>建設業許可番号：（般－5）第12027号</p>
-    <p>TEL：097-594-0076</p>
-    <p>FAX：097-522-2876</p>
-    <p style="font-size:0.85em;color:#666;">※お電話の際はお名前・ご要件をお願い致します。</p>
-    <p>メールアドレス：<a href="mailto:info@aoki-tosou.net">info@aoki-tosou.net</a></p>
-    <p>主な業務：外壁塗装、防水工事、一般住宅からアパート・施設の改修工事まで</p>
-  </div>
-
-  <!-- LINEお問い合わせ -->
-  <div class="card">
-    <h2>LINEでお気軽にご相談ください</h2>
-    <p>見積もり依頼・施工のご相談は公式LINEが便利です。</p>
-    <a class="btn-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">
-      💬 LINEで問い合わせる
+<!-- ① ファーストビュー -->
+<section class="hero">
+  <div class="hero-inner">
+    <p class="hero-label">大分市の外壁塗装・屋根塗装・防水工事</p>
+    <h1 class="hero-catch">原因から直す<br>塗装工事</h1>
+    <p class="hero-sub">創業47年・大分市地域密着</p>
+    <a class="hero-btn" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">
+      💬 LINEで無料相談
     </a>
   </div>
+</section>
 
-  <!-- 注記 -->
-  <div class="card">
-    <h2>法人情報</h2>
-    <p><strong>法人正式表記（英語）：AOKI TOSO KOGYO, Y.K.</strong></p>
-    <p style="margin-top:8px;font-size:13px;color:#666;">
-      ※本サイト・LINEミニアプリ上では日本語名「有限会社青木塗装工業」および通称「Aoki Tosou」を併用しています。<br>
-      表記ゆれについてはApple Developer ProgramのD-U-N-S準拠の名称と整合しています。
-    </p>
+<!-- ② 信頼バッジ -->
+<section class="trust-section">
+  <div class="trust-grid">
+    <div class="badge">
+      <div class="badge-num">47年</div>
+      <div class="badge-title">創業</div>
+      <div class="badge-sub">1979年（昭和54年）創業<br>地域に根ざした実績</div>
+    </div>
+    <div class="badge">
+      <div class="badge-num">2,000件+</div>
+      <div class="badge-title">施工実績</div>
+      <div class="badge-sub">住宅から施設まで<br>豊富な対応実績</div>
+    </div>
+    <div class="badge">
+      <div class="badge-num">国家資格</div>
+      <div class="badge-title">資格保有</div>
+      <div class="badge-sub">一級塗装技能士<br>一級建築施工管理技士</div>
+    </div>
+    <div class="badge">
+      <div class="badge-num">自社</div>
+      <div class="badge-title">施工管理</div>
+      <div class="badge-sub">外注なし・直接施工<br>品質を一貫管理</div>
+    </div>
+  </div>
+</section>
+
+<!-- ③ 施工事例 -->
+<section class="cases-section">
+  <div class="section-heading">施工事例</div>
+  <p class="section-heading-sub">実際の施工をビフォーアフターでご確認いただけます</p>
+
+  <div class="cases-grid">
+
+    <!-- case001 -->
+    <div class="case-card">
+      <div class="case-photos">
+        <div class="case-photo">
+          <span class="case-photo-label">施工前</span>
+          <img src="images/case001/before-main.jpg" alt="臼杵市O様邸 外壁塗装 施工前" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+        <div class="case-photo">
+          <span class="case-photo-label after">施工後</span>
+          <img src="images/case001/after-main.jpg" alt="臼杵市O様邸 外壁塗装 施工後" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+      </div>
+      <div class="case-body">
+        <p class="case-title">臼杵市O様邸 外壁塗装工事</p>
+        <p class="case-region">📍 臼杵市</p>
+        <div class="tag-wrap">
+          <span class="tag">外壁塗装</span>
+          <span class="tag">ベランダ床防水</span>
+        </div>
+        <a class="btn-detail" href="works/case001.html">詳細を見る →</a>
+      </div>
+    </div>
+
+    <!-- case003 -->
+    <div class="case-card">
+      <div class="case-photos">
+        <div class="case-photo">
+          <span class="case-photo-label">施工前</span>
+          <img src="images/case003/before-main.jpg" alt="大分市M様邸 屋根・外壁塗装 施工前" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+        <div class="case-photo">
+          <span class="case-photo-label after">施工後</span>
+          <img src="images/case003/after-main.jpg" alt="大分市M様邸 屋根・外壁塗装 施工後" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+      </div>
+      <div class="case-body">
+        <p class="case-title">大分市M様邸 屋根・外壁塗装工事</p>
+        <p class="case-region">📍 大分市</p>
+        <div class="tag-wrap">
+          <span class="tag">屋根塗装</span>
+          <span class="tag">外壁塗装</span>
+        </div>
+        <a class="btn-detail" href="works/case003.html">詳細を見る →</a>
+      </div>
+    </div>
+
+    <!-- case004 -->
+    <div class="case-card">
+      <div class="case-photos">
+        <div class="case-photo">
+          <span class="case-photo-label">施工前</span>
+          <img src="images/case004/before-main-01.jpg" alt="別府市宿泊施設 屋上防水 施工前" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+        <div class="case-photo">
+          <span class="case-photo-label after">施工後</span>
+          <img src="images/case004/after-main-01.jpg" alt="別府市宿泊施設 屋上防水 施工後" width="400" height="300" loading="lazy" decoding="async">
+        </div>
+      </div>
+      <div class="case-body">
+        <p class="case-title">別府市 宿泊施設 屋上防水・外壁改修工事</p>
+        <p class="case-region">📍 別府市</p>
+        <div class="tag-wrap">
+          <span class="tag">屋上防水</span>
+          <span class="tag">外壁塗装</span>
+          <span class="tag">鉄部塗装</span>
+        </div>
+        <a class="btn-detail" href="works/case004.html">詳細を見る →</a>
+      </div>
+    </div>
+
   </div>
 
-</div>
+  <a class="btn-all-works" href="works.html">📸 全ての施工事例を見る →</a>
+</section>
 
 <footer class="site-footer">
   <p class="footer-name">有限会社 青木塗装工業</p>
@@ -245,6 +457,11 @@
   </a>
   <p class="footer-copy">© 有限会社 青木塗装工業</p>
 </footer>
+
+<!-- ④ LINE 固定ボタン（右下） -->
+<a class="line-fixed" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">
+  💬 LINEで相談
+</a>
 
 <script>
   (function() {
