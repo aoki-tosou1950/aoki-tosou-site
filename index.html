@@ -21,6 +21,14 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ブラウザデフォルト余白を確実に消す */
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      max-width: none !important;
+      overflow-x: hidden;
+    }
+
     body {
       font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
       background: #f4f6f8;
@@ -54,29 +62,35 @@
     /* ① ファーストビュー（Before/After比較型） */
     .hero {
       position: relative;
-      width: 100%;
+      width: 100vw !important;   /* viewportいっぱい */
+      max-width: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      left: 0;
       height: 70vh;
       min-height: 360px;
       overflow: hidden;
-      margin: 0;
-      padding: 0;
     }
-    /* 左右2カラム画像エリア（flex で高さ保証） */
+    /* 左右2カラム画像エリア */
     .hero-images {
       position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: row;
       margin: 0;
       padding: 0;
     }
     .hero-img-wrap {
-      flex: 1;
+      flex: 1 1 50%;
       position: relative;
       overflow: hidden;
       height: 100%;
       margin: 0;
       padding: 0;
+      min-width: 0;
     }
     /* 黒グラデーションオーバーレイ（各パネル） */
     .hero-img-wrap::after {
@@ -85,23 +99,25 @@
       top: 0; left: 0; right: 0; bottom: 0;
       background: linear-gradient(
         to bottom,
-        rgba(0,0,0,0.10) 0%,
+        rgba(0,0,0,0.08) 0%,
         rgba(0,0,0,0.50) 55%,
         rgba(0,0,0,0.55) 100%
       );
       pointer-events: none;
       z-index: 1;
     }
-    /* 画像を絶対配置で確実に全面展開 */
+    /* 画像：親コンテナを完全充填 */
     .hero-img-wrap img {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
       object-fit: cover;
-      display: block;
-      margin: 0;
-      padding: 0;
+      display: block !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
     /* Before/After ラベル */
     .hero-img-label {
@@ -133,7 +149,9 @@
     /* テキスト・CTAオーバーレイ（全幅中央） */
     .hero-overlay {
       position: absolute;
-      inset: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -357,9 +375,9 @@
 
     /* スマホ */
     @media (max-width: 600px) {
-      .hero { height: 100vw; min-height: 0; }
+      .hero { height: 100vw !important; min-height: 0; }
       .hero-images { flex-direction: column; }
-      .hero-img-wrap { flex: none; height: 50vw; width: 100%; }
+      .hero-img-wrap { flex: none; width: 100% !important; height: 50vw; }
       .hero-divider { display: none; }
       .hero-top-label { display: none; }
       .hero-catch { font-size: 28px !important; margin-bottom: 10px; }
