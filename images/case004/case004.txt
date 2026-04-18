@@ -81,14 +81,16 @@ case004
 劣化状況に応じた最適な施工方法の選定を行った事例です。
 
 【写真構成】
-before-main-01.jpg：屋上（R階）全景
+＜メイン写真＞
+before-main-01.jpg：屋上（R階）全景 ※メイン表示
+before-main-04.jpg：外壁（東面）近影 ※メイン表示
+after-main-01.jpg：屋上（R階）全景 ※メイン表示
+after-main-03.jpg：外壁近影 ※メイン表示
+
+＜補足写真＞
 before-main-02.jpg：屋上（R階）近影
 before-main-03.jpg：外壁（東面）全景
-before-main-04.jpg：外壁（東面）近影
-
-after-main-01.jpg：屋上（R階）全景
 after-main-02.jpg：屋上（2階）全景
-after-main-03.jpg：外壁近影
 after-main-04.jpg：外壁（北面）全景
 
 detail-01.jpg：R階パラペット天端
