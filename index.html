@@ -21,11 +21,10 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ブラウザデフォルト余白を確実に消す */
+    /* ブラウザデフォルト余白をリセット */
     html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      max-width: none !important;
+      margin: 0;
+      padding: 0;
       overflow-x: hidden;
     }
 
@@ -59,46 +58,42 @@
     .site-nav .nav-line { color: #06c755; }
     .site-nav .nav-line:hover { color: #06c755; border-bottom-color: #06c755; }
 
-    /* ① ファーストビュー（Before/After比較型） */
+    /* ① ファーストビュー（Before/After比較型）
+       PC: CSS Grid stacking で images・overlay を同一セルに重ねる
+       position:absolute + 100vw は使わない → 親要素の幅制限問題を根本回避 */
     .hero {
-      position: relative;
-      width: 100vw !important;   /* viewportいっぱい */
-      max-width: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      left: 0;
+      display: grid;
+      grid-template: 1fr / 1fr;   /* 1セルのみ */
+      width: 100%;
       height: 70vh;
       min-height: 360px;
       overflow: hidden;
-    }
-    /* 左右2カラム画像エリア */
-    .hero-images {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;        /* %ではなくvpx基準で確実に全幅 */
-      max-width: none;
-      height: 100%;
-      display: flex;
-      flex-direction: row;
       margin: 0;
       padding: 0;
     }
+    /* 画像コンテナ：同一グリッドセル（images と overlay が重なる） */
+    .hero-images {
+      grid-area: 1 / 1;
+      display: flex;
+      flex-direction: row;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    /* 各パネル：flex で等幅、画像を完全充填 */
     .hero-img-wrap {
       flex: 1;
-      width: 50%;
       min-width: 0;
       position: relative;
       overflow: hidden;
       height: 100%;
-      margin: 0;
-      padding: 0;
     }
-    /* 黒グラデーションオーバーレイ（各パネル） */
+    /* グラデーションオーバーレイ */
     .hero-img-wrap::after {
       content: '';
       position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
+      inset: 0;
       background: linear-gradient(
         to bottom,
         rgba(0,0,0,0.08) 0%,
@@ -108,18 +103,15 @@
       pointer-events: none;
       z-index: 1;
     }
-    /* 画像：親コンテナを完全充填 */
+    /* 画像：親パネルを完全充填 */
     .hero-img-wrap img {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100% !important;
-      height: 100% !important;
-      max-width: none !important;
+      inset: 0;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
-      display: block !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      display: block;
+      max-width: none;
     }
     /* Before/After ラベル */
     .hero-img-label {
@@ -137,23 +129,19 @@
       line-height: 1.5 !important;
     }
     .hero-img-label.after { background: rgba(6,199,85,0.88); }
-    /* パネル間の区切り線 */
+    /* パネル間の区切り線：同一グリッドセルに配置 */
     .hero-divider {
-      position: absolute;
-      top: 0; bottom: 0;
-      left: 50%;
+      grid-area: 1 / 1;
+      justify-self: center;
+      align-self: stretch;
       width: 2px;
       background: rgba(255,255,255,0.35);
-      transform: translateX(-50%);
       z-index: 2;
       pointer-events: none;
     }
-    /* テキスト・CTAオーバーレイ（全幅中央） */
+    /* テキスト・CTAオーバーレイ：同一グリッドセルに配置（画像の上に重なる） */
     .hero-overlay {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      width: 100%;
-      height: 100%;
+      grid-area: 1 / 1;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -377,63 +365,61 @@
 
     /* スマホ */
     @media (max-width: 600px) {
-      /* ヒーロー：高さ自動・縦フロー構成 */
+      /* ヒーロー：グリッドを解除してフレックス縦積みに切り替え */
       .hero {
-        height: auto !important;
-        min-height: 0 !important;
         display: flex;
         flex-direction: column;
+        height: auto !important;
+        min-height: 0 !important;
         overflow: visible;
       }
 
-      /* 画像エリア：absoluteを解除して通常フローへ */
+      /* 画像エリア：グリッドセル配置を解除・縦積み */
       .hero-images {
-        position: relative !important;
-        top: auto !important;
-        left: auto !important;
-        width: 100% !important;
-        height: auto !important;
+        grid-area: unset;
+        height: auto;
         flex-direction: column;
-        display: flex;
+        order: 0;
       }
 
-      /* 施工後（2番目）を先頭・大きく表示 */
+      /* 施工後（2番目）を先頭・大きく */
       .hero-images .hero-img-wrap:nth-child(2) {
         order: -1;
-        height: 58vw;
         flex: none;
-        width: 100% !important;
+        height: 58vw;
+        width: 100%;
       }
 
-      /* 施工前（1番目）を後ろ・小さく表示 */
+      /* 施工前（1番目）を後ろ・小さく */
       .hero-images .hero-img-wrap:nth-child(1) {
         order: 1;
-        height: 38vw;
         flex: none;
-        width: 100% !important;
+        height: 38vw;
+        width: 100%;
       }
 
-      /* スマホでは文字を画像の下に置くためグラデーション不要 */
+      /* 文字を画像下に置くのでグラデーションを軽減 */
       .hero-images .hero-img-wrap::after {
         background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.18) 100%);
       }
 
-      /* テキスト・CTAオーバーレイ：絶対配置を解除・青背景ブロックとして画像の下へ */
+      /* 区切り線は不要 */
+      .hero-divider { display: none; }
+
+      /* テキスト・CTAを画像の下・青背景ブロックとして配置 */
       .hero-overlay {
-        position: static !important;
+        grid-area: unset;
+        order: 2;
         background: #0d3b66;
         padding: 28px 20px 32px;
         pointer-events: auto;
         width: 100%;
-        height: auto !important;
         color: white;
         text-align: center;
         display: flex;
         flex-direction: column;
         align-items: center;
       }
-
-      .hero-divider { display: none; }
 
       .hero-top-label {
         display: block;
