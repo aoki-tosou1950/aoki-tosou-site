@@ -95,10 +95,14 @@
      * 差し替え時はこのファイルを上書きするだけでOK
      */
     /* ─── ① HERO：全幅背景コンテナ ─── */
+    /*
+     * section.hero は body の直接子要素 → ブレイクアウト不要
+     * width: 100% (= body幅 = コンテンツ領域) で自然に全幅になる
+     * 100vw はスクロールバー分 body より広くなり右端にズレが生じるため使わない
+     */
     .hero {
       position: relative;
-      width: 100vw;
-      margin-left: calc(50% - 50vw); /* body 直下でも html overflow-x:hidden と組み合わせることで全幅化 */
+      width: 100%;
       min-height: 620px;
       overflow: hidden;
       background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
