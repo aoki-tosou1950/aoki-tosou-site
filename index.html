@@ -21,14 +21,12 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html {
+    html, body {
       margin: 0;
       padding: 0;
-      overflow-x: hidden; /* body に設定しないこと — body が overflow context になると 100vw ブレイクアウトを body がクリップしてしまう */
+      overflow-x: hidden;
     }
     body {
-      margin: 0;
-      padding: 0;
       font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
       background: #f2f4f7;
       color: #333;
@@ -94,16 +92,12 @@
      * 背景画像: images/hero/hero-bg.jpg
      * 差し替え時はこのファイルを上書きするだけでOK
      */
-    /* ─── ① HERO：全幅背景コンテナ ─── */
-    /*
-     * section.hero は body の直接子要素 → ブレイクアウト不要
-     * width: 100% (= body幅 = コンテンツ領域) で自然に全幅になる
-     * 100vw はスクロールバー分 body より広くなり右端にズレが生じるため使わない
-     */
     .hero {
       position: relative;
-      width: 100%;
-      min-height: 620px;
+      width: 100vw;
+      margin-left: calc(50% - 50vw);
+      height: 86vh;
+      min-height: 540px;
       overflow: hidden;
       background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
       display: flex;
@@ -125,13 +119,12 @@
       z-index: 1;
     }
 
-    /* テキストコンテナ（コンテナ幅に制御） */
     .hero-inner {
       position: relative;
       z-index: 2;
-      width: min(1280px, calc(100% - 40px));
-      margin: 0 auto;
-      padding: 60px 0;
+      width: min(960px, calc(100% - 48px));
+      margin: 0 auto 0 max(48px, calc(50vw - 380px));
+      padding-bottom: 40px;
     }
 
     .hero-eyebrow {
@@ -463,6 +456,7 @@
         margin: 0 auto;
         padding-bottom: 0;
       }
+
       .hero-catch { font-size: 28px !important; max-width: none; }
       .hero-desc  { max-width: none; font-size: 13px !important; }
       .hero-points {
@@ -581,6 +575,8 @@
     </a>
   </div>
 </section>
+
+
 
 <!-- ② 信頼ストリップ -->
 <section class="trust-section">
