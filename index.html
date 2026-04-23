@@ -21,14 +21,13 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html {
+    html, body {
       margin: 0;
       padding: 0;
       overflow-x: hidden;
     }
+
     body {
-      margin: 0;
-      padding: 0;
       font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
       background: #f2f4f7;
       color: #333;
@@ -96,15 +95,14 @@
      */
     .hero {
       position: relative;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      min-height: 620px;
+      width: 100vw;
+      margin-left: calc(50% - 50vw);
+      height: 86vh;
+      min-height: 540px;
       overflow: hidden;
-      background: url('images/hero/hero-bg.jpg') center center / cover no-repeat;
+      background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
       display: flex;
       align-items: center;
-      justify-content: center;
     }
 
     /* ネイビーグラデーションオーバーレイ（中央〜左の暗い帯を補強） */
@@ -125,11 +123,9 @@
     .hero-inner {
       position: relative;
       z-index: 2;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 60px 40px;
-      text-align: left;
+      width: min(960px, calc(100% - 48px));
+      margin: 0 auto 0 max(48px, calc(50vw - 380px));
+      padding-bottom: 40px;
     }
 
     .hero-eyebrow {
