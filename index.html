@@ -21,13 +21,14 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
+    html {
       margin: 0;
       padding: 0;
-      overflow-x: hidden;
+      overflow-x: hidden; /* body に設定しないこと — body が overflow context になると 100vw ブレイクアウトを body がクリップしてしまう */
     }
-
     body {
+      margin: 0;
+      padding: 0;
       font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
       background: #f2f4f7;
       color: #333;
@@ -93,11 +94,12 @@
      * 背景画像: images/hero/hero-bg.jpg
      * 差し替え時はこのファイルを上書きするだけでOK
      */
+    /* ─── ① HERO：全幅背景コンテナ ─── */
     .hero {
       position: relative;
-      width: 100%;
-      height: 86vh;
-      min-height: 540px;
+      width: 100vw;
+      margin-left: calc(50% - 50vw); /* body 直下でも html overflow-x:hidden と組み合わせることで全幅化 */
+      min-height: 620px;
       overflow: hidden;
       background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
       display: flex;
@@ -119,13 +121,13 @@
       z-index: 1;
     }
 
-    /* テキストブロック（ページ本文と同幅に整列） */
+    /* テキストコンテナ（コンテナ幅に制御） */
     .hero-inner {
       position: relative;
       z-index: 2;
-      width: min(960px, calc(100% - 48px));
-      margin: 0 auto 0 max(48px, calc(50vw - 380px)); /* 左余白を広げて右寄せ */
-      padding-bottom: 40px; /* 下寄せ防止 */
+      width: min(1280px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 60px 0;
     }
 
     .hero-eyebrow {
