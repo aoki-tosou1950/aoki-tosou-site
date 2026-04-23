@@ -21,12 +21,14 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
+    html {
       margin: 0;
       padding: 0;
       overflow-x: hidden;
     }
     body {
+      margin: 0;
+      padding: 0;
       font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
       background: #f2f4f7;
       color: #333;
@@ -94,12 +96,12 @@
      */
     .hero {
       position: relative;
-      width: 100vw;
-      margin-left: calc(50% - 50vw);
-      height: 86vh;
-      min-height: 540px;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      min-height: 620px;
       overflow: hidden;
-      background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
+      background: url('images/hero/hero-bg.jpg') center center / cover no-repeat;
       display: flex;
       align-items: center;
     }
@@ -122,9 +124,9 @@
     .hero-inner {
       position: relative;
       z-index: 2;
-      width: min(960px, calc(100% - 48px));
-      margin: 0 auto 0 max(48px, calc(50vw - 380px));
-      padding-bottom: 40px;
+      width: min(1280px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 56px 0;
     }
 
     .hero-eyebrow {
