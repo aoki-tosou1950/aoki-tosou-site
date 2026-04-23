@@ -100,7 +100,7 @@
       height: 86vh;
       min-height: 540px;
       overflow: hidden;
-      background: url('images/hero/hero-bg.jpg') center 30% / cover no-repeat;
+      background: url('images/hero/hero-bg.jpg') 38% 30% / cover no-repeat;
       display: flex;
       align-items: center;
     }
@@ -112,10 +112,10 @@
       inset: 0;
       background: linear-gradient(
         100deg,
-        rgba(5, 14, 36, 0.82)  0%,
-        rgba(5, 14, 36, 0.64)  32%,
-        rgba(5, 14, 36, 0.24)  62%,
-        rgba(5, 14, 36, 0.04) 100%
+        rgba(5, 14, 36, 0.68)  0%,
+        rgba(5, 14, 36, 0.50)  32%,
+        rgba(5, 14, 36, 0.14)  62%,
+        rgba(5, 14, 36, 0.02) 100%
       );
       z-index: 1;
     }
@@ -125,7 +125,7 @@
       position: relative;
       z-index: 2;
       width: min(960px, calc(100% - 48px));
-      margin: 0 auto;
+      margin: 0 auto 0 max(48px, calc(50vw - 380px)); /* 左余白を広げて右寄せ */
       padding-bottom: 40px; /* 下寄せ防止 */
     }
 
