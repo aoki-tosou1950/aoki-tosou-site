@@ -221,12 +221,32 @@
 
     /* ─── ② 信頼ストリップ ─── */
     .trust-section {
-      background: white;
+      background: #f7f9fb;
       border-bottom: 1px solid #dde3eb;
+      padding: 44px 20px 40px;
     }
-    .trust-grid {
+    .trust-inner {
       max-width: 960px;
       margin: 0 auto;
+    }
+    .trust-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .trust-heading {
+      font-size: 22px !important;
+      font-weight: bold;
+      color: #0d3b66;
+      margin-bottom: 10px;
+      line-height: 1.4 !important;
+      letter-spacing: 0.04em;
+    }
+    .trust-lead {
+      font-size: 13px !important;
+      color: #666;
+      line-height: 1.75 !important;
+    }
+    .trust-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
     }
@@ -496,6 +516,8 @@
       }
 
       /* Trust */
+      .trust-heading { font-size: 18px !important; }
+      .trust-lead    { font-size: 12px !important; }
       .trust-grid {
         grid-template-columns: repeat(2, 1fr);
       }
@@ -599,26 +621,32 @@
 
 <!-- ② 信頼ストリップ -->
 <section class="trust-section">
-  <div class="trust-grid">
-    <div class="badge">
-      <div class="badge-num">47年</div>
-      <div class="badge-title">創業47年の実績</div>
-      <div class="badge-sub">1979年（昭和54年）創業<br>地域に根ざした施工実績</div>
+  <div class="trust-inner">
+    <div class="trust-header">
+      <h2 class="trust-heading">選ばれ続ける理由</h2>
+      <p class="trust-lead">大分市を中心に、外壁塗装・屋根塗装・防水工事を自社管理で対応。地域密着の職人施工で、住まいと建物を長く守ります。</p>
     </div>
-    <div class="badge">
-      <div class="badge-num">2,000件+</div>
-      <div class="badge-title">大分市密着</div>
-      <div class="badge-sub">住宅から施設まで<br>豊富な対応実績</div>
-    </div>
-    <div class="badge">
-      <div class="badge-num">国家資格</div>
-      <div class="badge-title">職人施工・自社管理</div>
-      <div class="badge-sub">一級塗装技能士<br>一級建築施工管理技士</div>
-    </div>
-    <div class="badge">
-      <div class="badge-num">無料</div>
-      <div class="badge-title">現地調査・見積もり</div>
-      <div class="badge-sub">外注なし・直接施工<br>費用は納得いくまでご説明</div>
+    <div class="trust-grid">
+      <div class="badge">
+        <div class="badge-num">47年</div>
+        <div class="badge-title">創業47年の実績</div>
+        <div class="badge-sub">1979年（昭和54年）創業<br>地域に根ざした施工実績</div>
+      </div>
+      <div class="badge">
+        <div class="badge-num">2,000件+</div>
+        <div class="badge-title">大分市密着</div>
+        <div class="badge-sub">住宅から施設まで<br>豊富な対応実績</div>
+      </div>
+      <div class="badge">
+        <div class="badge-num">国家資格</div>
+        <div class="badge-title">職人施工・自社管理</div>
+        <div class="badge-sub">一級塗装技能士<br>一級建築施工管理技士</div>
+      </div>
+      <div class="badge">
+        <div class="badge-num">無料</div>
+        <div class="badge-title">現地調査・見積もり</div>
+        <div class="badge-sub">外注なし・直接施工<br>費用は納得いくまでご説明</div>
+      </div>
     </div>
   </div>
 </section>
