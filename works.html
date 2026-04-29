@@ -109,9 +109,10 @@
       background: #0d3b66;
       color: white;
       text-align: center;
-      font-size: 11px;
+      font-size: 11px !important;
       font-weight: bold;
-      padding: 4px 6px;
+      padding: 5px 8px;
+      letter-spacing: 0.08em;
     }
     .card-photo-label.after { background: #06c755; }
     .card-photo img {
@@ -133,22 +134,29 @@
 
     /* カード本文 */
     .card-body {
-      padding: 16px;
+      padding: 20px;
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
     }
 
     .card-title {
-      font-size: 15px;
-      font-weight: bold;
-      line-height: 1.5;
+      font-size: 16px !important;
+      font-weight: bold !important;
+      line-height: 1.55 !important;
+      color: #1a1a2e;
     }
 
     .card-region {
-      font-size: 12px;
-      color: #666;
+      font-size: 12px !important;
+      color: #555;
+    }
+
+    .card-desc {
+      font-size: 13px !important;
+      color: #555;
+      line-height: 1.75 !important;
     }
 
     .tag-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -157,27 +165,33 @@
       color: white;
       padding: 3px 10px;
       border-radius: 20px;
-      font-size: 12px;
+      font-size: 12px !important;
     }
+    .tag.tag-roof       { background: #7a4a1a; }
+    .tag.tag-waterproof { background: #1a6e42; }
+    .tag.tag-wood       { background: #6a5a2a; }
+    .tag.tag-iron       { background: #4a5068; }
+    .tag.tag-extra      { background: #5a6470; }
 
     /* 詳細を見るボタン */
     .card-footer {
       margin-top: auto;
-      padding-top: 4px;
+      padding-top: 8px;
     }
     .btn-detail {
       display: block;
       text-align: center;
-      padding: 11px;
-      border: 2px solid #0d3b66;
-      color: #0d3b66;
+      padding: 13px 16px;
+      background: #0d3b66;
+      color: white !important;
       border-radius: 6px;
-      font-size: 14px;
-      font-weight: bold;
+      font-size: 14px !important;
+      font-weight: bold !important;
       text-decoration: none;
-      transition: background 0.2s, color 0.2s;
+      transition: background 0.2s, transform 0.2s;
+      letter-spacing: 0.05em;
     }
-    .btn-detail:hover { background: #0d3b66; color: white; }
+    .btn-detail:hover { background: #08263f; transform: translateY(-2px); }
 
     /* 安心材料セクション */
     .trust-section {
@@ -288,7 +302,8 @@
       h3 { font-size: 20px; }
       .page-hero h2   { font-size: 22px; }
       .works-grid     { grid-template-columns: 1fr; gap: 16px; }
-      .card-title     { font-size: 15px; }
+      .card-title     { font-size: 15px !important; }
+      .card-desc      { font-size: 12px !important; }
       .fab-line       { bottom: 16px; right: 16px; font-size: 14px; padding: 13px 18px; }
     }
   </style>
@@ -387,9 +402,10 @@
       <div class="card-body">
         <p class="card-title">臼杵市O様邸 外壁塗装工事</p>
         <p class="card-region">📍 臼杵市</p>
+        <p class="card-desc">外壁のひび割れ補修・高圧洗浄を丁寧に実施。長期耐候性塗料で美しく仕上げました。</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
-          <span class="tag">ベランダ床防水</span>
+          <span class="tag tag-waterproof">ベランダ床防水</span>
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="works/case001.html">詳細を見る →</a>
@@ -414,10 +430,11 @@
       <div class="card-body">
         <p class="card-title">臼杵市K様邸 塗装工事</p>
         <p class="card-region">📍 臼杵市</p>
+        <p class="card-desc">木部・付帯物まで丁寧に塗り直し、素材の質感を活かした仕上がりに。</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
-          <span class="tag">木部塗装</span>
-          <span class="tag">付帯物塗装</span>
+          <span class="tag tag-wood">木部塗装</span>
+          <span class="tag tag-extra">付帯物塗装</span>
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="works/case002.html">詳細を見る →</a>
@@ -442,10 +459,11 @@
       <div class="card-body">
         <p class="card-title">大分市M様邸 屋根・外壁塗装工事</p>
         <p class="card-region">📍 大分市</p>
+        <p class="card-desc">屋根・外壁を同時施工して足場費用を節約。艶消し仕上げで品のある外観に。</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
-          <span class="tag">屋根塗装</span>
-          <span class="tag">付帯物塗装</span>
+          <span class="tag tag-roof">屋根塗装</span>
+          <span class="tag tag-extra">付帯物塗装</span>
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="works/case003.html">詳細を見る →</a>
@@ -470,10 +488,11 @@
       <div class="card-body">
         <p class="card-title">別府市 宿泊施設 屋上防水・外壁改修工事</p>
         <p class="card-region">📍 別府市</p>
+        <p class="card-desc">屋上の防水層を全面刷新し、外壁・鉄部の経年劣化も同時に改修しました。</p>
         <div class="tag-wrap">
-          <span class="tag">屋上防水</span>
+          <span class="tag tag-waterproof">屋上防水</span>
           <span class="tag">外壁塗装</span>
-          <span class="tag">鉄部塗装</span>
+          <span class="tag tag-iron">鉄部塗装</span>
         </div>
         <div class="card-footer">
           <a class="btn-detail" href="works/case004.html">詳細を見る →</a>
@@ -496,9 +515,10 @@
       <div class="card-body">
         <p class="card-title">大分市 T様邸 外壁・屋根塗装工事</p>
         <p class="card-region">📍 大分市</p>
+        <p class="card-desc">外壁・屋根のトータル塗装。色選びから丁寧にご提案しました。</p>
         <div class="tag-wrap">
           <span class="tag">外壁塗装</span>
-          <span class="tag">屋根塗装</span>
+          <span class="tag tag-roof">屋根塗装</span>
         </div>
         <div class="card-footer">
           <!-- <a class="btn-detail" href="works/case005.html">詳細を見る →</a> -->
@@ -521,8 +541,9 @@
       <div class="card-body">
         <p class="card-title">大分市 A様邸 防水工事</p>
         <p class="card-region">📍 大分市</p>
+        <p class="card-desc">バルコニー・屋上の防水工事で雨漏りリスクを根本から解消しました。</p>
         <div class="tag-wrap">
-          <span class="tag">防水工事</span>
+          <span class="tag tag-waterproof">防水工事</span>
         </div>
         <div class="card-footer">
           <!-- <a class="btn-detail" href="works/case006.html">詳細を見る →</a> -->
