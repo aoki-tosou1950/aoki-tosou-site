@@ -279,7 +279,65 @@
       line-height: 1.65 !important;
     }
 
-    /* ─── ③ 施工事例 ─── */
+    /* ─── ③ 対応工事メニュー ─── */
+    .services-section {
+      background: white;
+      border-bottom: 1px solid #e8edf3;
+      padding: 56px 20px 52px;
+    }
+    .services-inner {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 32px;
+    }
+    .service-card {
+      background: #f7f9fb;
+      border-radius: 10px;
+      padding: 24px 16px 20px;
+      text-align: center;
+      border: 1px solid #e8edf3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .service-card--extra {
+      grid-column: span 2;
+      background: #f0fdf5;
+      border-color: #06c755;
+    }
+    .service-icon {
+      font-size: 32px !important;
+      line-height: 1 !important;
+    }
+    .service-name {
+      font-size: 14px !important;
+      font-weight: bold;
+      color: #0d3b66;
+      line-height: 1.4 !important;
+    }
+    .service-desc {
+      font-size: 11px !important;
+      color: #888;
+      line-height: 1.65 !important;
+    }
+    .service-link {
+      display: inline-block;
+      font-size: 11px !important;
+      color: #06c755;
+      font-weight: bold;
+      text-decoration: none;
+      margin-top: 4px;
+      line-height: 1.4 !important;
+    }
+    .service-link:hover { text-decoration: underline; }
+
+    /* ─── ④ 施工事例 ─── */
     .cases-section {
       max-width: 960px;
       margin: 0 auto;
@@ -627,6 +685,12 @@
       .badge:nth-child(4) { border-bottom: none; }
       .badge-num { font-size: 22px !important; }
 
+      /* Services */
+      .services-section { padding: 44px 16px 40px; }
+      .services-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .service-icon { font-size: 28px !important; }
+      .service-name { font-size: 13px !important; }
+
       /* Cases */
       .cases-section { padding: 52px 16px 40px; }
       .cases-grid { grid-template-columns: 1fr; gap: 16px; }
@@ -759,7 +823,62 @@
   </div>
 </section>
 
-<!-- ③ 施工事例 -->
+<!-- ③ 対応工事メニュー -->
+<section class="services-section">
+  <div class="services-inner">
+    <p class="section-label">SERVICES</p>
+    <h2 class="section-heading">対応工事メニュー</h2>
+    <p class="section-heading-sub">外壁・屋根・防水から軽作業まで、幅広い工事に対応しています。</p>
+    <div class="services-grid">
+
+      <div class="service-card">
+        <div class="service-icon">🏠</div>
+        <div class="service-name">外壁塗装</div>
+        <div class="service-desc">ひび割れ補修から塗り替えまで丁寧に対応</div>
+      </div>
+
+      <div class="service-card">
+        <div class="service-icon">🏚</div>
+        <div class="service-name">屋根塗装</div>
+        <div class="service-desc">遮熱・防水効果の高い塗料で長持ちに</div>
+      </div>
+
+      <div class="service-card">
+        <div class="service-icon">💧</div>
+        <div class="service-name">防水工事</div>
+        <div class="service-desc">屋上・ベランダ・バルコニーの防水施工</div>
+      </div>
+
+      <div class="service-card">
+        <div class="service-icon">🔒</div>
+        <div class="service-name">シーリング</div>
+        <div class="service-desc">目地・サッシ周りの防水処理</div>
+      </div>
+
+      <div class="service-card">
+        <div class="service-icon">🪵</div>
+        <div class="service-name">木部塗装</div>
+        <div class="service-desc">軒天・破風板・ウッドデッキなど</div>
+      </div>
+
+      <div class="service-card">
+        <div class="service-icon">⚙️</div>
+        <div class="service-name">鉄部塗装</div>
+        <div class="service-desc">雨戸・シャッター・フェンスの錆止め塗装</div>
+      </div>
+
+      <div class="service-card service-card--extra">
+        <div class="service-icon">🔧</div>
+        <div class="service-name">軽作業</div>
+        <div class="service-desc">網戸張替え・草刈り・高圧洗浄など</div>
+        <a class="service-link" href="#cta">ご依頼はこちら →</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ④ 施工事例 -->
 <section class="cases-section">
   <p class="section-label">WORKS</p>
   <h2 class="section-heading">施工事例</h2>
@@ -843,7 +962,7 @@
 </section>
 
 <!-- LINE CTA -->
-<section class="cta-section">
+<section class="cta-section" id="cta">
   <div class="cta-inner">
     <h2 class="cta-heading">塗装や防水のこと、まずはLINEでご相談ください</h2>
     <ul class="cta-points">
