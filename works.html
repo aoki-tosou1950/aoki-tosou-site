@@ -134,8 +134,9 @@
     /* 施工前後画像エリア */
     .card-photos {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
     }
+    .card-photo:first-child { display: none; }
     .card-photo {
       display: flex;
       flex-direction: column;
