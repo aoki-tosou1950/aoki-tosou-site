@@ -112,7 +112,7 @@
     /* カードグリッド */
     .works-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      grid-template-columns: 1fr;
       gap: 24px;
     }
 
@@ -153,13 +153,13 @@
     .card-photo-label.after { background: #06c755; }
     .card-photo img {
       width: 100%;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 16 / 9;
       object-fit: cover;
       display: block;
     }
     .card-photo .no-image {
       width: 100%;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 16 / 9;
       background: #e8ecf0;
       display: flex;
       align-items: center;
