@@ -117,7 +117,8 @@
     function isExternalFormUrl(href) {
       try {
         var parsed = new URL(href, window.location.href);
-        return parsed.href.indexOf('https://aokitosou-miniapp.web.app/inquiry-other.html') === 0;
+        return parsed.href.indexOf('https://aokitosou-miniapp.web.app/inquiry-other.html') === 0
+          || parsed.href.indexOf('https://aokitosou-miniapp.web.app/index.html') === 0;
       } catch (err) {
         return false;
       }
