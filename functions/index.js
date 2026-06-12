@@ -48,7 +48,7 @@ exports.submitForm = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['LINE_ACCESS_TOKEN']
+    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID']
   },
   async (req, res) => {
     // --- CORS チェック ---
@@ -75,6 +75,7 @@ exports.submitForm = onRequest(
       address,
       phone,
       message,
+      datetime,
       source,
       contact_channel: contactChannel,
       first_seen_at: firstSeenAt,
@@ -121,6 +122,7 @@ exports.submitForm = onRequest(
         address:   trimmedAddress,
         phone:     trimmedPhone,
         message:   trimmedMessage,
+        datetime:  optionalString(datetime, 200),
         source: optionalString(source, 100),
         contact_channel: optionalString(contactChannel, 30),
         first_seen_at: optionalString(firstSeenAt, 60),
@@ -129,19 +131,21 @@ exports.submitForm = onRequest(
         createdAt: FieldValue.serverTimestamp()
       });
 
-      // --- LINE Messaging API broadcast ---
+      // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
       const lineToken = process.env.LINE_ACCESS_TOKEN;
-      if (lineToken) {
+      const adminUserId = process.env.ADMIN_LINE_USER_ID;
+      if (lineToken && adminUserId) {
         const lineMessage =
           `【お問い合わせ受信】\n` +
           `■ 名前: ${trimmedName}\n` +
           `■ 住所: ${trimmedAddress}\n` +
           `■ 電話: ${trimmedPhone}\n` +
+          `■ 日時: ${optionalString(datetime, 200) || 'なし'}\n` +
           `■ メッセージ: ${trimmedMessage || 'なし'}`;
 
         await axios.post(
-          'https://api.line.me/v2/bot/message/broadcast',
-          { messages: [{ type: 'text', text: lineMessage }] },
+          'https://api.line.me/v2/bot/message/push',
+          { to: adminUserId, messages: [{ type: 'text', text: lineMessage }] },
           {
             headers: {
               Authorization: `Bearer ${lineToken}`,
@@ -149,6 +153,8 @@ exports.submitForm = onRequest(
             }
           }
         );
+      } else {
+        console.warn('submitForm: LINE notification skipped — LINE_ACCESS_TOKEN or ADMIN_LINE_USER_ID not set');
       }
 
       return res.status(200).json({ success: true, message: 'お問い合わせを受け付けました。' });
