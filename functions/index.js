@@ -10,7 +10,8 @@ const db = getFirestore();
 
 const ALLOWED_ORIGINS = [
   'https://aoki-tosou.net',
-  'https://www.aoki-tosou.net'
+  'https://www.aoki-tosou.net',
+  'https://aokitosou-miniapp.web.app'
 ];
 
 function setCorsHeaders(req, res) {
@@ -130,8 +131,14 @@ exports.submitForm = onRequest(
         referrer: optionalString(referrer, 500),
         createdAt: FieldValue.serverTimestamp()
       });
+    } catch (err) {
+      console.error('submitForm: Firestore save failed:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
 
-      // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
+    // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
+    // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
+    try {
       const lineToken = process.env.LINE_ACCESS_TOKEN;
       const adminUserId = process.env.ADMIN_LINE_USER_ID;
       if (lineToken && adminUserId) {
@@ -156,12 +163,11 @@ exports.submitForm = onRequest(
       } else {
         console.warn('submitForm: LINE notification skipped — LINE_ACCESS_TOKEN or ADMIN_LINE_USER_ID not set');
       }
-
-      return res.status(200).json({ success: true, message: 'お問い合わせを受け付けました。' });
-    } catch (err) {
-      console.error('submitForm error:', err);
-      return res.status(500).json({ error: 'Internal Server Error' });
+    } catch (lineErr) {
+      console.error('submitForm: LINE push failed (Firestore save succeeded):', lineErr);
     }
+
+    return res.status(200).json({ success: true, message: 'お問い合わせを受け付けました。' });
   }
 );
 
