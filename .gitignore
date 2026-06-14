@@ -2,3 +2,9 @@ functions/.env
 functions/.env.*
 functions/node_modules/
 .claude/
+
+# 内部運用MD・調査メモ・一時バックアップ（ローカル専用・Git管理しない）
+CLAUDE.md
+AGENTS.md
+report.md
+*.bak
