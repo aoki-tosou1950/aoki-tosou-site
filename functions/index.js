@@ -235,3 +235,110 @@ exports.logInteraction = onRequest(
     }
   }
 );
+
+exports.submitOtherInquiry = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID']
+  },
+  async (req, res) => {
+    // --- CORS チェック（allowlist 方式。web.app は登録済み）---
+    if (!setCorsHeaders(req, res)) {
+      return res.status(403).json({ error: 'Forbidden: Origin not allowed' });
+    }
+
+    if (req.method === 'OPTIONS') {
+      return res.status(204).send('');
+    }
+
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    // --- Content-Type チェック ---
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.includes('application/json')) {
+      return res.status(415).json({ error: 'Content-Type must be application/json' });
+    }
+
+    let body;
+    try {
+      body = parseRequestBody(req);
+    } catch (err) {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+
+    const b = body || {};
+
+    // --- 必須フィールドチェック ---
+    const trimmedName = optionalString(b.name, 50);
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+
+    const works = Array.isArray(b.works)
+      ? b.works.map((w) => optionalString(w, 50)).filter(Boolean).slice(0, 20)
+      : [];
+
+    const data = {
+      name:   trimmedName,
+      city:   optionalString(b.city, 200),
+      date1:  optionalString(b.date1, 20),
+      time1:  optionalString(b.time1, 20),
+      date2:  optionalString(b.date2, 20),
+      time2:  optionalString(b.time2, 20),
+      date3:  optionalString(b.date3, 20),
+      time3:  optionalString(b.time3, 20),
+      works,
+      detail: optionalString(b.detail, 1000),
+      createdAt: FieldValue.serverTimestamp()
+    };
+
+    // --- Firestore 保存 ---
+    try {
+      await db.collection('other_inquiries').add(data);
+    } catch (err) {
+      console.error('submitOtherInquiry: Firestore save failed:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+    // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
+    // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
+    try {
+      const lineToken = process.env.LINE_ACCESS_TOKEN;
+      const adminUserId = process.env.ADMIN_LINE_USER_ID;
+      if (lineToken && adminUserId) {
+        const worksText = works.length > 0 ? works.join('・') : 'なし';
+        const datesText =
+          `第1希望: ${data.date1 || '-'} ${data.time1 || '-'}\n` +
+          `第2希望: ${data.date2 || '-'} ${data.time2 || '-'}\n` +
+          `第3希望: ${data.date3 || '-'} ${data.time3 || '-'}`;
+        const lineMessage =
+          `【その他のご依頼】\n\n` +
+          `名前: ${data.name}\n` +
+          `住所: ${data.city || 'なし'}\n` +
+          `依頼内容: ${worksText}\n` +
+          `${datesText}\n` +
+          `備考: ${data.detail || 'なし'}`;
+
+        await axios.post(
+          'https://api.line.me/v2/bot/message/push',
+          { to: adminUserId, messages: [{ type: 'text', text: lineMessage }] },
+          {
+            headers: {
+              Authorization: `Bearer ${lineToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      } else {
+        console.warn('submitOtherInquiry: LINE notification skipped — LINE_ACCESS_TOKEN or ADMIN_LINE_USER_ID not set');
+      }
+    } catch (lineErr) {
+      console.error('submitOtherInquiry: LINE push failed (Firestore save succeeded):', lineErr);
+    }
+
+    return res.status(200).json({ success: true });
+  }
+);
