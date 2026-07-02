@@ -4,6 +4,7 @@
     var STORAGE_SOURCE = 'aoki_analytics_source';
     var STORAGE_FIRST_SEEN = 'aoki_analytics_first_seen_at';
     var STORAGE_LANDING_PAGE = 'aoki_analytics_landing_page';
+    var SESSION_LANDING_PREFIX = 'aoki_analytics_landing_page_view:';
 
     function nowIso() {
       return new Date().toISOString();
@@ -25,6 +26,22 @@
       }
     }
 
+    function safeSessionGet(key) {
+      try {
+        return window.sessionStorage.getItem(key) || '';
+      } catch (err) {
+        return '';
+      }
+    }
+
+    function safeSessionSet(key, value) {
+      try {
+        window.sessionStorage.setItem(key, value);
+      } catch (err) {
+        // Ignore storage failures so normal navigation always continues.
+      }
+    }
+
     function getFromParam() {
       try {
         return new URLSearchParams(window.location.search).get('from') || '';
@@ -39,6 +56,10 @@
 
     function referrer() {
       return document.referrer || '';
+    }
+
+    function currentPathname() {
+      return window.location.pathname || '/';
     }
 
     function initAttribution() {
@@ -103,6 +124,21 @@
       } catch (err) {
         // Logging must never block LINE, form, or phone actions.
       }
+    }
+
+    function landingSessionKey(from) {
+      return SESSION_LANDING_PREFIX + from + ':' + currentPathname();
+    }
+
+    function logLandingPageView() {
+      var from = getFromParam();
+      if (!from) return;
+
+      var key = landingSessionKey(from);
+      if (safeSessionGet(key)) return;
+
+      safeSessionSet(key, '1');
+      sendLog('landing_page_view', 'site_landing');
     }
 
     function isLineUrl(href) {
@@ -176,6 +212,7 @@
     }
 
     initAttribution();
+    logLandingPageView();
     bindClicks();
 
     window.aokiAnalytics = {
