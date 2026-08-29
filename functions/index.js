@@ -4,9 +4,25 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const {
+  authorizeBearer,
+  createFunnelStore,
+  dashboardPayload,
+  jstDateKey,
+  normalizeEvent,
+  normalizeSalesDays,
+  periodBounds,
+  shiftDateKey,
+  verifyLineSignature
+} = require('./lib/funnel');
 
 initializeApp();
 const db = getFirestore();
+const DASHBOARD_HTML = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
+const { recordInternalMetric, recordLineEvent, recordWebEvent } = createFunnelStore(db);
 
 const ALLOWED_ORIGINS = [
   'https://aoki-tosou.net',
@@ -43,6 +59,40 @@ function parseRequestBody(req) {
 
   if (!rawBody) return {};
   return JSON.parse(rawBody);
+}
+
+function requireDashboardToken(req, res) {
+  if (!authorizeBearer(req.headers.authorization, process.env.FUNNEL_DASHBOARD_TOKEN)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+async function getLineInsight() {
+  const token = process.env.LINE_ACCESS_TOKEN;
+  if (!token) return { available: false, reason: 'LINE_ACCESS_TOKEN未設定' };
+  const date = shiftDateKey(jstDateKey(new Date()), -1).replace(/-/g, '');
+  try {
+    const response = await axios.get(`https://api.line.me/v2/bot/insight/followers?date=${date}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 8000
+    });
+    const data = response.data || {};
+    if (data.status !== 'ready') return { available: false, date, reason: `LINE統計状態: ${data.status || 'unknown'}` };
+    return {
+      available: true,
+      date,
+      followersCumulative: data.followers,
+      blocks: data.blocks,
+      targetedReaches: data.targetedReaches,
+      currentFriends: null,
+      currentFriendsReason: 'Messaging APIは正確な現在友だち数を返さないため未表示'
+    };
+  } catch (error) {
+    console.error('getLineInsight failed:', error.response && error.response.status || error.message);
+    return { available: false, date, reason: 'LINE統計APIから取得できませんでした' };
+  }
 }
 
 exports.submitForm = onRequest(
@@ -118,7 +168,7 @@ exports.submitForm = onRequest(
 
     try {
       // --- Firestore 保存 ---
-      await db.collection('submissions').add({
+      const submissionRef = await db.collection('submissions').add({
         name:      trimmedName,
         address:   trimmedAddress,
         phone:     trimmedPhone,
@@ -129,8 +179,15 @@ exports.submitForm = onRequest(
         first_seen_at: optionalString(firstSeenAt, 60),
         landing_page: optionalString(landingPage, 500),
         referrer: optionalString(referrer, 500),
+        formType: 'survey',
+        userAgent: optionalString(req.headers['user-agent'], 500),
         createdAt: FieldValue.serverTimestamp()
       });
+      try {
+        await recordInternalMetric('inquirySubmits', `form_${submissionRef.id}`, source || 'フォーム', new Date());
+      } catch (metricError) {
+        console.error('submitForm: funnel metric failed:', metricError);
+      }
     } catch (err) {
       console.error('submitForm: Firestore save failed:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
@@ -203,32 +260,28 @@ exports.logInteraction = onRequest(
       return res.status(400).json({ error: 'Invalid JSON body' });
     }
 
-    const {
-      event_type: eventType,
-      contact_channel: contactChannel,
-      source,
-      landing_page: landingPage,
-      current_page: currentPage,
-      referrer
-    } = body || {};
-
-    const trimmedEventType = optionalString(eventType, 50);
-    if (!trimmedEventType) {
-      return res.status(400).json({ error: 'event_type is required' });
+    if (!body.event_id) body.event_id = `legacy_${crypto.randomUUID().replace(/-/g, '')}`;
+    let event;
+    try {
+      event = normalizeEvent(body);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
     }
 
     try {
       await db.collection('interaction_logs').add({
-        event_type: trimmedEventType,
-        contact_channel: optionalString(contactChannel, 30),
-        source: optionalString(source, 100) || '不明',
-        landing_page: optionalString(landingPage, 500),
-        current_page: optionalString(currentPage, 500),
-        referrer: optionalString(referrer, 500),
+        event_type: event.eventType,
+        contact_channel: event.contactChannel,
+        source: event.source,
+        landing_page: event.landingPage,
+        current_page: event.currentPage,
+        referrer: event.referrer,
         created_at: FieldValue.serverTimestamp()
       });
 
-      return res.status(200).json({ success: true });
+      const result = await recordWebEvent(event, new Date());
+
+      return res.status(200).json({ success: true, aggregate: result });
     } catch (err) {
       console.error('logInteraction error:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
@@ -292,12 +345,22 @@ exports.submitOtherInquiry = onRequest(
       time3:  optionalString(b.time3, 20),
       works,
       detail: optionalString(b.detail, 1000),
+      source: optionalString(b.source, 100),
+      landing_page: optionalString(b.landing_page, 500),
+      referrer: optionalString(b.referrer, 500),
+      formType: 'other',
+      userAgent: optionalString(req.headers['user-agent'], 500),
       createdAt: FieldValue.serverTimestamp()
     };
 
     // --- Firestore 保存 ---
     try {
-      await db.collection('other_inquiries').add(data);
+      const inquiryRef = await db.collection('other_inquiries').add(data);
+      try {
+        await recordInternalMetric('inquirySubmits', `form_${inquiryRef.id}`, data.source || 'フォーム', new Date());
+      } catch (metricError) {
+        console.error('submitOtherInquiry: funnel metric failed:', metricError);
+      }
     } catch (err) {
       console.error('submitOtherInquiry: Firestore save failed:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
@@ -340,5 +403,126 @@ exports.submitOtherInquiry = onRequest(
     }
 
     return res.status(200).json({ success: true });
+  }
+);
+
+exports.lineWebhook = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['LINE_CHANNEL_SECRET']
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+    const rawBody = Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from('');
+    if (!verifyLineSignature(rawBody, req.headers['x-line-signature'], process.env.LINE_CHANNEL_SECRET)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(rawBody.toString('utf8'));
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+
+    try {
+      let recorded = 0;
+      for (const event of Array.isArray(payload.events) ? payload.events : []) {
+        if (await recordLineEvent(event)) recorded += 1;
+      }
+      return res.status(200).json({ success: true, recorded });
+    } catch (error) {
+      console.error('lineWebhook failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+exports.syncSalesFunnel = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    let body;
+    try {
+      body = parseRequestBody(req);
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+    let days;
+    try {
+      days = normalizeSalesDays(body.days);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    try {
+      const batch = db.batch();
+      days.forEach((day) => {
+        batch.set(db.collection('funnel_sales_daily').doc(day.date), Object.assign({}, day, {
+          source: 'aoki-sales-os',
+          syncedAt: FieldValue.serverTimestamp()
+        }));
+      });
+      batch.set(db.collection('funnel_meta').doc('sales_sync'), {
+        source: optionalString(body.source, 100) || 'aoki-sales-os',
+        dayCount: days.length,
+        syncedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      await batch.commit();
+      return res.status(200).json({ success: true, dayCount: days.length });
+    } catch (error) {
+      console.error('syncSalesFunnel failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+exports.getFunnelDashboard = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN', 'LINE_ACCESS_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period)
+      ? req.query.period
+      : 'thisMonth';
+    const bounds = periodBounds(period, new Date());
+
+    try {
+      const [siteSnapshot, salesSnapshot, lineInsight] = await Promise.all([
+        db.collection('funnel_daily').where('date', '>=', bounds.start).where('date', '<=', bounds.end).get(),
+        db.collection('funnel_sales_daily').where('date', '>=', bounds.start).where('date', '<=', bounds.end).get(),
+        getLineInsight()
+      ]);
+      const siteRows = siteSnapshot.docs.map((doc) => doc.data());
+      const salesRows = salesSnapshot.docs.map((doc) => doc.data());
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(dashboardPayload(Object.assign({ key: period }, bounds), siteRows, salesRows, lineInsight));
+    } catch (error) {
+      console.error('getFunnelDashboard failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+exports.funnelDashboard = onRequest(
+  {
+    region: 'us-central1',
+    cors: false
+  },
+  (req, res) => {
+    if (req.method !== 'GET') return res.status(405).send('Method Not Allowed');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.status(200).send(DASHBOARD_HTML);
   }
 );

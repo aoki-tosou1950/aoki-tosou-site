@@ -3,6 +3,7 @@
   "description": "Cloud Functions for aoki-tosou-site",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
+    "test": "node --test test/*.test.js",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },

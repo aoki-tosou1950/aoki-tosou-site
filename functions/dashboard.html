@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>青木塗装 集客ファネル</title>
+  <style>
+    :root{--navy:#0d3b66;--blue:#1769aa;--green:#16835d;--line:#dce5ed;--ink:#17212b;--muted:#687684;--bg:#f4f7f9;--white:#fff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif}
+    main{width:min(960px,calc(100% - 28px));margin:28px auto 48px}.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}
+    h1{font-size:clamp(22px,4vw,32px);margin:0;color:var(--navy)}.subtitle{margin:6px 0 0;color:var(--muted);font-size:13px}
+    .periods{display:flex;gap:6px;flex-wrap:wrap}.periods button,.auth button{border:0;border-radius:999px;padding:9px 14px;background:#e3ebf2;color:var(--navy);font-weight:700;cursor:pointer}
+    .periods button.active,.auth button{background:var(--navy);color:#fff}.card{background:var(--white);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 26px rgba(25,52,74,.07)}
+    .auth{padding:22px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.auth label{font-weight:700}.auth input{min-width:250px;flex:1;border:1px solid #bdcbd6;border-radius:9px;padding:11px;font-size:16px}
+    .error{color:#a52a2a;font-weight:700;margin:12px 0}.hidden{display:none!important}.funnel{padding:22px}.stage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;width:var(--width);min-width:54%;margin:0 auto;background:linear-gradient(90deg,var(--navy),var(--blue));color:#fff;border-radius:11px;padding:14px 18px}
+    .stage-label{font-weight:700}.stage-value{text-align:right;font-size:clamp(24px,5vw,38px);font-weight:800;line-height:1}.connector{text-align:center;color:var(--muted);height:38px;line-height:18px;font-size:12px}.connector:after{content:"↓";display:block;font-size:20px;color:#8ba0b1}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.metric{padding:17px}.metric b{display:block;font-size:25px;color:var(--navy);margin-top:5px}.metric small{color:var(--muted)}
+    .lower{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px}.panel{padding:20px}.panel h2{font-size:17px;margin:0 0 14px;color:var(--navy)}
+    table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:9px 6px;border-bottom:1px solid var(--line);text-align:left}th:last-child,td:last-child{text-align:right}.note{font-size:12px;color:var(--muted);line-height:1.6}.stamp{text-align:right;color:var(--muted);font-size:11px;margin-top:12px}
+    @media(max-width:700px){.top{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:repeat(2,1fr)}.lower{grid-template-columns:1fr}.stage{min-width:78%}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div><h1>青木塗装 集客ファネル</h1><p class="subtitle">知られる → 反応 → 商談 → 受注</p></div>
+    <div class="periods" aria-label="表示期間">
+      <button data-period="thisMonth" class="active">今月</button><button data-period="lastMonth">先月</button><button data-period="thisWeek">今週</button>
+    </div>
+  </div>
+  <section id="auth" class="auth card">
+    <label for="token">閲覧トークン</label><input id="token" type="password" autocomplete="current-password"><button id="load">表示</button>
+  </section>
+  <p id="error" class="error hidden" role="alert"></p>
+  <section id="content" class="hidden">
+    <div id="funnel" class="funnel card"></div>
+    <div id="metrics" class="grid"></div>
+    <div class="lower">
+      <section class="panel card"><h2>主な流入元</h2><table><thead><tr><th>流入元</th><th>訪問者</th></tr></thead><tbody id="sources"></tbody></table></section>
+      <section class="panel card"><h2>LINEの状態</h2><div id="line"></div></section>
+    </div>
+    <p id="stamp" class="stamp"></p>
+  </section>
+</main>
+<script>
+(function(){
+  'use strict';
+  var tokenInput=document.getElementById('token'),error=document.getElementById('error'),content=document.getElementById('content');
+  var period='thisMonth';
+  function esc(v){var d=document.createElement('div');d.textContent=String(v==null?'':v);return d.innerHTML;}
+  function endpoint(){return new URL('/getFunnelDashboard',window.location.href).toString();}
+  function showError(message){error.textContent=message;error.classList.remove('hidden');content.classList.add('hidden');}
+  function render(data){
+    error.classList.add('hidden');content.classList.remove('hidden');
+    document.getElementById('funnel').innerHTML=data.stages.map(function(s,i){
+      var width=Math.max(56,100-i*6),rate=s.conversionRate==null?'':s.conversionRate+'%';
+      return (i?'<div class="connector">'+esc(rate)+'</div>':'')+'<div class="stage" style="--width:'+width+'%"><span class="stage-label">'+esc(s.label)+'</span><strong class="stage-value">'+Number(s.value||0).toLocaleString('ja-JP')+'</strong></div>';
+    }).join('');
+    var cards=[['PV','pageViews'],['LINEクリック','lineClicks'],['電話タップ','phoneClicks'],['フォーム送信','inquirySubmits'],['LINE解除 / block相当','lineUnfollows'],['営業OS問い合わせ','inquiries']];
+    document.getElementById('metrics').innerHTML=cards.map(function(c){return '<div class="metric card"><small>'+c[0]+'</small><b>'+Number(data.metrics[c[1]]||0).toLocaleString('ja-JP')+'</b></div>';}).join('');
+    var sourceRows=(data.topSources||[]).map(function(s){return '<tr><td>'+esc(s.source)+'</td><td>'+Number(s.visitors||0).toLocaleString('ja-JP')+'</td></tr>';}).join('');
+    document.getElementById('sources').innerHTML=sourceRows||'<tr><td colspan="2">まだデータがありません</td></tr>';
+    var line=data.lineInsight||{};
+    document.getElementById('line').innerHTML=line.available
+      ? '<p><b>累計友だち追加 '+Number(line.followersCumulative||0).toLocaleString('ja-JP')+'</b><br>ブロック '+Number(line.blocks||0).toLocaleString('ja-JP')+'<br>ターゲットリーチ '+Number(line.targetedReaches||0).toLocaleString('ja-JP')+'</p><p class="note">基準日 '+esc(line.date)+'。現在友だち数はAPIで正確に取得できないため推測表示しません。</p>'
+      : '<p class="note">'+esc(line.reason||'LINE統計未取得')+'</p>';
+    document.getElementById('stamp').textContent=data.period.start+' 〜 '+data.period.end+'｜更新 '+new Date(data.generatedAt).toLocaleString('ja-JP');
+  }
+  async function load(){
+    var token=tokenInput.value.trim();if(!token){showError('閲覧トークンを入力してください。');return;}
+    sessionStorage.setItem('aoki_funnel_token',token);
+    try{var response=await fetch(endpoint()+'?period='+encodeURIComponent(period),{headers:{Authorization:'Bearer '+token}});if(!response.ok)throw new Error(response.status===401?'閲覧トークンが正しくありません。':'集計データを取得できませんでした。');render(await response.json());}catch(e){showError(e.message||'集計データを取得できませんでした。');}
+  }
+  document.getElementById('load').addEventListener('click',load);tokenInput.addEventListener('keydown',function(e){if(e.key==='Enter')load();});
+  document.querySelectorAll('[data-period]').forEach(function(button){button.addEventListener('click',function(){document.querySelectorAll('[data-period]').forEach(function(b){b.classList.remove('active');});button.classList.add('active');period=button.dataset.period;if(tokenInput.value)load();});});
+  tokenInput.value=sessionStorage.getItem('aoki_funnel_token')||'';if(tokenInput.value)load();
+})();
+</script>
+</body>
+</html>
