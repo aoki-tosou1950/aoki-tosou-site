@@ -11,6 +11,7 @@ const {
   authorizeBearer,
   createFunnelStore,
   dashboardPayload,
+  isAuthorizedTestEvent,
   jstDateKey,
   normalizeEvent,
   normalizeSalesDays,
@@ -18,6 +19,7 @@ const {
   shiftDateKey,
   verifyLineSignature
 } = require('./lib/funnel');
+const { sendAdminLinePush } = require('./lib/line');
 
 initializeApp();
 const db = getFirestore();
@@ -38,7 +40,7 @@ function setCorsHeaders(req, res) {
 
   res.set('Access-Control-Allow-Origin', origin);
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Vary', 'Origin');
   return true;
 }
@@ -99,7 +101,7 @@ exports.submitForm = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID']
+    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
     // --- CORS チェック ---
@@ -149,6 +151,7 @@ exports.submitForm = onRequest(
     const trimmedAddress = String(address).trim();
     const trimmedPhone   = String(phone).trim();
     const trimmedMessage = message ? String(message).trim() : '';
+    const isTest = isAuthorizedTestEvent(req.body && req.body.test_event, req.headers.authorization, process.env.FUNNEL_DASHBOARD_TOKEN);
 
     // --- 文字数チェック ---
     if (trimmedName.length > 50) {
@@ -180,11 +183,12 @@ exports.submitForm = onRequest(
         landing_page: optionalString(landingPage, 500),
         referrer: optionalString(referrer, 500),
         formType: 'survey',
+        test_event: isTest,
         userAgent: optionalString(req.headers['user-agent'], 500),
         createdAt: FieldValue.serverTimestamp()
       });
       try {
-        await recordInternalMetric('inquirySubmits', `form_${submissionRef.id}`, source || 'フォーム', new Date());
+        await recordInternalMetric('inquirySubmits', `form_${submissionRef.id}`, source || 'フォーム', new Date(), isTest);
       } catch (metricError) {
         console.error('submitForm: funnel metric failed:', metricError);
       }
@@ -195,34 +199,19 @@ exports.submitForm = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
-    try {
-      const lineToken = process.env.LINE_ACCESS_TOKEN;
-      const adminUserId = process.env.ADMIN_LINE_USER_ID;
-      if (lineToken && adminUserId) {
-        const lineMessage =
-          `【お問い合わせ受信】\n` +
-          `■ 名前: ${trimmedName}\n` +
-          `■ 住所: ${trimmedAddress}\n` +
-          `■ 電話: ${trimmedPhone}\n` +
-          `■ 日時: ${optionalString(datetime, 200) || 'なし'}\n` +
-          `■ メッセージ: ${trimmedMessage || 'なし'}`;
-
-        await axios.post(
-          'https://api.line.me/v2/bot/message/push',
-          { to: adminUserId, messages: [{ type: 'text', text: lineMessage }] },
-          {
-            headers: {
-              Authorization: `Bearer ${lineToken}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-      } else {
-        console.warn('submitForm: LINE notification skipped — LINE_ACCESS_TOKEN or ADMIN_LINE_USER_ID not set');
-      }
-    } catch (lineErr) {
-      console.error('submitForm: LINE push failed (Firestore save succeeded):', lineErr);
-    }
+    const lineMessage =
+      `【お問い合わせ受信】\n` +
+      `■ 名前: ${trimmedName}\n` +
+      `■ 住所: ${trimmedAddress}\n` +
+      `■ 電話: ${trimmedPhone}\n` +
+      `■ 日時: ${optionalString(datetime, 200) || 'なし'}\n` +
+      `■ メッセージ: ${trimmedMessage || 'なし'}`;
+    await sendAdminLinePush(axios, {
+      context: 'submitForm',
+      token: process.env.LINE_ACCESS_TOKEN,
+      to: process.env.ADMIN_LINE_USER_ID,
+      messages: [{ type: 'text', text: lineMessage }]
+    });
 
     return res.status(200).json({ success: true, message: 'お問い合わせを受け付けました。' });
   }
@@ -231,7 +220,8 @@ exports.submitForm = onRequest(
 exports.logInteraction = onRequest(
   {
     region: 'us-central1',
-    cors: false
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
     if (!setCorsHeaders(req, res)) {
@@ -264,6 +254,7 @@ exports.logInteraction = onRequest(
     let event;
     try {
       event = normalizeEvent(body);
+      event.isTest = isAuthorizedTestEvent(event.testRequested, req.headers.authorization, process.env.FUNNEL_DASHBOARD_TOKEN);
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }
@@ -276,6 +267,7 @@ exports.logInteraction = onRequest(
         landing_page: event.landingPage,
         current_page: event.currentPage,
         referrer: event.referrer,
+        is_test: event.isTest,
         created_at: FieldValue.serverTimestamp()
       });
 
@@ -293,7 +285,7 @@ exports.submitOtherInquiry = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID']
+    secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
     // --- CORS チェック（allowlist 方式。web.app は登録済み）---
@@ -323,6 +315,7 @@ exports.submitOtherInquiry = onRequest(
     }
 
     const b = body || {};
+    const isTest = isAuthorizedTestEvent(b.test_event, req.headers.authorization, process.env.FUNNEL_DASHBOARD_TOKEN);
 
     // --- 必須フィールドチェック ---
     const trimmedName = optionalString(b.name, 50);
@@ -349,6 +342,7 @@ exports.submitOtherInquiry = onRequest(
       landing_page: optionalString(b.landing_page, 500),
       referrer: optionalString(b.referrer, 500),
       formType: 'other',
+      test_event: isTest,
       userAgent: optionalString(req.headers['user-agent'], 500),
       createdAt: FieldValue.serverTimestamp()
     };
@@ -357,7 +351,7 @@ exports.submitOtherInquiry = onRequest(
     try {
       const inquiryRef = await db.collection('other_inquiries').add(data);
       try {
-        await recordInternalMetric('inquirySubmits', `form_${inquiryRef.id}`, data.source || 'フォーム', new Date());
+        await recordInternalMetric('inquirySubmits', `form_${inquiryRef.id}`, data.source || 'フォーム', new Date(), isTest);
       } catch (metricError) {
         console.error('submitOtherInquiry: funnel metric failed:', metricError);
       }
@@ -368,39 +362,24 @@ exports.submitOtherInquiry = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
-    try {
-      const lineToken = process.env.LINE_ACCESS_TOKEN;
-      const adminUserId = process.env.ADMIN_LINE_USER_ID;
-      if (lineToken && adminUserId) {
-        const worksText = works.length > 0 ? works.join('・') : 'なし';
-        const datesText =
-          `第1希望: ${data.date1 || '-'} ${data.time1 || '-'}\n` +
-          `第2希望: ${data.date2 || '-'} ${data.time2 || '-'}\n` +
-          `第3希望: ${data.date3 || '-'} ${data.time3 || '-'}`;
-        const lineMessage =
-          `【その他のご依頼】\n\n` +
-          `名前: ${data.name}\n` +
-          `住所: ${data.city || 'なし'}\n` +
-          `依頼内容: ${worksText}\n` +
-          `${datesText}\n` +
-          `備考: ${data.detail || 'なし'}`;
-
-        await axios.post(
-          'https://api.line.me/v2/bot/message/push',
-          { to: adminUserId, messages: [{ type: 'text', text: lineMessage }] },
-          {
-            headers: {
-              Authorization: `Bearer ${lineToken}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-      } else {
-        console.warn('submitOtherInquiry: LINE notification skipped — LINE_ACCESS_TOKEN or ADMIN_LINE_USER_ID not set');
-      }
-    } catch (lineErr) {
-      console.error('submitOtherInquiry: LINE push failed (Firestore save succeeded):', lineErr);
-    }
+    const worksText = works.length > 0 ? works.join('・') : 'なし';
+    const datesText =
+      `第1希望: ${data.date1 || '-'} ${data.time1 || '-'}\n` +
+      `第2希望: ${data.date2 || '-'} ${data.time2 || '-'}\n` +
+      `第3希望: ${data.date3 || '-'} ${data.time3 || '-'}`;
+    const lineMessage =
+      `【その他のご依頼】\n\n` +
+      `名前: ${data.name}\n` +
+      `住所: ${data.city || 'なし'}\n` +
+      `依頼内容: ${worksText}\n` +
+      `${datesText}\n` +
+      `備考: ${data.detail || 'なし'}`;
+    await sendAdminLinePush(axios, {
+      context: 'submitOtherInquiry',
+      token: process.env.LINE_ACCESS_TOKEN,
+      to: process.env.ADMIN_LINE_USER_ID,
+      messages: [{ type: 'text', text: lineMessage }]
+    });
 
     return res.status(200).json({ success: true });
   }

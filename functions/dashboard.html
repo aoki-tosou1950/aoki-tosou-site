@@ -65,7 +65,8 @@
     document.getElementById('line').innerHTML=line.available
       ? '<p><b>累計友だち追加 '+Number(line.followersCumulative||0).toLocaleString('ja-JP')+'</b><br>ブロック '+Number(line.blocks||0).toLocaleString('ja-JP')+'<br>ターゲットリーチ '+Number(line.targetedReaches||0).toLocaleString('ja-JP')+'</p><p class="note">基準日 '+esc(line.date)+'。現在友だち数はAPIで正確に取得できないため推測表示しません。</p>'
       : '<p class="note">'+esc(line.reason||'LINE統計未取得')+'</p>';
-    document.getElementById('stamp').textContent=data.period.start+' 〜 '+data.period.end+'｜更新 '+new Date(data.generatedAt).toLocaleString('ja-JP');
+    var excluded=Object.values(data.excludedTestMetrics||{}).reduce(function(sum,value){return sum+Number(value||0);},0);
+    document.getElementById('stamp').textContent=data.period.start+' 〜 '+data.period.end+'｜更新 '+new Date(data.generatedAt).toLocaleString('ja-JP')+(excluded?'｜テスト計測を除外済み':'');
   }
   async function load(){
     var token=tokenInput.value.trim();if(!token){showError('閲覧トークンを入力してください。');return;}

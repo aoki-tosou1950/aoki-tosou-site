@@ -23,6 +23,26 @@ const PUBLIC_EVENT_COUNTERS = Object.freeze({
   phone_click: 'phoneClicks'
 });
 
+// v1本番smoke（2026-08-29 JST）で記録済みの、識別可能な計測だけを
+// 経営集計から除外する。元イベント・日次総数は監査用に残す。
+const LEGACY_TEST_EXCLUSIONS = Object.freeze({
+  '2026-08-29': Object.freeze({
+    metrics: Object.freeze({
+      visitors: 2,
+      pageViews: 3,
+      lineClicks: 1,
+      phoneClicks: 1,
+      inquirySubmits: 1,
+      lineFollows: 1,
+      lineUnfollows: 1
+    }),
+    sources: Object.freeze({
+      production_smoke: Object.freeze({ visitors: 1, pageViews: 1, lineClicks: 1 }),
+      codex_browser_smoke: Object.freeze({ visitors: 1, pageViews: 2, lineClicks: 0 })
+    })
+  })
+});
+
 function emptyMetrics() {
   return COUNTER_NAMES.reduce((result, name) => {
     result[name] = 0;
@@ -119,8 +139,18 @@ function normalizeEvent(body) {
     currentPage: String(body && body.current_page || '').trim().slice(0, 500),
     landingPage: String(body && body.landing_page || '').trim().slice(0, 500),
     referrer: String(body && body.referrer || '').trim().slice(0, 500),
-    contactChannel: String(body && body.contact_channel || '').trim().slice(0, 30)
+    contactChannel: String(body && body.contact_channel || '').trim().slice(0, 30),
+    testRequested: Boolean(body && body.test_event === true),
+    isTest: false
   };
+}
+
+function isAuthorizedTestEvent(testRequested, authorization, expectedToken) {
+  return Boolean(testRequested) && authorizeBearer(authorization, expectedToken);
+}
+
+function isLineTestEvent(event) {
+  return Boolean(event && /^smoke_[A-Za-z0-9_-]{6,94}$/.test(String(event.webhookEventId || '')));
 }
 
 function visitorHash(day, visitorId) {
@@ -163,19 +193,28 @@ function normalizeSalesDays(days) {
 
 function aggregateRows(siteRows, salesRows) {
   const metrics = emptyMetrics();
+  const excludedTestMetrics = emptyMetrics();
   const sources = {};
   (siteRows || []).forEach((row) => {
+    const legacy = LEGACY_TEST_EXCLUSIONS[String(row && row.date || '')] || {};
     COUNTER_NAMES.forEach((name) => {
       if (!['inquiries', 'surveys', 'estimates', 'orders'].includes(name)) {
-        metrics[name] += integer(row && row.metrics && row.metrics[name]);
+        const total = integer(row && row.metrics && row.metrics[name]);
+        const excluded = Math.min(total, integer(row && row.testMetrics && row.testMetrics[name]) + integer(legacy.metrics && legacy.metrics[name]));
+        metrics[name] += total - excluded;
+        excludedTestMetrics[name] += excluded;
       }
     });
-    Object.values(row && row.sources || {}).forEach((source) => {
+    Object.entries(row && row.sources || {}).forEach(([key, source]) => {
       const label = normalizeLabel(source && source.label);
+      const testSource = row && row.testSources && row.testSources[key] || {};
+      const legacySource = legacy.sources && legacy.sources[label] || {};
       if (!sources[label]) sources[label] = { source: label, visitors: 0, pageViews: 0, lineClicks: 0 };
-      sources[label].visitors += integer(source.visitors);
-      sources[label].pageViews += integer(source.pageViews);
-      sources[label].lineClicks += integer(source.lineClicks);
+      ['visitors', 'pageViews', 'lineClicks'].forEach((name) => {
+        const total = integer(source && source[name]);
+        const excluded = Math.min(total, integer(testSource && testSource[name]) + integer(legacySource && legacySource[name]));
+        sources[label][name] += total - excluded;
+      });
     });
   });
   (salesRows || []).forEach((row) => {
@@ -184,9 +223,10 @@ function aggregateRows(siteRows, salesRows) {
     });
   });
   const topSources = Object.values(sources)
+    .filter((source) => source.visitors > 0 || source.pageViews > 0 || source.lineClicks > 0)
     .sort((a, b) => b.visitors - a.visitors || b.pageViews - a.pageViews || a.source.localeCompare(b.source, 'ja'))
     .slice(0, 8);
-  return { metrics, topSources };
+  return { metrics, topSources, excludedTestMetrics };
 }
 
 function conversionRate(numerator, denominator) {
@@ -214,6 +254,7 @@ function dashboardPayload(bounds, siteRows, salesRows, lineInsight) {
     period: bounds,
     generatedAt: new Date().toISOString(),
     metrics: m,
+    excludedTestMetrics: aggregate.excludedTestMetrics,
     stages,
     topSources: aggregate.topSources,
     lineInsight: lineInsight || { available: false, reason: 'LINE統計未取得' }
@@ -223,7 +264,13 @@ function dashboardPayload(bounds, siteRows, salesRows, lineInsight) {
 function createFunnelStore(db) {
   function currentDailyData(snapshot, day) {
     const data = snapshot.exists ? snapshot.data() : {};
-    return { date: day, metrics: Object.assign({}, data.metrics || {}), sources: Object.assign({}, data.sources || {}) };
+    return {
+      date: day,
+      metrics: Object.assign({}, data.metrics || {}),
+      testMetrics: Object.assign({}, data.testMetrics || {}),
+      sources: Object.assign({}, data.sources || {}),
+      testSources: Object.assign({}, data.testSources || {})
+    };
   }
 
   async function recordWebEvent(event, now = new Date()) {
@@ -232,7 +279,7 @@ function createFunnelStore(db) {
     const dayRef = db.collection('funnel_daily').doc(day);
     const eventRef = dayRef.collection('events').doc(event.eventId);
     const dailyVisitorRef = event.eventType === 'page_view'
-      ? dayRef.collection('visitors').doc(visitorHash(day, event.visitorId))
+      ? dayRef.collection('visitors').doc(visitorHash(day, event.isTest ? `test:${event.visitorId}` : event.visitorId))
       : null;
     return db.runTransaction(async (transaction) => {
       const daySnapshot = await transaction.get(dayRef);
@@ -242,22 +289,31 @@ function createFunnelStore(db) {
       const daily = currentDailyData(daySnapshot, day);
       const key = sourceKey(event.source);
       const source = Object.assign({ label: event.source, visitors: 0, pageViews: 0, lineClicks: 0 }, daily.sources[key] || {});
+      const testSource = Object.assign({ label: event.source, visitors: 0, pageViews: 0, lineClicks: 0 }, daily.testSources[key] || {});
       daily.metrics[event.counter] = Number(daily.metrics[event.counter] || 0) + 1;
+      if (event.isTest) daily.testMetrics[event.counter] = Number(daily.testMetrics[event.counter] || 0) + 1;
       if (event.eventType === 'page_view') source.pageViews += 1;
       if (event.eventType === 'line_click') source.lineClicks += 1;
+      if (event.isTest && event.eventType === 'page_view') testSource.pageViews += 1;
+      if (event.isTest && event.eventType === 'line_click') testSource.lineClicks += 1;
       if (dailyVisitorRef && !visitorSnapshot.exists) {
         daily.metrics.visitors = Number(daily.metrics.visitors || 0) + 1;
         source.visitors += 1;
-        transaction.create(dailyVisitorRef, { createdAt: now });
+        if (event.isTest) {
+          daily.testMetrics.visitors = Number(daily.testMetrics.visitors || 0) + 1;
+          testSource.visitors += 1;
+        }
+        transaction.create(dailyVisitorRef, { isTest: Boolean(event.isTest), createdAt: now });
       }
       daily.sources[key] = source;
+      if (event.isTest) daily.testSources[key] = testSource;
       transaction.set(dayRef, Object.assign(daily, { updatedAt: now }), { merge: true });
-      transaction.create(eventRef, { eventType: event.eventType, createdAt: now });
+      transaction.create(eventRef, { eventType: event.eventType, source: event.source, isTest: Boolean(event.isTest), createdAt: now });
       return { recorded: true, visitorAdded: Boolean(dailyVisitorRef && !visitorSnapshot.exists) };
     });
   }
 
-  async function recordInternalMetric(counter, eventId, source, now = new Date()) {
+  async function recordInternalMetric(counter, eventId, source, now = new Date(), isTest = false) {
     const day = jstDateKey(now);
     const dayRef = db.collection('funnel_daily').doc(day);
     const eventRef = dayRef.collection('events').doc(eventId);
@@ -267,8 +323,9 @@ function createFunnelStore(db) {
       if (eventSnapshot.exists) return false;
       const daily = currentDailyData(daySnapshot, day);
       daily.metrics[counter] = Number(daily.metrics[counter] || 0) + 1;
+      if (isTest) daily.testMetrics[counter] = Number(daily.testMetrics[counter] || 0) + 1;
       transaction.set(dayRef, Object.assign(daily, { updatedAt: now }), { merge: true });
-      transaction.create(eventRef, { eventType: counter, source: normalizeLabel(source), createdAt: now });
+      transaction.create(eventRef, { eventType: counter, source: normalizeLabel(source), isTest: Boolean(isTest), createdAt: now });
       return true;
     });
   }
@@ -283,14 +340,16 @@ function createFunnelStore(db) {
     const dayRef = db.collection('funnel_daily').doc(day);
     const eventRef = dayRef.collection('line_events').doc(eventId);
     const counter = event.type === 'follow' ? 'lineFollows' : 'lineUnfollows';
+    const isTest = isLineTestEvent(event);
     return db.runTransaction(async (transaction) => {
       const daySnapshot = await transaction.get(dayRef);
       const eventSnapshot = await transaction.get(eventRef);
       if (eventSnapshot.exists) return false;
       const daily = currentDailyData(daySnapshot, day);
       daily.metrics[counter] = Number(daily.metrics[counter] || 0) + 1;
+      if (isTest) daily.testMetrics[counter] = Number(daily.testMetrics[counter] || 0) + 1;
       transaction.set(dayRef, Object.assign(daily, { updatedAt: new Date() }), { merge: true });
-      transaction.create(eventRef, { type: event.type, occurredAt: now, createdAt: new Date() });
+      transaction.create(eventRef, { type: event.type, isTest, occurredAt: now, createdAt: new Date() });
       return true;
     });
   }
@@ -306,7 +365,9 @@ module.exports = {
   createFunnelStore,
   dashboardPayload,
   emptyMetrics,
+  isAuthorizedTestEvent,
   isDateKey,
+  isLineTestEvent,
   jstDateKey,
   normalizeEvent,
   normalizeLabel,

@@ -9,7 +9,9 @@ const {
   createFunnelStore,
   dashboardPayload,
   emptyMetrics,
+  isAuthorizedTestEvent,
   isDateKey,
+  isLineTestEvent,
   jstDateKey,
   normalizeEvent,
   normalizeSalesDays,
@@ -89,6 +91,17 @@ test('Bearerトークンの正常系と異常系', () => {
   assert.equal(authorizeBearer('', 'same-token'), false);
 });
 
+test('テストフラグは正しい管理トークン併用時だけ有効', () => {
+  assert.equal(isAuthorizedTestEvent(true, 'Bearer same-token', 'same-token'), true);
+  assert.equal(isAuthorizedTestEvent(true, 'Bearer wrong', 'same-token'), false);
+  assert.equal(isAuthorizedTestEvent(false, 'Bearer same-token', 'same-token'), false);
+});
+
+test('署名検証後のsmoke Webhook IDだけをテスト扱いにする', () => {
+  assert.equal(isLineTestEvent({ webhookEventId: 'smoke_follow_abc123' }), true);
+  assert.equal(isLineTestEvent({ webhookEventId: '01REAL_LINE_EVENT_1234567890' }), false);
+});
+
 test('営業OS欠損値は0として受ける', () => {
   assert.deepEqual(normalizeSalesDays([{ date: '2026-08-29', inquiries: 2 }]), [{ date: '2026-08-29', inquiries: 2, surveys: 0, estimates: 0, orders: 0 }]);
 });
@@ -112,6 +125,48 @@ test('サイトと営業OSを期間合算する', () => {
   assert.equal(result.metrics.visitors, 3);
   assert.equal(result.metrics.orders, 1);
   assert.equal(result.topSources[0].source, 'flyer');
+});
+
+test('認証済みテスト計測だけを経営集計から除外する', () => {
+  const result = aggregateRows([{
+    date: '2026-08-30',
+    metrics: { visitors: 4, pageViews: 6, lineClicks: 2, phoneClicks: 1 },
+    testMetrics: { visitors: 1, pageViews: 2, lineClicks: 1, phoneClicks: 1 },
+    sources: { abc: { label: 'direct', visitors: 4, pageViews: 6, lineClicks: 2 } },
+    testSources: { abc: { label: 'direct', visitors: 1, pageViews: 2, lineClicks: 1 } }
+  }], []);
+  assert.equal(result.metrics.visitors, 3);
+  assert.equal(result.metrics.pageViews, 4);
+  assert.equal(result.metrics.phoneClicks, 0);
+  assert.equal(result.topSources[0].visitors, 3);
+  assert.equal(result.excludedTestMetrics.pageViews, 2);
+});
+
+test('testMetricsのない実イベントは誤除外しない', () => {
+  const result = aggregateRows([{
+    date: '2026-08-30',
+    metrics: { visitors: 2, pageViews: 3 },
+    sources: { abc: { label: 'production_smoke', visitors: 2, pageViews: 3, lineClicks: 0 } }
+  }], []);
+  assert.equal(result.metrics.visitors, 2);
+  assert.equal(result.metrics.pageViews, 3);
+  assert.equal(result.topSources[0].source, 'production_smoke');
+});
+
+test('既知の2026-08-29本番smokeだけを過去集計から除外する', () => {
+  const result = aggregateRows([{
+    date: '2026-08-29',
+    metrics: { visitors: 3, pageViews: 4, lineClicks: 1, phoneClicks: 1, inquirySubmits: 1, lineFollows: 1, lineUnfollows: 1 },
+    sources: {
+      smoke: { label: 'production_smoke', visitors: 1, pageViews: 1, lineClicks: 1 },
+      browser: { label: 'codex_browser_smoke', visitors: 1, pageViews: 2, lineClicks: 0 },
+      real: { label: 'google / organic', visitors: 1, pageViews: 1, lineClicks: 0 }
+    }
+  }], []);
+  assert.equal(result.metrics.visitors, 1);
+  assert.equal(result.metrics.pageViews, 1);
+  assert.equal(result.metrics.inquirySubmits, 0);
+  assert.deepEqual(result.topSources, [{ source: 'google / organic', visitors: 1, pageViews: 1, lineClicks: 0 }]);
 });
 
 test('転換率は分母0なら推測せずnull', () => {
@@ -146,6 +201,18 @@ test('同じ匿名訪問者の別PVはvisitorを増やさない', async () => {
   const metrics = db._data.get('funnel_daily/2026-08-29').metrics;
   assert.equal(metrics.visitors, 1);
   assert.equal(metrics.pageViews, 2);
+});
+
+test('認証済みテストイベントは総数に保存しtestMetricsへ分離する', async () => {
+  const db = fakeFirestore(), store = createFunnelStore(db), now = new Date('2026-08-30T03:00:00Z');
+  const event = normalizeEvent({ event_type: 'page_view', event_id: 'e_smoke_123456789', visitor_id: 'v_smoke_123456789012', source: 'production_smoke' });
+  event.isTest = true;
+  await store.recordWebEvent(event, now);
+  const daily = db._data.get('funnel_daily/2026-08-30');
+  assert.equal(daily.metrics.visitors, 1);
+  assert.equal(daily.testMetrics.visitors, 1);
+  assert.equal(daily.metrics.pageViews, 1);
+  assert.equal(daily.testMetrics.pageViews, 1);
 });
 
 test('LINE webhookEventIdでfollowを冪等化する', async () => {
