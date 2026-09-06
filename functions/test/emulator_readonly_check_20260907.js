@@ -52,29 +52,54 @@ async function main() {
   await clearCollections();
 
   // --- 1. 同時transaction：同一visit_idへ2件を並行送信しても両方安全に処理される ---
+  // 監査差し戻し（R2 #4）：旧アサーションは「M1かM2のどちらか」でPASSしてしまい、
+  // occurredAtの新旧比較（isOlderTuple）が到着順に依存せず正しく機能していることを
+  // 証明していなかった。occurredAtがより古いM1（e_concurrent_a）が、コミット順序に
+  // 関わらず最終的に正本になることを厳密に確認する。
   {
     const visitId = 'v_concurrent_0001';
     const now = Date.now();
+    const day = jstDateKey(new Date(now));
+    const dayRefBefore = await db.collection(COLLECTIONS.funnelDaily).doc(day).get();
+    const pageViewsBefore = dayRefBefore.exists ? Number(dayRefBefore.data().metrics.pageViews || 0) : 0;
+
     const [r1, r2] = await Promise.all([
       recordWebEventV2(db, COLLECTIONS, makeEvent({ eventId: 'e_concurrent_a', visitId, occurredAt: now, mediaCode: 'M1', mediaValidity: 'valid' })),
       recordWebEventV2(db, COLLECTIONS, makeEvent({ eventId: 'e_concurrent_b', visitId, occurredAt: now + 1, mediaCode: 'M2', mediaValidity: 'valid' }))
     ]);
     ok('同時transaction: 両方とも例外を投げず完了する', r1.recorded === true && r2.recorded === true, JSON.stringify([r1, r2]));
+
     const sessionSnap = await db.collection(COLLECTIONS.visitSessions).doc(visitId).get();
-    ok('同時transaction: visit_sessionsが最終的に単一の一貫した状態になる（片方の値のみ残る）',
-      sessionSnap.exists && (sessionSnap.data().mediaCode === 'M1' || sessionSnap.data().mediaCode === 'M2'));
+    const sessionData = sessionSnap.exists ? sessionSnap.data() : null;
+    ok('同時transaction: occurredAtがより古いイベント（M1/e_concurrent_a）がコミット順序に関わらず最終的に正本になる',
+      !!sessionData && sessionData.mediaCode === 'M1' && sessionData.attributionEventId === 'e_concurrent_a',
+      JSON.stringify(sessionData));
+
+    const dayRefAfter = await db.collection(COLLECTIONS.funnelDaily).doc(day).get();
+    const pageViewsAfter = Number(dayRefAfter.data().metrics.pageViews || 0);
+    ok('同時transaction: 2件とも別event_idの正規イベントとしてfunnel_dailyへ厳密に+2加算される（誤って1件に潰れていない）',
+      pageViewsAfter === pageViewsBefore + 2, `before=${pageViewsBefore} after=${pageViewsAfter}`);
   }
 
   // --- 2. 重複event_id：同一event_idを連続送信しても2件目はduplicateとして扱われる ---
+  // 監査差し戻し（R2 #4）：旧アサーションは`pageViews >= 1`のみで、シナリオ1が既に
+  // 同日のpageViewsを増やしていたため、二重加算されていてもPASSし得た。前後の値を
+  // 比較し、厳密に+1のみ増加することを確認する。
   {
     const event = makeEvent({ eventId: 'e_dup_check_0001' });
+    const day = jstDateKey(new Date());
+    const dayRefBefore = await db.collection(COLLECTIONS.funnelDaily).doc(day).get();
+    const pageViewsBefore = dayRefBefore.exists ? Number(dayRefBefore.data().metrics.pageViews || 0) : 0;
+
     const r1 = await recordWebEventV2(db, COLLECTIONS, event);
     const r2 = await recordWebEventV2(db, COLLECTIONS, event);
     ok('重複event_id: 1件目は成功', r1.recorded === true);
     ok('重複event_id: 2件目はduplicateとして扱われる', r2.recorded === false && r2.duplicate === true);
-    const day = jstDateKey(new Date());
+
     const dailySnap = await db.collection(COLLECTIONS.funnelDaily).doc(day).get();
-    ok('重複event_id: funnel_dailyが二重加算されていない', dailySnap.data().metrics.pageViews >= 1);
+    const pageViewsAfter = Number(dailySnap.data().metrics.pageViews || 0);
+    ok('重複event_id: funnel_dailyのpageViewsが厳密に+1のみ増加する（二重加算されていない）',
+      pageViewsAfter === pageViewsBefore + 1, `before=${pageViewsBefore} after=${pageViewsAfter}`);
   }
 
   // --- 3. 遅延到着：occurredAtが古いイベントが後から届いても正しく正本が補正される ---

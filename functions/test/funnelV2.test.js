@@ -16,6 +16,7 @@ const {
   isOlderTuple,
   recordWebEventV2,
   jstDateKey,
+  isNewMethodLog,
   classifyLogCategory,
   buildQualityAxes,
   signVerifyJwt,
@@ -141,6 +142,21 @@ test('65文字以上はinvalid', () => {
   const r = normalizeMediaCode('x'.repeat(65));
   assert.equal(r.mediaValidity, 'invalid');
 });
+test('回帰（監査差し戻しR2 #1）：数値のvisitMediaCode（例：123）は暗黙のString化で正常媒体コードへ昇格しない', () => {
+  const r = normalizeMediaCode(123);
+  assert.equal(r.mediaValidity, 'invalid', '型不正（string以外）は常にinvalidへ縮退させ、たまたま形式に一致しても正常扱いしない');
+  assert.equal(r.mediaCode, '');
+  assert.ok(r.invalidMediaCodeHash);
+});
+test('真偽値・オブジェクト等の型不正なvisitMediaCodeもinvalidへ縮退する', () => {
+  assert.equal(normalizeMediaCode(true).mediaValidity, 'invalid');
+  assert.equal(normalizeMediaCode({ code: 'meishi' }).mediaValidity, 'invalid');
+  assert.equal(normalizeMediaCode(['meishi']).mediaValidity, 'invalid');
+});
+test('null/undefinedのvisitMediaCodeは型不正ではなく欠損としてvalidity=none', () => {
+  assert.equal(normalizeMediaCode(null).mediaValidity, 'none');
+  assert.equal(normalizeMediaCode(undefined).mediaValidity, 'none');
+});
 
 /* ===================================================================
  * normalizeWebSource：監査差し戻し#7（小文字化後にdirect判定・厳格なホスト名検証）
@@ -189,6 +205,20 @@ test('末尾ハイフンのラベルを含むホスト名はinvalid', () => {
 test('ラベル内部のハイフンは許容される', () => {
   assert.equal(normalizeWebSource('search-engine.example.com').webSourceStatus, 'referrer');
 });
+test('回帰（監査差し戻しR2 #1）：数値のvisitWebSource（例：123）は暗黙のString化で正常referrerへ昇格しない', () => {
+  const r = normalizeWebSource(123);
+  assert.equal(r.webSourceStatus, 'invalid', '型不正（string以外）は常にinvalidへ縮退させ、たまたま単一ラベルのホスト名形式に一致しても正常扱いしない');
+  assert.equal(r.webSource, '');
+  assert.ok(r.invalidWebSourceHash);
+});
+test('真偽値・オブジェクト等の型不正なvisitWebSourceもinvalidへ縮退する', () => {
+  assert.equal(normalizeWebSource(true).webSourceStatus, 'invalid');
+  assert.equal(normalizeWebSource({ host: 'google.com' }).webSourceStatus, 'invalid');
+});
+test('null/undefinedのvisitWebSourceは型不正ではなく欠損としてwebSourceStatus=none', () => {
+  assert.equal(normalizeWebSource(null).webSourceStatus, 'none');
+  assert.equal(normalizeWebSource(undefined).webSourceStatus, 'none');
+});
 
 /* ===================================================================
  * evaluateVisitorIdentity：全組合せ（欠損・型不正規則を含む）
@@ -227,6 +257,19 @@ test('visitorIdPersistedがboolean以外（文字列等）でもhashReliable=fal
 test('生visitorIdが戻り値のどこにも含まれない', () => {
   const r = evaluateVisitorIdentity(VALID_VISITOR_ID, true);
   assert.equal(JSON.stringify(r).indexOf(VALID_VISITOR_ID), -1);
+});
+test('回帰（監査差し戻しR2 #1）：数値のvisitorId（例：1234567890123456）は暗黙のString化でhashReliable=trueへ昇格しない', () => {
+  // 16桁の数値はString化すると16文字の数字列となり、VISITOR_ID_PATTERNへ偶然一致し得る。
+  // visitorIdPersisted:trueと組み合わさると、修正前は誤ってhashReliable=trueになっていた。
+  const r = evaluateVisitorIdentity(1234567890123456, true);
+  assert.equal(r.hashReliable, false, '型不正（string以外）のvisitorIdは、桁数が偶然パターンに一致してもhashReliable=trueへ昇格させない');
+  assert.equal(r.visitorIdStatus, 'invalid');
+  assert.equal(r.visitorHash, '');
+});
+test('真偽値・オブジェクト等の型不正なvisitorIdもhashReliable=falseへ縮退する', () => {
+  assert.equal(evaluateVisitorIdentity(true, true).hashReliable, false);
+  assert.equal(evaluateVisitorIdentity({ id: VALID_VISITOR_ID }, true).hashReliable, false);
+  assert.equal(evaluateVisitorIdentity([VALID_VISITOR_ID], true).hashReliable, false);
 });
 
 /* ===================================================================
@@ -306,7 +349,10 @@ test('page_viewよりline_click/phone_clickが先着しても訪問媒体・sour
   assert.equal(session.mediaCode, 'meishi_v1', '媒体情報が失われていないこと');
 });
 
-test('最小(occurredAt,event_id)が正本。より古いイベント後着時のみ7項目が一括更新される', async () => {
+test('最小(occurredAt,event_id)が正本。より古いイベント後着時は7項目が一括更新され、帰属が異なればattributionMismatchも立つ（監査差し戻しR2 #2）', async () => {
+  // 監査差し戻しR2 #2：M202を先に受信後、より古いM101が同一visit_idで後着し正本が
+  // 差し替わるケース。旧実装は正本更新パスでattributionMismatchを一切評価しておらず、
+  // 「同一訪問内に矛盾した帰属が実在するのに監査上『矛盾なし』と記録される」バグがあった。
   const db = fakeFirestore();
   const visitId = 'v_attribution_0001';
   await recordWebEventV2(db, COLLECTIONS, makeEvent({ eventId: 'e_second_0002', visitId, occurredAt: 2000, mediaCode: 'M202', mediaValidity: 'valid', webSource: 'direct', webSourceStatus: 'direct' }));
@@ -314,7 +360,19 @@ test('最小(occurredAt,event_id)が正本。より古いイベント後着時�
   const session = db._data.get(`visit_sessions/${visitId}`);
   assert.equal(session.mediaCode, 'M101', 'より古いイベント（M101）が正本として採用されること');
   assert.equal(session.attributionEventId, 'e_first_0001');
-  assert.equal(session.attributionMismatch, false);
+  assert.equal(session.attributionMismatch, true, '正本差し替え時でも旧正本(M202)と新正本(M101)の帰属が異なるためattributionMismatch=trueとすること');
+});
+
+test('より古いイベント後着時でも、帰属が既存正本と同一なら7項目は更新されてもattributionMismatchは立たない', async () => {
+  // 上のテストとの対比：正本の差し替え自体はattributionMismatchの原因ではなく、
+  // 「差し替え前後で帰属の値・statusが異なるかどうか」だけが原因であることを示す。
+  const db = fakeFirestore();
+  const visitId = 'v_attribution_0001b';
+  await recordWebEventV2(db, COLLECTIONS, makeEvent({ eventId: 'e_second_0002', visitId, occurredAt: 2000, mediaCode: 'M101', mediaValidity: 'valid', webSource: '', webSourceStatus: 'none' }));
+  await recordWebEventV2(db, COLLECTIONS, makeEvent({ eventId: 'e_first_0001', visitId, occurredAt: 1000, mediaCode: 'M101', mediaValidity: 'valid', webSource: '', webSourceStatus: 'none' }));
+  const session = db._data.get(`visit_sessions/${visitId}`);
+  assert.equal(session.attributionEventId, 'e_first_0001', '正本イベントIDはより古い方へ更新されること（startedAt等は更新対象）');
+  assert.equal(session.attributionMismatch, false, '帰属の値・statusが両イベントで同一なので不一致ではない');
 });
 
 test('正本より新しいoccurredAtで異なる帰属が届いた場合はattributionMismatch=trueのみ、正本は不変', async () => {
@@ -522,6 +580,21 @@ test('legacy（visit_idなし）＋hash空 → legacy_hash_missing', () => {
 test('カットオーバー後に届いたvisit_idなしログも日付に関わらずlegacy扱いになる', () => {
   assert.equal(classifyLogCategory({ visit_id: '', visitor_hash: 'x', occurredAt: Date.now() + 999999 }), 'legacy_unknown');
 });
+test('回帰（監査差し戻しR2 #1）：数値のvisit_id（型不正）は暗黙のString化で新方式ログへ昇格しない', () => {
+  // isNewMethodLogがString(visitIdRaw||'')で暗黙変換していた場合、桁数次第で
+  // VISIT_ID_PATTERNへ偶然一致し「新方式ログ」へ誤分類され得た。
+  const numericVisitId = 12345678901234567890; // 20桁の数値
+  assert.equal(isNewMethodLog(numericVisitId), false, '型不正なvisit_idは新方式ログと判定しない（legacy扱いへ倒す）');
+  assert.equal(classifyLogCategory({ visit_id: numericVisitId, visitor_hash: 'x' }), 'legacy_unknown');
+});
+test("回帰（監査差し戻しR2 #1）：hash_reliableが真偽値のtrueそのものでない（例：文字列'true'）場合はnew_reliableと判定しない", () => {
+  const row = { visit_id: 'v_' + 'a'.repeat(20), visitor_hash: 'x', hash_reliable: 'true' /* truthyだが真偽値ではない */ };
+  assert.equal(classifyLogCategory(row), 'new_unreliable', 'hash_reliableは=== trueで厳密一致確認すること（truthyな別型を信頼しない）');
+});
+test('visitor_hashが文字列型でない（例：数値・真偽値）場合はhashPresentとして扱わない', () => {
+  assert.equal(classifyLogCategory({ visit_id: '', visitor_hash: 12345 }), 'legacy_hash_missing');
+  assert.equal(classifyLogCategory({ visit_id: '', visitor_hash: true }), 'legacy_hash_missing');
+});
 
 /* ===================================================================
  * buildQualityAxes：hasPageView===trueのみ計上、Web軸キーの統一（監査差し戻し#5）
@@ -577,14 +650,14 @@ test('正しく署名・発行されたJWTは検証を通る', () => {
 test('署名が不正なら拒否され、jtiを一切返さない（監査差し戻し#6）', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
   const tampered = token.slice(0, -2) + 'xx';
-  const r = verifyVerifyJwt(tampered, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(tampered, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'signature');
   assert.equal(Object.prototype.hasOwnProperty.call(r, 'jti'), false, '署名不正時はjtiを含む戻り値であってはならない');
 });
 test('別のSecretで署名されたJWTは拒否され、jtiを返さない（本番Secretでの流用拒否を模擬）', () => {
   const { token } = signVerifyJwt('a-different-secret-0123456789abcdefzz', { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'signature');
   assert.equal(Object.prototype.hasOwnProperty.call(r, 'jti'), false);
@@ -598,25 +671,44 @@ test('issが一致しないJWTは拒否される（監査差し戻し#6：issテ
   const crypto = require('crypto');
   const sig = crypto.createHmac('sha256', SECRET).update(signingInput).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const token = signingInput + '.' + sig;
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'iss');
 });
 test('audが一致しないJWTは拒否される（他目的への流用拒否）', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'someOtherFunction', scope: 'write:interaction_logs_v2_verify' });
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'aud');
 });
 test('scopeが一致しないJWTは拒否される', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'read:something' });
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'scope');
 });
+test('subが一致しないJWTは拒否される', () => {
+  const { token } = signVerifyJwt(SECRET, { sub: 'someone-else@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'sub');
+});
 test('期限切れJWTは拒否される', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify', ttlSeconds: -10 });
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'exp');
+});
+test('回帰（監査差し戻しR2 #3）：exp===now（境界値ちょうど）も期限切れとして拒否される（exp<=nowの検証、exp<nowだけでは境界値を見逃す）', () => {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { iss: 'aoki-tosou-funnel-verify-issuer', sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify', iat: now - 1, exp: now, jti: 'x'.repeat(32) };
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const signingInput = b64(header) + '.' + b64(payload);
+  const crypto = require('crypto');
+  const sig = crypto.createHmac('sha256', SECRET).update(signingInput).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const token = signingInput + '.' + sig;
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'exp');
 });
@@ -627,7 +719,19 @@ test('既定有効期限は15分', () => {
 });
 test('JWT本体（token文字列）がverify結果オブジェクトへ含まれない（jtiのみ）', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
-  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.ok(r.jti);
   assert.equal(JSON.stringify(r).indexOf(token), -1);
+});
+test('回帰（監査差し戻しR2 #3）：expectedSubを渡し忘れるとfail-closedで拒否される（sub検証が無効化されない）', () => {
+  const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
+  const r1 = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify' });
+  assert.equal(r1.ok, false);
+  assert.equal(r1.reason, 'missing_expected_sub');
+  const r2 = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: '' });
+  assert.equal(r2.ok, false);
+  assert.equal(r2.reason, 'missing_expected_sub');
+  const r3 = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 123 });
+  assert.equal(r3.ok, false);
+  assert.equal(r3.reason, 'missing_expected_sub');
 });

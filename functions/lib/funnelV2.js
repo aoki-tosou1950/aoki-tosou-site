@@ -63,9 +63,19 @@ function validateCoreFields(body, now) {
 }
 
 /** mediaCode（visitMediaCode）の検証。中核フィールドとは異なりソフト縮退のみ（400にしない）。
- * 戻り値: { mediaCode, mediaValidity } — mediaValidity: 'valid'|'invalid'|'none' */
+ * 戻り値: { mediaCode, mediaValidity } — mediaValidity: 'valid'|'invalid'|'none'
+ *
+ * 監査差し戻し（R2 #1）：`String(rawVisitMediaCode)`による暗黙の型変換を先に行うと、
+ * 数値（例：`123`）等の型不正な値が偶然パターンへ一致し「正常な媒体コード」へ
+ * 昇格してしまう。欠損（null/undefined）とtypeof不一致（数値・真偽値・オブジェクト等）を
+ * 明確に区別し、後者は`invalid`（型不正の縮退）として扱う。空文字列は引き続き`none`
+ * （媒体コード自体が未指定）とする。 */
 function normalizeMediaCode(rawVisitMediaCode) {
-  const code = String(rawVisitMediaCode == null ? '' : rawVisitMediaCode).trim();
+  if (rawVisitMediaCode == null) return { mediaCode: '', mediaValidity: 'none' };
+  if (typeof rawVisitMediaCode !== 'string') {
+    return { mediaCode: '', mediaValidity: 'invalid', invalidMediaCodeHash: hashDiagnostic_(rawVisitMediaCode) };
+  }
+  const code = rawVisitMediaCode.trim();
   if (!code) return { mediaCode: '', mediaValidity: 'none' };
   if (!MEDIA_CODE_PATTERN.test(code)) return { mediaCode: '', mediaValidity: 'invalid', invalidMediaCodeHash: hashDiagnostic_(code) };
   return { mediaCode: code, mediaValidity: 'valid' };
@@ -78,6 +88,11 @@ function normalizeMediaCode(rawVisitMediaCode) {
  *   ハイフン可）ことを要求する。連続ドット・先頭/末尾ドット・先頭/末尾ハイフンはこの
  *   ラベル単位の正規表現で自然に拒否される（空ラベルや不正な先頭/末尾文字は非一致になる）。
  * 戻り値: { webSource, webSourceStatus } — webSourceStatus: 'referrer'|'direct'|'none'|'invalid'
+ *
+ * 監査差し戻し（R2 #1）：`String(rawVisitWebSource)`による暗黙の型変換を先に行うと、
+ * 数値等の型不正な値が偶然ホスト名パターンへ一致し「正常なreferrer」へ昇格してしまう
+ * （例：`visitWebSource: 123` → `"123"`は単一ラベルとしてホスト名パターンに一致し得る）。
+ * 欠損（null/undefined）とtypeof不一致を明確に区別し、後者は`invalid`として扱う。
  */
 const HOSTNAME_LABEL_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 function isValidHostname_(lower) {
@@ -87,7 +102,11 @@ function isValidHostname_(lower) {
   return labels.every((label) => HOSTNAME_LABEL_PATTERN.test(label));
 }
 function normalizeWebSource(rawVisitWebSource) {
-  const value = String(rawVisitWebSource == null ? '' : rawVisitWebSource).trim();
+  if (rawVisitWebSource == null) return { webSource: '', webSourceStatus: 'none' };
+  if (typeof rawVisitWebSource !== 'string') {
+    return { webSource: '', webSourceStatus: 'invalid', invalidWebSourceHash: hashDiagnostic_(rawVisitWebSource) };
+  }
+  const value = rawVisitWebSource.trim();
   if (value === '') return { webSource: '', webSourceStatus: 'none' };
   const lower = value.toLowerCase();
   if (lower === 'direct') return { webSource: 'direct', webSourceStatus: 'direct' };
@@ -101,16 +120,24 @@ function hashDiagnostic_(value) {
 }
 
 /** visitorId／visitorIdPersistedの全組合せ判定（正本仕様§7-1）。
- * 欠損・型不正のvisitorIdPersistedも受理する。 */
+ * 欠損・型不正のvisitorIdPersistedも受理する。
+ *
+ * 監査差し戻し（R2 #1）：`String(rawVisitorId)`による暗黙の型変換を先に行うと、
+ * 数値（例：`visitorId: 1234567890123456`）が偶然16文字以上の数字列として
+ * VISITOR_ID_PATTERNへ一致し、`visitorIdPersisted:true`と組み合わさって
+ * `hashReliable=true`（信頼できる訪問）へ誤って昇格してしまう。rawVisitorIdが
+ * 文字列型そのものであることを先に確認し、型不正は常に`invalid`／`hashReliable=false`
+ * へ縮退させる。 */
 const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{16,100}$/;
 function evaluateVisitorIdentity(rawVisitorId, rawVisitorIdPersisted) {
   const visitorIdPersisted = rawVisitorIdPersisted === true ? true : (rawVisitorIdPersisted === false ? false : null); // null=欠損/型不正
-  const visitorId = String(rawVisitorId == null ? '' : rawVisitorId);
-  const visitorIdValid = VISITOR_ID_PATTERN.test(visitorId);
+  const visitorIdIsString = typeof rawVisitorId === 'string';
+  const visitorId = visitorIdIsString ? rawVisitorId : '';
+  const visitorIdValid = visitorIdIsString && VISITOR_ID_PATTERN.test(visitorId);
 
   let visitorIdStatus;
   if (visitorIdPersisted === null) visitorIdStatus = 'invalid'; // persisted自体が欠損/型不正
-  else if (!visitorIdValid) visitorIdStatus = 'invalid';
+  else if (!visitorIdValid) visitorIdStatus = 'invalid'; // visitorId欠損・型不正・形式不正のいずれも含む
   else visitorIdStatus = 'ok';
 
   const hashReliable = visitorIdPersisted === true && visitorIdValid;
@@ -311,19 +338,26 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
       const existing = visitSessionSnapshot.data();
       const existingTuple = { occurredAt: existing.attributionOccurredAt, eventId: existing.attributionEventId };
       const thisTuple = { occurredAt: event.occurredAt, eventId: event.eventId };
+      // 監査差し戻し#8：mediaCode/webSourceの値だけでなくmediaValidity/webSourceStatusも
+      // 一致しなければ不一致とする（同じ文字列でも状態が異なれば不一致扱い）。
+      const attributionDiffers = (
+        existing.mediaCode !== event.mediaCode || existing.webSource !== event.webSource ||
+        existing.mediaValidity !== event.mediaValidity || existing.webSourceStatus !== event.webSourceStatus
+      );
       const update = {};
       if (isOlderTuple(thisTuple, existingTuple)) {
         // より古いイベントの後着＝7項目を一括更新。
+        // 監査差し戻し（R2 #2）：正本を更新する場合でも、更新前の値と今回の値が異なれば
+        // attributionMismatch=trueを同一transaction内で立てる（従来は正本の更新有無に
+        // かかわらずelse節でしか判定しておらず、より古いイベントが後着して正本が
+        // 差し替わるケースでは不一致が一切記録されなかった＝矛盾した帰属が実在するのに
+        // 監査上「矛盾なし」となるバグ）。
         update.mediaCode = event.mediaCode; update.mediaValidity = event.mediaValidity;
         update.webSource = event.webSource; update.webSourceStatus = event.webSourceStatus;
         update.attributionOccurredAt = event.occurredAt; update.attributionEventId = event.eventId;
         update.startedAt = event.occurredAt;
-      } else if (
-        existing.mediaCode !== event.mediaCode || existing.webSource !== event.webSource ||
-        existing.mediaValidity !== event.mediaValidity || existing.webSourceStatus !== event.webSourceStatus
-      ) {
-        // 監査差し戻し#8：mediaCode/webSourceの値だけでなくmediaValidity/webSourceStatusも
-        // 一致しなければattributionMismatchとする（同じ文字列でも状態が異なれば不一致扱い）。
+        if (attributionDiffers) update.attributionMismatch = true;
+      } else if (attributionDiffers) {
         update.attributionMismatch = true;
       }
       if (event.eventType === 'page_view' && !existing.hasPageView) update.hasPageView = true;
@@ -363,9 +397,12 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
  * legacy/新方式 4分類（正本仕様§7、監査差し戻し#4で読取フィールド名を修正）
  * ============================================================================ */
 
-/** visit_idの有無・形式検証結果だけを正とする（日付は使わない）。 */
+/** visit_idの有無・形式検証結果だけを正とする（日付は使わない）。
+ * 監査差し戻し（R2 #1）：`String(visitIdRaw || '')`による暗黙の型変換を行うと、
+ * 型不正なvisit_id（数値等）が偶然パターンへ一致し「新方式ログ」へ誤分類され得る。
+ * typeofが文字列であることを先に確認する（null/undefined/数値/オブジェクトはfalse＝legacy扱い）。 */
 function isNewMethodLog(visitIdRaw) {
-  return VISIT_ID_PATTERN.test(String(visitIdRaw || ''));
+  return typeof visitIdRaw === 'string' && VISIT_ID_PATTERN.test(visitIdRaw);
 }
 
 /**
@@ -373,14 +410,18 @@ function isNewMethodLog(visitIdRaw) {
  * 監査差し戻し#4：`row.hashReliable`（手作りfixtureのcamelCase）ではなく、
  * writerが実際に保存するフィールド名`row.hash_reliable`を読む。
  * legacyの「信頼できる」は事後証明できないため常にlegacy_unknownとする（1区分目）。
+ * 監査差し戻し（R2 #1）：readerも文字列型・真偽値の厳密一致で判定する
+ * （`row.hash_reliable`が`true`という真偽値そのものであることを`=== true`で確認し、
+ * truthyな別の型〔文字列"true"等〕を誤って信頼できる訪問と判定しない。
+ * `row.visitor_hash`も文字列型かつ非空であることを確認する）。
  */
 function classifyLogCategory(row) {
   const isNewMethod = isNewMethodLog(row.visit_id);
-  const hashPresent = Boolean(row.visitor_hash);
+  const hashPresent = typeof row.visitor_hash === 'string' && row.visitor_hash.length > 0;
   if (!isNewMethod) {
     return hashPresent ? 'legacy_unknown' : 'legacy_hash_missing';
   }
-  return row.hash_reliable ? 'new_reliable' : 'new_unreliable';
+  return row.hash_reliable === true ? 'new_reliable' : 'new_unreliable';
 }
 
 /**
@@ -452,12 +493,21 @@ function signVerifyJwt(secret, { sub, aud, scope, ttlSeconds = 15 * 60 }) {
 }
 
 /**
- * VERIFY書込みJWTを検証する（監査差し戻し#6で修正）。
+ * VERIFY書込みJWTを検証する（監査差し戻し#6で修正、R2 #3でさらに修正）。
  * - 署名確認が完了するまでpayloadのいかなるクレーム（jti含む）も戻り値へ含めない
  *   （署名不正payload由来のjtiを返さない・監査ログへ残さない）。
  * - 署名確認後にのみ iss/sub/aud/scope/exp を全て検証する。
+ * - 監査差し戻し（R2 #3）：`expectedSub`は呼出側が渡し忘れると（`if (expectedSub && ...)`の
+ *   ままだと）sub検証そのものが無効化されてしまい、確定契約「iss/sub/aud/scope/expを
+ *   すべて検証する」が呼出側の実装漏れ次第で崩れる。expectedSub自体の欠損をfail-closedで
+ *   拒否する（トークンの中身を一切見る前に、呼出側の設定不備として即座に拒否する）。
  */
-function verifyVerifyJwt(token, secret, { expectedAud, expectedScope, expectedSub, expectedIss = VERIFY_JWT_ISSUER }) {
+function verifyVerifyJwt(token, secret, options) {
+  const opts = options || {};
+  const { expectedAud, expectedScope, expectedSub, expectedIss = VERIFY_JWT_ISSUER } = opts;
+  if (typeof expectedSub !== 'string' || expectedSub === '') {
+    return { ok: false, reason: 'missing_expected_sub' };
+  }
   if (typeof token !== 'string' || token.split('.').length !== 3) return { ok: false, reason: 'malformed' };
   const [headerB64, payloadB64, sigB64] = token.split('.');
   let header;
@@ -483,10 +533,11 @@ function verifyVerifyJwt(token, secret, { expectedAud, expectedScope, expectedSu
 
   const now = Math.floor(Date.now() / 1000);
   if (payload.iss !== expectedIss) return { ok: false, reason: 'iss', jti: payload.jti };
-  if (typeof payload.exp !== 'number' || payload.exp < now) return { ok: false, reason: 'exp', jti: payload.jti };
+  // 監査差し戻し（R2 #3）：exp===now（境界値ちょうど）も期限切れとして扱う（<=）。
+  if (typeof payload.exp !== 'number' || payload.exp <= now) return { ok: false, reason: 'exp', jti: payload.jti };
   if (payload.aud !== expectedAud) return { ok: false, reason: 'aud', jti: payload.jti };
   if (payload.scope !== expectedScope) return { ok: false, reason: 'scope', jti: payload.jti };
-  if (expectedSub && payload.sub !== expectedSub) return { ok: false, reason: 'sub', jti: payload.jti };
+  if (payload.sub !== expectedSub) return { ok: false, reason: 'sub', jti: payload.jti };
   return { ok: true, jti: payload.jti, sub: payload.sub };
 }
 
