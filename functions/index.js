@@ -11,13 +11,17 @@ const {
   authorizeBearer,
   createFunnelStore,
   dashboardPayload,
+  funnelDrilldown,
+  funnelInsights,
+  funnelRecentActivity,
   isAuthorizedTestEvent,
   jstDateKey,
   normalizeEvent,
   normalizeSalesDays,
   periodBounds,
   shiftDateKey,
-  verifyLineSignature
+  verifyLineSignature,
+  visitorToken
 } = require('./lib/funnel');
 const { sendAdminLinePush } = require('./lib/line');
 
@@ -264,10 +268,18 @@ exports.logInteraction = onRequest(
         event_type: event.eventType,
         contact_channel: event.contactChannel,
         source: event.source,
+        // 2026-08-31追加（集客ファネル知性化）：青木塗装が付与した媒体識別（チラシ・QR等の
+        // fromコード。既存の媒体コードマスタで管理）を、Web参照元（direct/検索エンジン等）
+        // とは独立に保持する。クライアント（js/analytics.js）は元々毎回この値を送信して
+        // いたが、これまでサーバー側で保存していなかった（source列が兼用していたため）。
+        from: event.from,
         landing_page: event.landingPage,
         current_page: event.currentPage,
         referrer: event.referrer,
         is_test: event.isTest,
+        // 2026-08-30追加：ダッシュボードdrilldownで「同一訪問者」をvisitor_idを晒さずに
+        // 判別するための一方向ハッシュ（visitorToken）。生のvisitor_idは保存しない。
+        visitor_hash: event.visitorId ? visitorToken(event.visitorId) : '',
         created_at: FieldValue.serverTimestamp()
       });
 
@@ -488,6 +500,98 @@ exports.getFunnelDashboard = onRequest(
       return res.status(200).json(dashboardPayload(Object.assign({ key: period }, bounds), siteRows, salesRows, lineInsight));
     } catch (error) {
       console.error('getFunnelDashboard failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * ダッシュボードdrilldown（2026-08-30追加）：AOKI OS共通原則「集計数字は根拠データまで
+ * 降りられること」に対応。getFunnelDashboardが返すmetrics[metric]と件数が必ず一致する
+ * よう、同じ期間定義（periodBounds）・同じ除外ルール（funnelDrilldown＝aggregateRowsと
+ * 同じLEGACY_TEST_EXCLUSIONS/is_test判定）を使う。既存のgetFunnelDashboardとは別関数
+ * だが、新しいFirestoreコレクション・新しい正本は作らない（既存interaction_logs／
+ * funnel_dailyを読むだけの読み取り専用API）。
+ */
+exports.getFunnelDrilldown = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period)
+      ? req.query.period
+      : 'thisMonth';
+    const metric = String(req.query.metric || '');
+    const bounds = periodBounds(period, new Date());
+    try {
+      const result = await funnelDrilldown(db, metric, bounds);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ period: Object.assign({ key: period }, bounds) }, result));
+    } catch (error) {
+      if (error && error.message === 'Unsupported drilldown metric') {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error('getFunnelDrilldown failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * 集客ファネル分析（2026-08-31追加：集客ファネル知性化）：見込み度の内訳／流入元別の質／
+ * 離脱ポイントを、期間全体でまとめて返す読み取り専用API。getFunnelDrilldownの個別訪問
+ * 一覧とは別に、営業ダッシュボード側の「集客ファネル」分析タブが使う集計値だけを提供する。
+ * 新しいFirestoreコレクションは作らず、既存interaction_logs／funnel_dailyを読むだけ。
+ */
+exports.getFunnelInsights = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period)
+      ? req.query.period
+      : 'thisMonth';
+    const bounds = periodBounds(period, new Date());
+    try {
+      const result = await funnelInsights(db, bounds);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ period: Object.assign({ key: period }, bounds) }, result));
+    } catch (error) {
+      console.error('getFunnelInsights failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * 「今日」画面のコンパクトな集客通知向けAPI（2026-08-31追加）。過去24時間の実データだけを
+ * 見て、営業上意味のある動きの有無・件数だけを返す（詳細な一覧はgetFunnelDrilldownを
+ * 別途呼ぶ）。低価値な単発アクセスだけの場合はhasNotable:falseを返し、営業OS側は
+ * カード自体を表示しない設計。
+ */
+exports.getFunnelRecentActivity = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    try {
+      const result = await funnelRecentActivity(db, 24, new Date());
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ ok: true }, result));
+    } catch (error) {
+      console.error('getFunnelRecentActivity failed:', error);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
