@@ -414,6 +414,11 @@ function isNewMethodLog(visitIdRaw) {
  * （`row.hash_reliable`が`true`という真偽値そのものであることを`=== true`で確認し、
  * truthyな別の型〔文字列"true"等〕を誤って信頼できる訪問と判定しない。
  * `row.visitor_hash`も文字列型かつ非空であることを確認する）。
+ * 監査差し戻し（R3）：`hashPresent`を計算していながら新方式ログの判定に使っていなかった
+ * ため、`hash_reliable === true`でも`visitor_hash`が欠損・空文字・型不正な行が
+ * `new_reliable`へ分類され得た。`new_reliable`は`hash_reliable === true`かつ
+ * `hashPresent`（visitor_hashが文字列型かつ非空）の両方を満たす場合のみとする。
+ * legacy側の分類（`legacy_unknown`/`legacy_hash_missing`）は変更しない。
  */
 function classifyLogCategory(row) {
   const isNewMethod = isNewMethodLog(row.visit_id);
@@ -421,7 +426,7 @@ function classifyLogCategory(row) {
   if (!isNewMethod) {
     return hashPresent ? 'legacy_unknown' : 'legacy_hash_missing';
   }
-  return row.hash_reliable === true ? 'new_reliable' : 'new_unreliable';
+  return row.hash_reliable === true && hashPresent ? 'new_reliable' : 'new_unreliable';
 }
 
 /**

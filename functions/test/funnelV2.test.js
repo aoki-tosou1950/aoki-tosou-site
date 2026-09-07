@@ -595,6 +595,22 @@ test('visitor_hashが文字列型でない（例：数値・真偽値）場合�
   assert.equal(classifyLogCategory({ visit_id: '', visitor_hash: 12345 }), 'legacy_hash_missing');
   assert.equal(classifyLogCategory({ visit_id: '', visitor_hash: true }), 'legacy_hash_missing');
 });
+test('回帰（監査差し戻しR3）：有効なvisit_id＋hash_reliable=true＋visitor_hash=\'\'（空文字）はnew_unreliable', () => {
+  // 監査差し戻しR3：hashPresentを計算していながらnew_reliable判定に使っていなかったため、
+  // hash_reliable=trueでもvisitor_hashが空文字ならnew_reliableへ誤分類され得た。
+  const row = { visit_id: 'v_' + 'a'.repeat(20), visitor_hash: '', hash_reliable: true };
+  assert.equal(classifyLogCategory(row), 'new_unreliable', 'visitor_hashが空文字（非空でない）場合はhash_reliable=trueでもnew_reliableとしない');
+});
+test('回帰（監査差し戻しR3）：有効なvisit_id＋hash_reliable=true＋visitor_hashが数値等の非文字列でもnew_unreliable', () => {
+  const rowNumber = { visit_id: 'v_' + 'a'.repeat(20), visitor_hash: 12345, hash_reliable: true };
+  assert.equal(classifyLogCategory(rowNumber), 'new_unreliable', 'visitor_hashが数値（文字列型でない）場合はhash_reliable=trueでもnew_reliableとしない');
+  const rowNull = { visit_id: 'v_' + 'a'.repeat(20), visitor_hash: null, hash_reliable: true };
+  assert.equal(classifyLogCategory(rowNull), 'new_unreliable', 'visitor_hashがnull（文字列型でない）場合も同様');
+});
+test('回帰（監査差し戻しR3）：有効なvisit_id＋hash_reliable=true＋非空文字列visitor_hashはnew_reliableのまま（正常系回帰）', () => {
+  const row = { visit_id: 'v_' + 'a'.repeat(20), visitor_hash: 'abcdef1234', hash_reliable: true };
+  assert.equal(classifyLogCategory(row), 'new_reliable', '正常な組合せ（hash_reliable=true かつ visitor_hashが非空文字列）は引き続きnew_reliableであること');
+});
 
 /* ===================================================================
  * buildQualityAxes：hasPageView===trueのみ計上、Web軸キーの統一（監査差し戻し#5）
