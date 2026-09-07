@@ -102,26 +102,37 @@ test('logInteractionV2: Content-Lengthヘッダがrequest size上限を超える
   assert.equal(result.statusCode, 413);
 });
 
-test('logInteractionVerify: Authorizationヘッダなしは401でjtiを含まない', async () => {
+test('logInteractionV2Verify: Authorizationヘッダなしは401でjtiを含まない', async () => {
   process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
-  const result = await invoke(functions.logInteractionVerify, {
+  const result = await invoke(functions.logInteractionV2Verify, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
   });
   assert.equal(result.statusCode, 401);
   assert.equal(Object.prototype.hasOwnProperty.call(result.body, 'jti'), false);
 });
-test('logInteractionVerify: 不正なJWT文字列は401', async () => {
+test('logInteractionV2Verify: 不正なJWT文字列は401', async () => {
   process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
-  const result = await invoke(functions.logInteractionVerify, {
+  const result = await invoke(functions.logInteractionV2Verify, {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer not-a-real-jwt' },
     body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
   });
   assert.equal(result.statusCode, 401);
 });
-test('logInteractionVerify: GETは405', async () => {
-  const result = await invoke(functions.logInteractionVerify, { method: 'GET', headers: {} });
+test('logInteractionV2Verify: GETは405', async () => {
+  const result = await invoke(functions.logInteractionV2Verify, { method: 'GET', headers: {} });
   assert.equal(result.statusCode, 405);
+});
+test('logInteractionV2Verify: audが異なるJWTは401（正式名logInteractionV2Verifyでなければ拒否）', async () => {
+  const secret = 'unit-verify-secret-not-real-0123456789abcdef';
+  process.env.VERIFY_JWT_SECRET = secret;
+  const { signVerifyJwt } = require('../lib/funnelV2');
+  const { token } = signVerifyJwt(secret, { sub: 'info@aoki-tosou.net', aud: 'someOtherFunction', scope: 'write:interaction_logs_v2_verify' });
+  const result = await invoke(functions.logInteractionV2Verify, {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 401);
 });
 
 test('getFunnelInsightsV2: トークンなしは401（既存getFunnelDashboard等と同じ認可契約）', async () => {
@@ -135,4 +146,36 @@ test('getFunnelInsightsV2: POSTは405', async () => {
     method: 'POST', headers: { authorization: 'Bearer unit-dashboard-token' }
   });
   assert.equal(result.statusCode, 405);
+});
+test('getFunnelInsightsV2Verify: JWTなしは401', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  const result = await invoke(functions.getFunnelInsightsV2Verify, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+
+test('getFunnelDrilldownV2: トークンなしは401', async () => {
+  process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
+  const result = await invoke(functions.getFunnelDrilldownV2, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+test('getFunnelDrilldownV2: POSTは405', async () => {
+  process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
+  const result = await invoke(functions.getFunnelDrilldownV2, { method: 'POST', headers: { authorization: 'Bearer unit-dashboard-token' } });
+  assert.equal(result.statusCode, 405);
+});
+test('getFunnelDrilldownV2Verify: JWTなしは401', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  const result = await invoke(functions.getFunnelDrilldownV2Verify, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+
+test('getFunnelRecentActivityV2: トークンなしは401', async () => {
+  process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
+  const result = await invoke(functions.getFunnelRecentActivityV2, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+test('getFunnelRecentActivityV2Verify: JWTなしは401', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  const result = await invoke(functions.getFunnelRecentActivityV2Verify, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
 });

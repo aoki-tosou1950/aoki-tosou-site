@@ -36,6 +36,17 @@ const {
   verifyVerifyJwt
 } = require('./lib/funnelV2');
 
+// 単位EF残実装（独立監査再提出）：見込み度の再訪判定はV1と同じ90日lookbackを使う
+// （V1のREVISIT_LOOKBACK_DAYSと同じ値。funnel.js自体は無変更のため、この定数だけV2側で
+// 独立定義する）。
+const V2_REVISIT_LOOKBACK_DAYS = 90;
+// VERIFY専用runtime service account（正本仕様：VERIFY writerへ専用runtime serviceAccount名を
+// onRequest optionsで明示する）。Secret Manager側の作成・IAM最小権限設定は人間が実施する
+// （このセッションではSecret/IAM操作を一切行っていない。詳細は監査ZIP同梱の
+// secret_iam_plan/VERIFY_SECRET_IAM_SETUP_PLAN.mdを参照）。実際にこのservice accountが
+// 存在しない状態でdeployすると失敗する＝人間の事前作業が必須であることが自然に強制される。
+const VERIFY_RUNTIME_SERVICE_ACCOUNT = 'funnel-verify-runtime@aokitosou-miniapp.iam.gserviceaccount.com';
+
 initializeApp();
 const db = getFirestore();
 const DASHBOARD_HTML = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
@@ -104,7 +115,10 @@ function buildV2Event(body, headers, dashboardToken) {
     contactChannel: optionalString(body.contactChannel, 30),
     currentPage: optionalString(body.currentPage, 500),
     landingPage: optionalString(body.landingPage, 500),
-    referrerHost: optionalString(body.referrerHost, 255),
+    // 独立監査再提出・項目7：referrerHostのクライアント生値は受け取らない・保存しない
+    // （rawFrom/rawReferrerのような重複証跡フィールドを作らない）。funnelV2.js側の
+    // recordWebEventV2が、サーバー検証済みのwebSource/webSourceStatusから
+    // referrer_hostを導出する（webSourceStatus==='referrer'の場合のみ、その値を使う）。
     isTest
   });
   return { ok: true, event };
@@ -172,31 +186,24 @@ exports.logInteractionV2 = onRequest(
  * コレクションへのみ書き込む。本番サイト・本番トラフィックからは一切呼ばれない
  * （検証用スクリプト専用のエンドポイント）。
  * DATA_ENV: VERIFY
+ * 正式名：logInteractionV2Verify（aud同名）。専用runtime service accountを明示する。
  *
  * secrets配列にVERIFY_JWT_SECRETを含める（Secret Managerでの作成・IAMアクセス制限
- * ＝info@aoki-tosou.netと専用service accountのみへの限定は、今回のセッションでは
- * 未実施＝人間の実施が必要。詳細は最終報告を参照）。
+ * ＝info@aoki-tosou.netと専用service accountのみへの限定は、今回のセッションでも
+ * 未実施＝人間の実施が必要。詳細は監査ZIP同梱のsecret_iam_plan/を参照）。
  */
-exports.logInteractionVerify = onRequest(
+exports.logInteractionV2Verify = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['VERIFY_JWT_SECRET']
+    secrets: ['VERIFY_JWT_SECRET'],
+    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
   },
   async (req, res) => {
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
-    const token = extractBearerToken(req.headers.authorization);
-    const verdict = verifyVerifyJwt(token, process.env.VERIFY_JWT_SECRET, {
-      expectedAud: 'logInteractionVerify',
-      expectedScope: 'write:interaction_logs_v2_verify',
-      expectedSub: 'info@aoki-tosou.net'
-    });
-    if (!verdict.ok) {
-      // 監査差し戻し#6：署名不正時などverdict.jtiが無い場合はレスポンスにも一切含めない
-      // （verifyVerifyJwt自体が既に保証しているが、ここでも生payloadを追加で出力しない）。
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    const verdict = verifyVerifyRequest_(req);
+    if (!verdict.ok) return res.status(401).json({ error: 'Unauthorized' });
 
     const contentLength = Number(req.headers['content-length'] || 0);
     if (contentLength > V2_MAX_BODY_BYTES) return res.status(413).json({ error: 'Payload Too Large' });
@@ -221,16 +228,91 @@ exports.logInteractionVerify = onRequest(
       const result = await recordWebEventV2(db, V2_VERIFY_COLLECTIONS, built.event, new Date());
       return res.status(200).json({ success: true, aggregate: result });
     } catch (err) {
-      console.error('logInteractionVerify failed:', err);
+      console.error('logInteractionV2Verify failed:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 );
 
+/** VERIFY読み取り系エンドポイント共通のJWT検証（Authorization: Bearerヘッダ）。
+ * audはエンドポイントごとに異なる正式名を要求する（正本仕様：関数名とaudが同名）。 */
+function verifyVerifyRequest_(req, expectedAud) {
+  const token = extractBearerToken(req.headers.authorization);
+  return verifyVerifyJwt(token, process.env.VERIFY_JWT_SECRET, {
+    expectedAud: expectedAud || 'logInteractionV2Verify',
+    expectedScope: 'write:interaction_logs_v2_verify',
+    expectedSub: 'info@aoki-tosou.net'
+  });
+}
+
+/** 期間の[startAt, endAt)エポックms境界を計算する（V1のperiodBounds＋JST日境界と同じ規則）。 */
+function v2PeriodBoundsMs_(bounds) {
+  return {
+    startAt: new Date(`${bounds.start}T00:00:00.000+09:00`).getTime(),
+    endAt: new Date(`${shiftDateKey(bounds.end, 1)}T00:00:00.000+09:00`).getTime()
+  };
+}
+
+/** legacy（visit_idを持たないraw log）を、V1のgroupVisits_がそのまま受け取れる形状
+ * （eventType/dayKey/visitorHashValue）へ整形し、hash有り（legacy_unknown）／
+ * hash無し（legacy_hash_missing）に分けて返す。isTestは除外する（単位6）。 */
+async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
+  const snapshot = await db.collection(collections.interactionLogs)
+    .where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
+  const hashPresentRows = [];
+  const hashMissingRows = [];
+  snapshot.forEach((doc) => {
+    const data = doc.data();
+    if (data.is_test) return;
+    const category = classifyLogCategory(data);
+    if (category !== 'legacy_unknown' && category !== 'legacy_hash_missing') return;
+    const createdAt = data.created_at && typeof data.created_at.toDate === 'function' ? data.created_at.toDate() : null;
+    if (!createdAt) return;
+    const row = { eventType: String(data.event_type || ''), dayKey: jstDateKey(createdAt), visitorHashValue: String(data.visitor_hash || '') };
+    (category === 'legacy_unknown' ? hashPresentRows : hashMissingRows).push(row);
+  });
+  return { hashPresentRows, hashMissingRows };
+}
+
+/** 見込み度の再訪判定用：指定期間より前、V1と同じ90日lookbackのvisit_sessionsを取得する。 */
+async function fetchPriorVisitSessions_(collections, beforeMs) {
+  const lookbackStartAt = beforeMs - V2_REVISIT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+  const snapshot = await db.collection(collections.visitSessions)
+    .where('startedAt', '>=', lookbackStartAt).where('startedAt', '<', beforeMs).get();
+  return snapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data()));
+}
+
 /**
- * PROD V2 reader：media/webSource独立2軸、見込み度5区分（高・中・低・判定不能・旧ログ）、
- * legacy＋新方式4分類の集計を返す読み取り専用API。既存getFunnelInsights（V1）とは別関数
- * （V1は無変更のまま残す）。
+ * media/webSource独立2軸、見込み度5区分（高・中・低・判定不能・旧ログ）、
+ * legacy＋新方式4分類の集計を返す読み取り専用の中核処理（PROD/VERIFY共通）。
+ */
+async function runV2InsightsQuery_(collections, period, levelFilter) {
+  const bounds = periodBounds(period, new Date());
+  const { startAt, endAt } = v2PeriodBoundsMs_(bounds);
+
+  const sessionSnapshot = await db.collection(collections.visitSessions)
+    .where('startedAt', '>=', startAt).where('startedAt', '<', endAt).get();
+  const visitSessions = sessionSnapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data()));
+
+  const priorVisitSessions = await fetchPriorVisitSessions_(collections, startAt);
+  const { hashPresentRows, hashMissingRows } = await fetchLegacyRowsForGrouping_(collections, startAt, endAt);
+
+  const { mediaQuality, webSourceQuality } = buildQualityAxes(visitSessions);
+  const { counts, cards } = buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, hashPresentRows, hashMissingRows);
+  const filteredCards = levelFilter ? cards.filter((c) => c.level === levelFilter) : cards;
+
+  return {
+    period: Object.assign({ key: period }, bounds),
+    mediaQuality,
+    webSourceQuality,
+    leadScoreBreakdown: counts,
+    leadScoreCards: filteredCards
+  };
+}
+
+/**
+ * PROD V2 reader：media/webSource独立2軸、見込み度5区分の集計を返す読み取り専用API。
+ * 既存getFunnelInsights（V1）とは別関数（V1は無変更のまま残す）。
  * DATA_ENV: PROD_V2
  */
 exports.getFunnelInsightsV2 = onRequest(
@@ -242,47 +324,229 @@ exports.getFunnelInsightsV2 = onRequest(
   async (req, res) => {
     if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
     if (!requireDashboardToken(req, res)) return;
-    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period)
-      ? req.query.period
-      : 'thisMonth';
-    const bounds = periodBounds(period, new Date());
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
     const levelFilter = ['高', '中', '低', '判定不能'].includes(req.query.level) ? req.query.level : null;
-
     try {
-      const startAt = new Date(`${bounds.start}T00:00:00.000+09:00`).getTime();
-      const endAt = new Date(`${shiftDateKey(bounds.end, 1)}T00:00:00.000+09:00`).getTime();
-
-      const sessionSnapshot = await db.collection(V2_PROD_COLLECTIONS.visitSessions)
-        .where('startedAt', '>=', startAt).where('startedAt', '<', endAt).get();
-      const visitSessions = sessionSnapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data()));
-
-      // legacy件数（visit_idを持たないV1時代のraw log）はinteraction_logsを直接読んで数える。
-      // V1のloadInteractionRows_・訪問グルーピングは複製しない（V1無変更の方針）ため、
-      // 「訪問単位」ではなく「raw log単位」の件数であることをレスポンスのnoteで明示する。
-      const logSnapshot = await db.collection(V2_PROD_COLLECTIONS.interactionLogs)
-        .where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
-      let legacyLogCount = 0;
-      logSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.is_test) return;
-        if (classifyLogCategory(data) === 'legacy_unknown' || classifyLogCategory(data) === 'legacy_hash_missing') legacyLogCount += 1;
-      });
-
-      const { mediaQuality, webSourceQuality } = buildQualityAxes(visitSessions);
-      const { counts, cards } = buildLeadScoreBreakdownV2(visitSessions, legacyLogCount);
-      const filteredCards = levelFilter ? cards.filter((c) => c.level === levelFilter) : cards;
-
+      const result = await runV2InsightsQuery_(V2_PROD_COLLECTIONS, period, levelFilter);
       res.set('Cache-Control', 'private, no-store');
-      return res.status(200).json({
-        period: Object.assign({ key: period }, bounds),
-        mediaQuality,
-        webSourceQuality,
-        leadScoreBreakdown: counts,
-        leadScoreCards: filteredCards,
-        note: '旧ログ（leadScoreBreakdown.旧ログ）は訪問単位ではなくraw log単位の件数です。'
-      });
+      return res.status(200).json(result);
     } catch (error) {
       console.error('getFunnelInsightsV2 failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * VERIFY版getFunnelInsightsV2。JWT認可・VERIFY専用コレクションのみを読む。
+ * DATA_ENV: VERIFY
+ */
+exports.getFunnelInsightsV2Verify = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['VERIFY_JWT_SECRET'],
+    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!verifyVerifyRequest_(req, 'getFunnelInsightsV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
+    const levelFilter = ['高', '中', '低', '判定不能'].includes(req.query.level) ? req.query.level : null;
+    try {
+      const result = await runV2InsightsQuery_(V2_VERIFY_COLLECTIONS, period, levelFilter);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error('getFunnelInsightsV2Verify failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * 個別訪問・反応の一覧（正本仕様：ドリルダウンはraw eventの帰属ではなくvisit_sessions
+ * 正本へjoinする）。metric='visitors'はvisit_sessions（hasPageView===trueのみ）を直接返す。
+ * metric='lineClicks'/'phoneClicks'はraw interaction_logsから個々のイベント時刻を取得し、
+ * その視visit_idでvisit_sessionsへjoinして「そのイベントの時点でどの帰属が正本だったか」
+ * ではなく「現在の正本（visit_sessionsの最新値）」を表示する（既存V1のfunnelDrilldownと
+ * 同じ「今の正本を見せる」設計思想を踏襲）。isTestは除外する（単位6）。
+ */
+async function runV2DrilldownQuery_(collections, period, metric) {
+  const bounds = periodBounds(period, new Date());
+  const { startAt, endAt } = v2PeriodBoundsMs_(bounds);
+
+  if (metric === 'visitors') {
+    const snapshot = await db.collection(collections.visitSessions)
+      .where('startedAt', '>=', startAt).where('startedAt', '<', endAt).get();
+    const items = snapshot.docs
+      .map((doc) => Object.assign({ visitId: doc.id }, doc.data()))
+      .filter((v) => v.isTest !== true && v.hasPageView === true)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .map((v) => ({
+        at: new Date(v.startedAt).toISOString(),
+        visitId: v.visitId,
+        mediaCode: v.mediaValidity === 'valid' ? v.mediaCode : '',
+        mediaValidity: v.mediaValidity,
+        webSource: v.webSource,
+        webSourceStatus: v.webSourceStatus,
+        pageViewCount: Number(v.pageViewCount || 0),
+        reactionCount: Number(v.reactionCount || 0)
+      }));
+    return { kind: 'visit', metric, items, total: items.length };
+  }
+
+  const eventTypeByMetric = { lineClicks: 'line_click', phoneClicks: 'phone_click' };
+  const eventType = eventTypeByMetric[metric];
+  if (!eventType) throw new Error('Unsupported drilldown metric');
+
+  const logSnapshot = await db.collection(collections.interactionLogs)
+    .where('event_type', '==', eventType).where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
+  const rows = logSnapshot.docs.map((doc) => doc.data()).filter((r) => r.is_test !== true).sort((a, b) => b.occurred_at - a.occurred_at);
+
+  // raw eventの帰属ではなくvisit_sessions正本へjoinする（正本仕様）。
+  const visitIds = Array.from(new Set(rows.map((r) => r.visit_id).filter(Boolean)));
+  const sessionDocs = await Promise.all(visitIds.map((id) => db.collection(collections.visitSessions).doc(id).get()));
+  const sessionById = new Map();
+  sessionDocs.forEach((snap) => { if (snap.exists) sessionById.set(snap.id, snap.data()); });
+
+  const items = rows.map((r) => {
+    const session = sessionById.get(r.visit_id) || null;
+    return {
+      at: new Date(r.occurred_at).toISOString(),
+      visitId: r.visit_id || '',
+      mediaCode: session && session.mediaValidity === 'valid' ? session.mediaCode : '',
+      mediaValidity: session ? session.mediaValidity : null,
+      webSource: session ? session.webSource : null,
+      webSourceStatus: session ? session.webSourceStatus : null,
+      visitPageViewCount: session ? Number(session.pageViewCount || 0) : null
+    };
+  });
+  return { kind: 'event', metric, items, total: items.length };
+}
+
+/**
+ * PROD V2版getFunnelDrilldown。既存getFunnelDrilldown（V1）とは別関数（V1は無変更）。
+ * DATA_ENV: PROD_V2
+ */
+exports.getFunnelDrilldownV2 = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
+    const metric = String(req.query.metric || '');
+    try {
+      const result = await runV2DrilldownQuery_(V2_PROD_COLLECTIONS, period, metric);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ period: periodBounds(period, new Date()) }, result));
+    } catch (error) {
+      if (error && error.message === 'Unsupported drilldown metric') return res.status(400).json({ error: error.message });
+      console.error('getFunnelDrilldownV2 failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * VERIFY版getFunnelDrilldownV2。
+ * DATA_ENV: VERIFY
+ */
+exports.getFunnelDrilldownV2Verify = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['VERIFY_JWT_SECRET'],
+    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!verifyVerifyRequest_(req, 'getFunnelDrilldownV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
+    const metric = String(req.query.metric || '');
+    try {
+      const result = await runV2DrilldownQuery_(V2_VERIFY_COLLECTIONS, period, metric);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ period: periodBounds(period, new Date()) }, result));
+    } catch (error) {
+      if (error && error.message === 'Unsupported drilldown metric') return res.status(400).json({ error: error.message });
+      console.error('getFunnelDrilldownV2Verify failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * 直近24時間の「今日」パルス向け軽量サマリ。V1のfunnelRecentActivityと同じ目的だが、
+ * V2ネイティブのvisit_sessionsだけを使う。
+ * 【既知の未実装】V1が持つrevisitImproved（再訪で閲覧が深まった／反応が強まった件数）・
+ * lineFollowIncrease（LINE友だち純増数）はこの関数では算出しない
+ * （revisitImprovedはleadScoreカードへrevisit詳細を持たせる追加実装が必要、
+ * lineFollowIncreaseはLINE Webhook側のイベントでschemaVersion:2の対象外のため）。
+ * 「未確認事項」として最終報告に明記する。
+ */
+async function runV2RecentActivityQuery_(collections, hours) {
+  const now = new Date();
+  const startAt = now.getTime() - hours * 60 * 60 * 1000;
+  const sessionSnapshot = await db.collection(collections.visitSessions).where('startedAt', '>=', startAt).get();
+  const visitSessions = sessionSnapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data())).filter((v) => v.isTest !== true);
+  const priorVisitSessions = await fetchPriorVisitSessions_(collections, startAt);
+  const { counts } = buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, [], []);
+  const newVisits = visitSessions.filter((v) => v.hasPageView === true).length;
+  const lineOrPhoneReactions = visitSessions.reduce((sum, v) => sum + Number(v.reactionCount || 0), 0);
+  const highLeadVisits = counts.高;
+  const hasNotable = newVisits > 0 || lineOrPhoneReactions > 0;
+  return { hasNotable, newVisits, highLeadVisits, lineOrPhoneReactions };
+}
+
+/**
+ * PROD V2版getFunnelRecentActivity。
+ * DATA_ENV: PROD_V2
+ */
+exports.getFunnelRecentActivityV2 = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    try {
+      const result = await runV2RecentActivityQuery_(V2_PROD_COLLECTIONS, 24);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ ok: true }, result));
+    } catch (error) {
+      console.error('getFunnelRecentActivityV2 failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * VERIFY版getFunnelRecentActivityV2。
+ * DATA_ENV: VERIFY
+ */
+exports.getFunnelRecentActivityV2Verify = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['VERIFY_JWT_SECRET'],
+    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!verifyVerifyRequest_(req, 'getFunnelRecentActivityV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const result = await runV2RecentActivityQuery_(V2_VERIFY_COLLECTIONS, 24);
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(Object.assign({ ok: true }, result));
+    } catch (error) {
+      console.error('getFunnelRecentActivityV2Verify failed:', error);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }

@@ -990,5 +990,15 @@ module.exports = {
   sourceKey,
   verifyLineSignature,
   visitorHash,
-  visitorToken
+  visitorToken,
+  // 2026-09-07追加（単位D：独立監査再提出）：見込み度の判定式そのものはV1が正本のまま
+  // （このファイルは無変更・挙動は一切変わらない。追加したのはmodule.exportsへの
+  // 参照だけ）。V2（funnelV2.js）が「V1の見込み度定義をvisit_id単位の新しい訪問境界へ
+  // 適用する」ために、独自の簡易ルールを新設せずV1の実装をそのまま呼び出せるよう、
+  // 既存の非公開関数をexportのみ追加する。groupVisits_はlegacy（visit_idを持たない
+  // 旧方式ログ）の「旧ログ」区分をV1と同一の日付＋visitor_hash単位で集計するために使う。
+  computeLeadScore_,
+  pageCategoryOf_,
+  pageKeyOf_,
+  groupVisits_
 };

@@ -7,7 +7,7 @@
  * ===================================================================== */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createFunnelStore } = require('../lib/funnel'); // V1実装（契約テストでそのまま実行して比較する）
+const { createFunnelStore, computeLeadScore_, pageCategoryOf_, pageKeyOf_ } = require('../lib/funnel'); // V1実装（契約テストでそのまま実行して比較する）
 const {
   validateCoreFields,
   normalizeMediaCode,
@@ -19,8 +19,8 @@ const {
   isNewMethodLog,
   classifyLogCategory,
   buildQualityAxes,
-  computeLeadScoreLevelV2_,
   buildLeadScoreBreakdownV2,
+  computeSessionLeadScoreV1Compat_,
   signVerifyJwt,
   verifyVerifyJwt
 } = require('../lib/funnelV2');
@@ -799,55 +799,147 @@ test('hashReliableは、より新しいイベントが後着（正本を差し�
 });
 
 /* ===================================================================
- * computeLeadScoreLevelV2_ / buildLeadScoreBreakdownV2（単位D・2026-09-07）
+ * buildLeadScoreBreakdownV2（単位D・独立監査再提出版：2026-09-07）
+ * 独自の簡易スコア式（反応あり=高／3PV=中／それ以外=低）は監査差し戻しにより撤回した。
+ * V1の判定式（computeLeadScore_）をそのまま呼ぶ設計へ全面改訂したため、
+ * このテストブロックも全面的に書き直した。
  * =================================================================== */
-test('computeLeadScoreLevelV2_: page_viewが無いsessionは判定不能', () => {
-  assert.equal(computeLeadScoreLevelV2_({ hasPageView: false, pageViewCount: 0, reactionCount: 0 }), '判定不能');
+test('契約テスト（単位D）：同一イベント集合ではV1(computeLeadScore_)とV2(buildLeadScoreBreakdownV2)のleadScore.levelが一致する（再訪なし）', async () => {
+  const db = fakeFirestore();
+  const visitId = 'v_lscontract_0001'.padEnd(20, '0');
+  const rawVisitorId = 'v_lscontract_visitor_0001aaaaaaaa';
+  const identity = evaluateVisitorIdentity(rawVisitorId, true);
+  assert.equal(identity.hashReliable, true, '前提：hashReliable=trueな訪問者');
+  const baseTime = new Date('2026-09-07T02:00:00.000Z').getTime();
+  const pages = ['https://aoki-tosou.net/works.html', 'https://aoki-tosou.net/faq.html', 'https://aoki-tosou.net/'];
+
+  for (let i = 0; i < pages.length; i++) {
+    await recordWebEventV2(db, COLLECTIONS, makeEvent({
+      eventId: `e_ls_pv_${i}`, visitId, eventType: 'page_view', occurredAt: baseTime + i * 1000,
+      currentPage: pages[i], rawVisitorId, hashReliable: identity.hashReliable, visitorHash: identity.visitorHash
+    }));
+  }
+  await recordWebEventV2(db, COLLECTIONS, makeEvent({
+    eventId: 'e_ls_line', visitId, eventType: 'line_click', occurredAt: baseTime + 4000,
+    rawVisitorId, hashReliable: identity.hashReliable, visitorHash: identity.visitorHash
+  }));
+
+  // fakeFirestoreの_dataはドキュメントの中身のみを保持し、ドキュメントID（visitId）は
+  // 別管理のため、実際の呼び出し側（functions/index.jsのgetFunnelInsightsV2）が行うのと
+  // 同様にvisitIdをdoc.id相当として明示的に合成する。
+  const session = Object.assign({ visitId }, db._data.get(`visit_sessions/${visitId}`));
+  assert.equal(session.pageViewCount, 3, '前提：3件のpage_view');
+  assert.equal(session.lineClickCount, 1, '前提：line_click 1件');
+  assert.deepEqual(session.pageCategories, pages.map((url) => pageCategoryOf_(pageKeyOf_(url))), 'V2が保持するpageCategoriesがV1のページ分類と一致すること');
+
+  // V1側：同じイベント集合をV1の入力形状（pageCategories・actions・pageCount）で
+  // 手動構成し、V1の実装（computeLeadScore_）をそのまま呼ぶ（再訪なし＝priorVisit=null）。
+  const v1PageCategories = pages.map((url) => pageCategoryOf_(pageKeyOf_(url)));
+  const v1Result = computeLeadScore_({ dayKey: jstDateKey(baseTime), pageCount: 3, pageCategories: v1PageCategories, actions: [{ type: 'lineClick' }] }, null);
+
+  // V2側：recordWebEventV2が実際に保存したvisit_sessionを、V2の見込み度パイプラインへ
+  // そのまま渡す（priorVisitSessions等は空＝再訪なし）。
+  const v2Result = buildLeadScoreBreakdownV2([session], [], [], []);
+  const v2Card = v2Result.cards.find((c) => c.visitId === visitId);
+
+  assert.ok(v2Card, 'new_reliableな高中低いずれかのcardが生成されていること');
+  assert.equal(v2Card.level, v1Result.level, 'V1とV2のleadScore.levelが一致すること');
 });
-test('computeLeadScoreLevelV2_: 反応（LINE/電話）が1件以上あれば高', () => {
-  assert.equal(computeLeadScoreLevelV2_({ hasPageView: true, pageViewCount: 1, reactionCount: 1 }), '高');
+
+test('契約テスト（単位D）：再訪ボーナス（前回より深い閲覧）もV1/V2で一致する', async () => {
+  const db = fakeFirestore();
+  const rawVisitorId = 'v_lscontract_revisit_0001aaaaaaaa';
+  const identity = evaluateVisitorIdentity(rawVisitorId, true);
+  const day1 = new Date('2026-09-05T02:00:00.000Z').getTime();
+  const day2 = new Date('2026-09-07T02:00:00.000Z').getTime(); // 2日後の再訪
+
+  // 前回訪問（1ページのみ・反応なし）
+  const priorVisitId = 'v_lscontract_prior_0001'.padEnd(20, '0');
+  await recordWebEventV2(db, COLLECTIONS, makeEvent({
+    eventId: 'e_ls_prior_pv', visitId: priorVisitId, eventType: 'page_view', occurredAt: day1,
+    currentPage: 'https://aoki-tosou.net/', rawVisitorId, hashReliable: identity.hashReliable, visitorHash: identity.visitorHash
+  }));
+  const priorSession = Object.assign({ visitId: priorVisitId }, db._data.get(`visit_sessions/${priorVisitId}`));
+
+  // 今回訪問（3ページ・前回より深い閲覧）
+  const currentVisitId = 'v_lscontract_current_0001'.padEnd(20, '0');
+  const pages = ['https://aoki-tosou.net/', 'https://aoki-tosou.net/works.html', 'https://aoki-tosou.net/faq.html'];
+  for (let i = 0; i < pages.length; i++) {
+    await recordWebEventV2(db, COLLECTIONS, makeEvent({
+      eventId: `e_ls_current_pv_${i}`, visitId: currentVisitId, eventType: 'page_view', occurredAt: day2 + i * 1000,
+      currentPage: pages[i], rawVisitorId, hashReliable: identity.hashReliable, visitorHash: identity.visitorHash
+    }));
+  }
+  const currentSession = Object.assign({ visitId: currentVisitId }, db._data.get(`visit_sessions/${currentVisitId}`));
+
+  // V1側
+  const v1Prior = { dayKey: jstDateKey(day1), pageCount: 1, hadAction: false };
+  const v1PageCategories = pages.map((url) => pageCategoryOf_(pageKeyOf_(url)));
+  const v1Result = computeLeadScore_({ dayKey: jstDateKey(day2), pageCount: 3, pageCategories: v1PageCategories, actions: [] }, v1Prior);
+  assert.equal(v1Result.revisit.isReturning, true, '前提：V1側が再訪と判定していること');
+  assert.equal(v1Result.revisit.deeperThanPrevious, true, '前提：V1側が「前回より深い閲覧」と判定していること');
+
+  // V2側：priorVisitSessionsへ前回訪問を渡す
+  const v2Result = buildLeadScoreBreakdownV2([currentSession], [priorSession], [], []);
+  const v2Card = v2Result.cards.find((c) => c.visitId === currentVisitId);
+
+  assert.ok(v2Card, '再訪込みでもnew_reliableなcardが生成されること');
+  assert.equal(v2Card.level, v1Result.level, '再訪ボーナスを含めてもV1とV2のleadScore.levelが一致すること');
 });
-test('computeLeadScoreLevelV2_: 反応なし・page_view3件以上は中', () => {
-  assert.equal(computeLeadScoreLevelV2_({ hasPageView: true, pageViewCount: 3, reactionCount: 0 }), '中');
-});
-test('computeLeadScoreLevelV2_: 反応なし・page_view1〜2件は低', () => {
-  assert.equal(computeLeadScoreLevelV2_({ hasPageView: true, pageViewCount: 1, reactionCount: 0 }), '低');
-  assert.equal(computeLeadScoreLevelV2_({ hasPageView: true, pageViewCount: 2, reactionCount: 0 }), '低');
-});
-test('buildLeadScoreBreakdownV2: hashReliable=falseのsessionは行動によらず判定不能へ集計され、cardsには含まれない（監査正本仕様：unreliable/hash欠損は判定不能）', () => {
+
+test('buildLeadScoreBreakdownV2: hashReliable=falseのsessionは行動によらず判定不能へ集計され、cardsには含まれない（正本仕様：unreliable/hash欠損は判定不能）', () => {
   const sessions = [
-    { visitId: 'v1', hashReliable: false, hasPageView: true, pageViewCount: 5, reactionCount: 3 } // 行動だけ見れば「高」相当だが不採用
+    { visitId: 'v1', hashReliable: false, hasPageView: true, pageViewCount: 5, lineClickCount: 1, phoneClickCount: 1, reactionCount: 2, pageCategories: [] }
   ];
-  const { counts, cards } = buildLeadScoreBreakdownV2(sessions, 0);
+  const { counts, cards } = buildLeadScoreBreakdownV2(sessions, [], [], []);
   assert.equal(counts.判定不能, 1);
   assert.equal(counts.高, 0);
   assert.equal(cards.length, 0, 'hashReliable=falseはcards（個別カード）に含めない');
 });
-test('buildLeadScoreBreakdownV2: hashReliable=trueのsessionのみcardsに含まれ、levelが正しく計算される', () => {
+test('buildLeadScoreBreakdownV2: hashReliable=true・hasPageView=false（reaction-only）は判定不能（V1と同じ方針・閲覧文脈を捏造しない）', () => {
   const sessions = [
-    { visitId: 'v_high', hashReliable: true, hasPageView: true, pageViewCount: 1, reactionCount: 1, mediaCode: 'M1', mediaValidity: 'valid', webSource: 'direct', webSourceStatus: 'direct', startedAt: 1000 },
-    { visitId: 'v_mid', hashReliable: true, hasPageView: true, pageViewCount: 4, reactionCount: 0, mediaCode: '', mediaValidity: 'none', webSource: 'direct', webSourceStatus: 'direct', startedAt: 2000 },
-    { visitId: 'v_low', hashReliable: true, hasPageView: true, pageViewCount: 1, reactionCount: 0, mediaCode: '', mediaValidity: 'none', webSource: '', webSourceStatus: 'none', startedAt: 3000 }
+    { visitId: 'v_reaction_only', hashReliable: true, hasPageView: false, pageViewCount: 0, lineClickCount: 1, phoneClickCount: 0, reactionCount: 1, pageCategories: [] }
   ];
-  const { counts, cards } = buildLeadScoreBreakdownV2(sessions, 0);
-  assert.equal(counts.高, 1);
-  assert.equal(counts.中, 1);
-  assert.equal(counts.低, 1);
-  assert.equal(counts.判定不能, 0);
-  assert.equal(cards.length, 3);
-  assert.deepEqual(cards.map((c) => c.visitId).sort(), ['v_high', 'v_low', 'v_mid']);
-  const highCard = cards.find((c) => c.visitId === 'v_high');
-  assert.equal(highCard.level, '高');
-  assert.equal(highCard.mediaCode, 'M1');
-});
-test('buildLeadScoreBreakdownV2: 旧ログ件数は呼び出し側から渡された値をそのまま反映する（visit単位ではなくraw log単位）', () => {
-  const { counts } = buildLeadScoreBreakdownV2([], 7);
-  assert.equal(counts.旧ログ, 7);
+  const { counts, cards } = buildLeadScoreBreakdownV2(sessions, [], [], []);
+  assert.equal(counts.判定不能, 1);
+  assert.equal(cards.length, 0);
 });
 test('buildLeadScoreBreakdownV2: mediaValidity=invalidのcardはmediaCodeを生値のまま返さない（buildQualityAxesと同じ扱い）', () => {
   const sessions = [
-    { visitId: 'v_invalid', hashReliable: true, hasPageView: true, pageViewCount: 1, reactionCount: 0, mediaCode: 'bad code', mediaValidity: 'invalid', webSource: '', webSourceStatus: 'invalid', startedAt: 1000 }
+    { visitId: 'v_invalid', hashReliable: true, hasPageView: true, pageViewCount: 1, lineClickCount: 1, phoneClickCount: 0, reactionCount: 1, pageCategories: [null], mediaCode: 'bad code', mediaValidity: 'invalid', webSource: '', webSourceStatus: 'invalid', startedAt: 1000 }
   ];
-  const { cards } = buildLeadScoreBreakdownV2(sessions, 0);
+  const { cards } = buildLeadScoreBreakdownV2(sessions, [], [], []);
   assert.equal(cards[0].mediaCode, '', 'invalidなmediaCodeはcardへ生値のまま出さない');
+});
+test('buildLeadScoreBreakdownV2: 旧ログ（legacy_unknown）はV1のgroupVisits_と同じ日付＋visitor_hash単位でvisit集約される（raw log単位ではない）', () => {
+  // 同一visitor_hash・同一日のpage_view行3件は、V1のgroupVisits_により「1visit」へ
+  // 集約される（raw logは3件でもvisitは1件）。
+  const legacyRows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA' },
+    { eventType: 'page_view', dayKey: '2026-09-02', visitorHashValue: 'hashB' }
+  ];
+  const { counts } = buildLeadScoreBreakdownV2([], [], legacyRows, []);
+  assert.equal(counts.旧ログ, 2, '同一visitor_hash・同一日の3行は1visitへ、別日・別visitorの1行は別visitへ＝計2visit');
+});
+test('buildLeadScoreBreakdownV2: legacy_hash_missingは「旧ログ」ではなく「判定不能」へ計上される（混ぜない）', () => {
+  const legacyHashMissingRows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: '' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: '' }
+  ];
+  const { counts } = buildLeadScoreBreakdownV2([], [], [], legacyHashMissingRows);
+  assert.equal(counts.旧ログ, 0, 'legacy_hash_missingは旧ログへ混ぜない');
+  assert.equal(counts.判定不能, 1, '同一日・hash無し（(不明)キー共通）は1visitとして判定不能へ計上される');
+});
+test('buildLeadScoreBreakdownV2: isTest===trueのvisit_sessionは全区分から除外される', () => {
+  const sessions = [
+    { visitId: 'v_test', isTest: true, hashReliable: true, hasPageView: true, pageViewCount: 1, lineClickCount: 1, phoneClickCount: 0, reactionCount: 1, pageCategories: [null], startedAt: Date.now() },
+    { visitId: 'v_real', isTest: false, hashReliable: true, hasPageView: true, pageViewCount: 1, lineClickCount: 1, phoneClickCount: 0, reactionCount: 1, pageCategories: [null], startedAt: Date.now() }
+  ];
+  const { counts, cards } = buildLeadScoreBreakdownV2(sessions, [], [], []);
+  assert.equal(cards.length, 1, 'isTest=trueのsessionはcardに含まれない');
+  assert.equal(cards[0].visitId, 'v_real');
+  const total = counts.高 + counts.中 + counts.低 + counts.判定不能;
+  assert.equal(total, 1, 'isTest=trueのsessionはcounts集計にも含まれない');
 });

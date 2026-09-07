@@ -1,18 +1,24 @@
 'use strict';
 
 /**
- * Web流入媒体識別精度改善・単位EF（2026-09-07・ローカル実装検証・監査差し戻し対応版）。
+ * Web流入媒体識別精度改善・単位EF（2026-09-07・独立監査「本番BLOCK」再提出版）。
  * 既存V1（functions/lib/funnel.js）は無変更のまま、V2の新規ロジックをこの独立モジュールへ
  * 実装する。funnel_daily互換のためのV1由来ヘルパー（visitorDayHash_/sourceKeyV1Compat_/
- * normalizeLabelV1Compat_）は、V1（functions/lib/funnel.js）の現行実装をREAD ONLYで直接
- * 再確認したうえで、値が一致するように意図的に複製している（V1コードのrequireはしない＝
- * V1の挙動を一切変えないため独立実装のまま維持するが、アルゴリズムはV1と同一にする）。
+ * normalizeLabelV1Compat_）は、V1の現行実装をREAD ONLYで直接再確認したうえで、値が
+ * 一致するように意図的に複製している（アルゴリズムをV1と同一にするための独立複製）。
+ *
+ * 見込み度（単位D）については複製ではなく、V1の実装（computeLeadScore_・
+ * pageCategoryOf_・pageKeyOf_）を直接requireして呼び出す（2026-09-07訂正：独自の
+ * 簡易スコア式を新設していたことが監査で差し戻された。V1の判定式が正本であり、
+ * V2はvisit_id単位の新しい訪問境界へ適用できるよう入力を再構成するだけに留める。
+ * funnel.jsへの変更はmodule.exportsへの追加のみで、V1の挙動そのものは一切変えていない）。
  *
  * 本ファイルはローカルworktree（feature/funnel-media-precision-v1-ef）上での実装であり、
- * 現時点でPRODUCTIONへdeployされていない。functions/index.jsへの配線は未実施。
+ * 現時点でPRODUCTIONへdeployされていない。COPY_TEST・PRODUCTIONへのdeployも未実施。
  */
 
 const crypto = require('crypto');
+const { computeLeadScore_, pageCategoryOf_, pageKeyOf_, groupVisits_ } = require('./funnel');
 
 const JST_TIME_ZONE = 'Asia/Tokyo';
 
@@ -325,7 +331,19 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
     if (event.isTest) daily.testSources[sKey] = testSource;
 
     const isPageView = event.eventType === 'page_view';
-    const isReaction = event.eventType === 'line_click' || event.eventType === 'phone_click';
+    const isLineClick = event.eventType === 'line_click';
+    const isPhoneClick = event.eventType === 'phone_click';
+    // 監査差し戻し（独立監査再提出）項目7：referrerHostはクライアントの生値を無条件で
+    // 保存しない。サーバー側で既に検証済みのwebSource/webSourceStatusから導出する
+    // （webSourceStatus==='referrer'の場合のみ、その検証済みホスト名を使う）。
+    // クライアント側も別途「生のreferrerHost」フィールドは送らない設計に変更済み
+    // （rawFrom/rawReferrerのような重複証跡フィールドを作らない）。
+    const referrerHostForStorage = event.webSourceStatus === 'referrer' ? event.webSource : '';
+    // 単位D（独立監査再提出）：V1の見込み度定義（computeLeadScore_）をそのまま呼べるよう、
+    // page_viewのページカテゴリ（works/faq/survey/null）を訪問単位の配列として保持する
+    // （V1のpageCategories配列と同じ形＝カテゴリ無しのページもnullとして積む）。
+    const pageCategoryForThisEvent = isPageView ? pageCategoryOf_(pageKeyOf_(event.currentPage)) : null;
+
     let visitSessionWrite = null;
     if (!visitSessionSnapshot.exists) {
       visitSessionWrite = {
@@ -335,13 +353,17 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
         startedAt: event.occurredAt,
         hasPageView: isPageView,
         attributionMismatch: false,
-        // 単位D（見込み度個別カード）向け：帰属を決めるイベントと同じ更新規則で
-        // hashReliableも保持する（「誰の訪問か」の信頼度は帰属の正本と同じ更新契機で
-        // 変わるべき値のため）。pageViewCount/reactionCountはイベント種別ごとの
-        // 単純加算（帰属の新旧比較とは無関係に、実際に届いたイベント数をそのまま数える）。
+        // 単位D向け：帰属を決めるイベントと同じ更新規則でhashReliable・visitorHashも
+        // 保持する（「誰の訪問か」の信頼度・識別子は帰属の正本と同じ更新契機で
+        // 変わるべき値のため）。
         hashReliable: Boolean(event.hashReliable),
+        visitorHash: event.visitorHash || '',
+        isTest: Boolean(event.isTest), // 単位6：test訪問をV2全readerから除外するために保持
         pageViewCount: isPageView ? 1 : 0,
-        reactionCount: isReaction ? 1 : 0
+        lineClickCount: isLineClick ? 1 : 0,
+        phoneClickCount: isPhoneClick ? 1 : 0,
+        reactionCount: (isLineClick || isPhoneClick) ? 1 : 0,
+        pageCategories: isPageView ? [pageCategoryForThisEvent] : []
       };
     } else {
       const existing = visitSessionSnapshot.data();
@@ -355,7 +377,7 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
       );
       const update = {};
       if (isOlderTuple(thisTuple, existingTuple)) {
-        // より古いイベントの後着＝7項目（＋hashReliable）を一括更新。
+        // より古いイベントの後着＝7項目（＋hashReliable・visitorHash）を一括更新。
         // 監査差し戻し（R2 #2）：正本を更新する場合でも、更新前の値と今回の値が異なれば
         // attributionMismatch=trueを同一transaction内で立てる（従来は正本の更新有無に
         // かかわらずelse節でしか判定しておらず、より古いイベントが後着して正本が
@@ -366,13 +388,17 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
         update.attributionOccurredAt = event.occurredAt; update.attributionEventId = event.eventId;
         update.startedAt = event.occurredAt;
         update.hashReliable = Boolean(event.hashReliable);
+        update.visitorHash = event.visitorHash || '';
         if (attributionDiffers) update.attributionMismatch = true;
       } else if (attributionDiffers) {
         update.attributionMismatch = true;
       }
       if (isPageView && !existing.hasPageView) update.hasPageView = true;
       update.pageViewCount = Number(existing.pageViewCount || 0) + (isPageView ? 1 : 0);
-      update.reactionCount = Number(existing.reactionCount || 0) + (isReaction ? 1 : 0);
+      update.lineClickCount = Number(existing.lineClickCount || 0) + (isLineClick ? 1 : 0);
+      update.phoneClickCount = Number(existing.phoneClickCount || 0) + (isPhoneClick ? 1 : 0);
+      update.reactionCount = Number(existing.reactionCount || 0) + ((isLineClick || isPhoneClick) ? 1 : 0);
+      if (isPageView) update.pageCategories = (existing.pageCategories || []).concat([pageCategoryForThisEvent]);
       visitSessionWrite = update;
     }
 
@@ -385,7 +411,7 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
       web_source_status: event.webSourceStatus,
       landing_page: event.landingPage || '',
       current_page: event.currentPage || '',
-      referrer_host: event.referrerHost || '', // 正規化済みホストのみ（完全URLは保存しない）
+      referrer_host: referrerHostForStorage, // サーバー検証済みwebSourceから導出（生値は保存しない）
       is_test: Boolean(event.isTest),
       visitor_hash: event.visitorHash || '',
       hash_reliable: Boolean(event.hashReliable), // 監査差し戻し#4：明示保存フィールド名
@@ -443,11 +469,16 @@ function classifyLogCategory(row) {
 
 /**
  * visit_sessionsの一覧から、媒体軸(mediaQuality)・Web参照元軸(webSourceQuality)を
- * 独立に集計する（正本仕様§8-2、監査差し戻し#5で修正）。
- * - hasPageView===trueのsessionだけをvisitsへ計上する（reaction-onlyのsessionは
- *   訪問数に混ぜない。単位C相当の既存原則をV2でも維持する）。
+ * 独立に集計する（正本仕様§8-2、監査差し戻し#5で修正、独立監査再提出でさらに修正）。
+ * - visits：hasPageView===trueのsessionだけを計上する（reaction-onlyのsessionは
+ *   訪問数に混ぜない）。
+ * - lineOrPhoneReactions：hasPageViewの有無に関わらず、reactionCount>0の全sessionを
+ *   計上する（正本仕様：reaction-only sessionはvisitsへ混ぜないが反応一覧には含める。
+ *   独立監査差し戻し：visits/lineOrPhoneReactionsを軸ごとに別々に集計していなかった
+ *   （visitsしか集計していなかった）ことが指摘され、今回両方を独立に集計するよう修正）。
  * - Web軸キーは統合仕様どおり source:referrer:<hostname> / source:direct / source:none /
  *   source:invalid の4形式へ統一する。
+ * - isTest===trueのsessionは除外する（単位6：test訪問をV2の全readerから除外）。
  */
 function buildQualityAxes(visitSessions) {
   const mediaMap = new Map();
@@ -463,77 +494,138 @@ function buildQualityAxes(visitSessions) {
     if (v.webSourceStatus === 'invalid') return 'source:invalid';
     return 'source:none';
   }
-  visitSessions
-    .filter((v) => v.hasPageView === true) // 監査差し戻し#5：reaction-only sessionを除外
+  function ensureMedia(key, v) {
+    if (!mediaMap.has(key)) mediaMap.set(key, { key, mediaCode: v.mediaValidity === 'invalid' ? '' : v.mediaCode, mediaValidity: v.mediaValidity, visits: 0, lineOrPhoneReactions: 0 });
+    return mediaMap.get(key);
+  }
+  function ensureSource(key, v) {
+    if (!sourceMap.has(key)) sourceMap.set(key, { key, webSource: v.webSource, webSourceStatus: v.webSourceStatus, visits: 0, lineOrPhoneReactions: 0 });
+    return sourceMap.get(key);
+  }
+  (visitSessions || [])
+    .filter((v) => v && v.isTest !== true)
     .forEach((v) => {
+      const isVisit = v.hasPageView === true;
+      const reactions = Number(v.reactionCount || 0);
+      if (!isVisit && reactions <= 0) return; // 計上対象なし
       const mKey = mediaKeyOf(v);
-      if (mKey) {
-        if (!mediaMap.has(mKey)) mediaMap.set(mKey, { key: mKey, mediaCode: v.mediaValidity === 'invalid' ? '' : v.mediaCode, mediaValidity: v.mediaValidity, visits: 0 });
-        mediaMap.get(mKey).visits += 1;
-      }
       const sKey = sourceKeyOf(v);
-      if (!sourceMap.has(sKey)) sourceMap.set(sKey, { key: sKey, webSource: v.webSource, webSourceStatus: v.webSourceStatus, visits: 0 });
-      sourceMap.get(sKey).visits += 1;
+      if (mKey) {
+        const m = ensureMedia(mKey, v);
+        if (isVisit) m.visits += 1;
+        if (reactions > 0) m.lineOrPhoneReactions += reactions;
+      }
+      const s = ensureSource(sKey, v);
+      if (isVisit) s.visits += 1;
+      if (reactions > 0) s.lineOrPhoneReactions += reactions;
     });
   return { mediaQuality: Array.from(mediaMap.values()), webSourceQuality: Array.from(sourceMap.values()) };
 }
 
 /* ============================================================================
- * V2見込み度（単位D、2026-09-07追加）
- * V1のcomputeLeadScore_（functions/lib/funnel.js）は、V1固有の訪問グルーピング
- * （日付＋visitor_hash）とページカテゴリ・再訪履歴という、V2のvisit_sessionsには
- * 存在しない入力に依存している。V1は無変更のまま維持する方針のため複製・改造せず、
- * ここではvisit_sessionsが実際に持つデータ（hasPageView・pageViewCount・
- * reactionCount・hashReliable）だけを使う、V1とは独立した新規のV2専用ルールを
- * 定義する（V1の判定基準の複製ではない・意図的に簡易な別アルゴリズム）。
+ * 見込み度（単位D、独立監査再提出版：2026-09-07）
+ * 監査差し戻し：独自の簡易スコア式（反応あり=高／3PV=中／それ以外=低）は未承認のまま
+ * 使用していたため撤回した。V1の判定式（functions/lib/funnel.jsのcomputeLeadScore_）を
+ * 正本のまま直接呼び出し、visit_id単位の新しい訪問境界へ適用できるよう入力
+ * （pageCategories・actions・revisit用の直前訪問情報）をvisit_sessions側で
+ * 保持・再構成する。V1自体は無変更（module.exportsへの追加のみ）。
  * ============================================================================ */
 
-/**
- * V2ネイティブの見込み度判定（visit_sessions 1件から算出）。
- * 戻り値: '高'|'中'|'低'|'判定不能'
- * - page_viewが1件も無い（reaction-onlyのvisit_session）: 判定不能
- *   （V1のfunnelDrilldownと同じ方針＝存在しない閲覧文脈を捏造しない）。
- * - LINEクリック・電話タップのいずれかがある: 高
- * - page_view 3件以上（反応なし）: 中
- * - それ以外: 低
- */
-function computeLeadScoreLevelV2_(session) {
-  if (!session || session.hasPageView !== true) return '判定不能';
-  if (Number(session.reactionCount || 0) > 0) return '高';
-  if (Number(session.pageViewCount || 0) >= 3) return '中';
-  return '低';
+function dayKeyOfSessionV2_(session) { return jstDateKey(session.startedAt); }
+
+/** visitorHash単位で、直近の訪問履歴（lookback期間分のvisit_sessions）を索引化する
+ * （V1のbuildPriorVisitIndex_と同じ考え方。呼び出し側がvisit_sessionsで供給する点だけが
+ * V1〔raw行から構築〕と異なる）。 */
+function buildPriorVisitIndexV2_(priorVisitSessions) {
+  const byHash = new Map();
+  (priorVisitSessions || []).forEach((v) => {
+    const hash = v && v.visitorHash;
+    if (!hash) return; // visitor_hash不明の訪問は再訪判定の対象外（誤って同一人物と推測しない）
+    const entry = { dayKey: dayKeyOfSessionV2_(v), pageCount: Number(v.pageViewCount || 0), hadAction: (Number(v.lineClickCount || 0) + Number(v.phoneClickCount || 0)) > 0 };
+    if (!byHash.has(hash)) byHash.set(hash, []);
+    byHash.get(hash).push(entry);
+  });
+  byHash.forEach((list) => list.sort((a, b) => (a.dayKey < b.dayKey ? -1 : 1)));
+  return byHash;
+}
+/** 同一期間内（lookbackを跨がない）の他visitも「直前の訪問」候補にする（V1と同じ設計）。 */
+function buildInPeriodIndexV2_(visitSessions) {
+  const byHash = new Map();
+  (visitSessions || []).forEach((v) => {
+    const hash = v && v.visitorHash;
+    if (!hash) return;
+    const entry = { dayKey: dayKeyOfSessionV2_(v), pageCount: Number(v.pageViewCount || 0), hadAction: (Number(v.lineClickCount || 0) + Number(v.phoneClickCount || 0)) > 0 };
+    if (!byHash.has(hash)) byHash.set(hash, []);
+    byHash.get(hash).push(entry);
+  });
+  return byHash;
+}
+/** 指定visitorHash・指定日より前の直近の訪問を1件返す（V1のfindPriorVisit_と同一ロジック）。 */
+function findPriorVisitV2_(priorIndex, visitorHash, beforeDayKey, inPeriodPriorList) {
+  const combined = (priorIndex.get(visitorHash) || []).concat(inPeriodPriorList || []);
+  const candidates = combined.filter((v) => v.dayKey < beforeDayKey).sort((a, b) => (a.dayKey < b.dayKey ? 1 : -1));
+  return candidates[0] || null;
+}
+
+/** 1件のvisit_sessionについて、V1のcomputeLeadScore_をそのまま呼んで見込み度を算出する
+ * （hasPageView===trueのsession専用。reaction-onlyはこの関数を呼ばない＝呼び出し側で
+ * V1のfunnelDrilldownと同じ方針〔判定不能・理由「行動の前後にページ閲覧記録なし」〕とする）。 */
+function computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash) {
+  const dayKey = dayKeyOfSessionV2_(session);
+  const actions = [];
+  if (Number(session.lineClickCount || 0) > 0) actions.push({ type: 'lineClick' });
+  if (Number(session.phoneClickCount || 0) > 0) actions.push({ type: 'phoneClick' });
+  const visitInput = { dayKey, pageCount: Number(session.pageViewCount || 0), pageCategories: session.pageCategories || [], actions };
+  const visitorHash = session.visitorHash || '';
+  let prior = null;
+  if (visitorHash) {
+    prior = findPriorVisitV2_(priorIndex, visitorHash, dayKey, inPeriodByHash.get(visitorHash));
+  }
+  return computeLeadScore_(visitInput, prior); // V1正本の判定式をそのまま呼ぶ
 }
 
 /**
- * visit_sessions一覧から、見込み度「高・中・低・判定不能・旧ログ」の5区分を集計する
- * （正本仕様の単位D：高・中・低の個別カードはnew_reliableだけ・legacy_unknownは
- * 「旧ログ」へ独立表示・unreliable／hash欠損は判定不能）。
+ * visit_sessions一覧から、見込み度「高・中・低・判定不能・旧ログ」の5区分（すべて
+ * 同一のvisit単位・排他的区分）を集計する（正本仕様の単位D、独立監査再提出版）。
+ * - 高・中・低・判定不能：new_reliable（hashReliable===true）なvisit_sessionsに対して
+ *   V1のcomputeLeadScore_をそのまま適用して得た結果。reaction-only（hasPageView=false）は
+ *   V1のfunnelDrilldownと同じ方針で判定不能とする。
+ * - 判定不能にはさらに、new_unreliable（hashReliable!==true）なvisit_sessions、および
+ *   legacy_hash_missing（visit_id無し・visitor_hashも無し）のraw logをV1と同じ
+ *   日付＋visitor_hash単位でvisit集約したものを加算する（V1判定不能とV2高中低を
+ *   混在させない＝「判定不能」バケット内部でV1由来／V2由来の区別はしないが、レベルとしては
+ *   両者とも同一の「判定不能」でしかありえないため区分の混在は生じない）。
+ * - 旧ログ：legacy_unknown（visit_id無し・visitor_hashは有り）のraw logをV1のgroupVisits_
+ *   （日付＋visitor_hash単位）でvisit集約した件数。raw log単位ではなくvisit単位。
+ * - 高・中・低の個別カードのみ生成する（判定不能・旧ログは個別カード化しない）。
  *
- * visit_sessionsはrecordWebEventV2だけが作成するドキュメントであり、生成される時点で
- * 必ず有効なvisit_idを伴う＝構造的に「新方式ログ」しか存在しない（isNewMethodLogでの
- * 判定自体が不要）。したがってvisit_sessions内での分類は実質
- * hashReliable（true/false）の2値のみで足りる。「旧ログ」（legacy、visit_id自体が
- * 存在しないV1時代のinteraction_logs）はvisit_sessionsに現れないため、呼び出し側が
- * 別途classifyLogCategoryで数えたraw logの件数をlegacyLogCountとして渡す
- * （visit単位の件数ではなくraw log単位の件数である点に注意。V1の訪問グルーピングを
- * 複製しない設計判断のため、他4区分＝visit単位の件数とは単位が異なることを呼び出し側の
- * 表示レイヤーで明示すること）。
- *
- * @param {Array<object>} visitSessions visit_sessionsドキュメントの配列
- * @param {number} legacyLogCount 期間内のlegacy_unknown/legacy_hash_missing raw log件数
- * @returns {{counts: {高:number,中:number,低:number,判定不能:number,旧ログ:number},
- *   cards: Array<{visitId:string, level:string, mediaCode:string, mediaValidity:string,
- *   webSource:string, webSourceStatus:string, pageViewCount:number, reactionCount:number,
- *   startedAt:number}>}}
+ * @param {Array<object>} visitSessions 期間内のvisit_sessions
+ * @param {Array<object>} priorVisitSessions 再訪判定用のlookback期間のvisit_sessions
+ * @param {Array<object>} legacyHashPresentRows legacy_unknownのraw log行
+ *   （{eventType:'page_view', dayKey, visitorHashValue}形状。groupVisits_の入力形状）
+ * @param {Array<object>} legacyHashMissingRows legacy_hash_missingのraw log行（同上の形状）
  */
-function buildLeadScoreBreakdownV2(visitSessions, legacyLogCount) {
-  const counts = { 高: 0, 中: 0, 低: 0, 判定不能: 0, 旧ログ: Number(legacyLogCount || 0) };
+function buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, legacyHashPresentRows, legacyHashMissingRows) {
+  const sessions = (visitSessions || []).filter((v) => v && v.isTest !== true);
+  const priorSessions = (priorVisitSessions || []).filter((v) => v && v.isTest !== true);
+  const priorIndex = buildPriorVisitIndexV2_(priorSessions);
+  const inPeriodByHash = buildInPeriodIndexV2_(sessions);
+
+  const counts = { 高: 0, 中: 0, 低: 0, 判定不能: 0, 旧ログ: 0 };
   const cards = [];
-  (visitSessions || []).forEach((session) => {
-    const reliable = session && session.hashReliable === true;
-    const level = reliable ? computeLeadScoreLevelV2_(session) : '判定不能';
+
+  sessions.forEach((session) => {
+    const reliable = session.hashReliable === true;
+    let level;
+    if (!reliable) {
+      level = '判定不能';
+    } else if (session.hasPageView !== true) {
+      level = '判定不能'; // reaction-only：V1と同じ方針（存在しない閲覧文脈を捏造しない）
+    } else {
+      level = computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash).level;
+    }
     counts[level] += 1;
-    if (reliable) {
+    if (reliable && level !== '判定不能') {
       cards.push({
         visitId: session.visitId || session.id || '',
         level,
@@ -547,6 +639,12 @@ function buildLeadScoreBreakdownV2(visitSessions, legacyLogCount) {
       });
     }
   });
+
+  const legacyKnownRows = (legacyHashPresentRows || []).filter((r) => !r.isTest);
+  const legacyMissingRows = (legacyHashMissingRows || []).filter((r) => !r.isTest);
+  counts.旧ログ = groupVisits_(legacyKnownRows).size;
+  counts.判定不能 += groupVisits_(legacyMissingRows).size;
+
   return { counts, cards };
 }
 
@@ -648,8 +746,8 @@ module.exports = {
   isNewMethodLog,
   classifyLogCategory,
   buildQualityAxes,
-  computeLeadScoreLevelV2_,
   buildLeadScoreBreakdownV2,
+  computeSessionLeadScoreV1Compat_,
   signVerifyJwt,
   verifyVerifyJwt,
   // V1互換ヘルパー（契約テストで直接比較するためexportする）

@@ -1,51 +1,68 @@
 (function() {
   'use strict';
   /**
-   * Web流入媒体識別精度改善・単位EF：schemaVersion:2クライアントwriter（2026-09-07新規）。
+   * Web流入媒体識別精度改善・単位EF：schemaVersion:2クライアントwriter
+   * （2026-09-07新規・独立監査「本番BLOCK」対応で訪問境界・outbox契約を全面改訂）。
    * 既存 js/analytics.js（V1・logInteractionエンドポイント）はこのファイルとは無関係に
-   * 無変更のまま残り、並行して動作し続ける。本番サイトへどちらを読み込むか（V1のみ／
-   * V2のみ／両方）は、このファイル単体のデプロイでは切り替わらない（HTMLの<script>タグ
-   * 側の変更が必要。今回のセッションでは本番HTMLへの反映は行っていない＝未接続）。
+   * 無変更のまま残り、並行して動作し続ける。
    *
-   * V1との違い（意図的な仕様変更）：
-   * - 正規化・検証は一切クライアント側で行わない。生値（visitMediaCode / visitWebSource /
-   *   visitorId / visitorIdPersisted）をそのまま送り、サーバー側（functions/lib/funnelV2.js
-   *   の normalizeMediaCode / normalizeWebSource / evaluateVisitorIdentity）が正規化する。
-   *   クライアント側の判定をサーバーが信用することは一切ない。
-   * - 流入元の帰属（media/webSource）はsessionStorageのvisit単位（30分の無操作で新規visit）
-   *   で固定する。V1のlocalStorage・訪問をまたいだ長期固定とは異なる。
-   * - fetch優先・sendBeaconは離脱時（visibilitychange=hidden／pagehide）のみのフォール
-   *   バックとして使う（V1はsendBeacon優先）。
-   * - 送信できなかったイベントはoutbox（localStorage）へ最大50件・24時間だけ保持し、
-   *   同一event_idのまま再送する（サーバー側recordWebEventV2の冪等性に依存し、新しい
-   *   event_idを発行し直さない＝重複計上させない）。
-   * - サーバーから401（Origin不許可等）を受けたら1時間、送信自体を停止する
-   *   （不正クライアント・障害設定での連打を避けるサーキットブレーカー）。
-   *   window.aokiAnalyticsV2.resumeAfterStop()で試験的に即時再開できる（QA専用）。
+   * 正規化・検証は一切クライアント側で行わない。生値（visitMediaCode / visitWebSource /
+   * visitorId / visitorIdPersisted）をそのまま送り、サーバー側（funnelV2.js）が正規化する。
+   *
+   * --- 訪問境界（独立監査差し戻し対応・確定アルゴリズム） ---
+   * 各イベント送信時に、現在ページのfrom／外部referrerから「複合boundaryKey」を計算し、
+   * 直前に保存済みのboundaryKeyと比較する。
+   *   - 30分の無操作でタイムアウト（新visit）。
+   *   - タイムアウト前でも、今回のboundaryKeyが直前と異なり、かつ今回何らかの信号
+   *     （from・外部referrerのいずれか）を持つ場合は新visit（fromだけ変化・referrerだけ
+   *     変化・両方変化のいずれも対象）。
+   *   - 今回のページが信号を一切持たない場合（内部遷移等）は、タイムアウト前なら
+   *     現在の帰属をそのまま維持する（推測で上書きしない）。
+   *   - 媒体（from）はあるが外部referrerが無い場合：webSource=''／サーバー側status='none'。
+   *   - 媒体も外部referrerも無い場合のみ：webSource='direct'（真の直接訪問）。
+   *   - 外部referrerがある場合：mediaの有無に関わらずwebSourceへ生のreferrerホストを送る。
+   * --- outbox（確定契約） ---
+   *   - sendBeaconが成功しても即座には削除しない。次回fetchで2xxが確認できるまで保持する
+   *     （sendBeaconは送達を確認できないため）。
+   *   - 2xx：削除。400/404/413/422：恒久的に削除（再送しても成功しない）。
+   *     403（Origin不許可）：恒久的に削除。408/429/5xx／通信失敗：保持し再送する。
+   *   - PROD 401：送信全体を停止（サーキットブレーカー）。15分後、またはページを新規に
+   *     開いた時点のいずれか早い方で、outbox最古の1件だけを試験再送する。成功すれば停止解除。
+   *   - 再送間隔（保持系の失敗）：1回目失敗=15分後、2回目=30分後、3回目=60分後、
+   *     4回目以降=120分後（上限）。24時間経過または50件超過分は破棄し、破棄件数を
+   *     診断情報として記録する。
+   *   - localStorage/sessionStorageが使えない環境でも、同一ページが生存している間は
+   *     メモリ上のvisit_id／visitorIdをそのまま使い回す（ページ内で毎回新規発行しない）。
    */
   try {
     var ENDPOINT = 'https://us-central1-aokitosou-miniapp.cloudfunctions.net/logInteractionV2';
-    var WRITER_GENERATION = 1; // outboxのスキーマ世代。将来writerの契約を変えたら上げる。
-    var VISIT_TIMEOUT_MS = 30 * 60 * 1000; // 30分の無操作でvisit境界（新しいvisit_id）
+    var WRITER_GENERATION = 2; // 訪問境界・outbox契約を全面改訂したため世代を1→2へ引き上げる
+    var VISIT_TIMEOUT_MS = 30 * 60 * 1000;
     var OUTBOX_KEY = 'aoki_analytics_v2_outbox';
+    var OUTBOX_DIAG_KEY = 'aoki_analytics_v2_outbox_diag';
     var OUTBOX_MAX_ITEMS = 50;
     var OUTBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
     var VISITOR_ID_KEY = 'aoki_analytics_v2_visitor_id';
     var VISIT_STATE_KEY = 'aoki_analytics_v2_visit';
-    var STOP_UNTIL_KEY = 'aoki_analytics_v2_stopped_until';
-    var STOP_DURATION_MS = 60 * 60 * 1000; // 401受信後の停止時間
+    var STOP_STATE_KEY = 'aoki_analytics_v2_stop_state';
+    var STOP_TRIAL_INTERVAL_MS = 15 * 60 * 1000; // 401停止中の試験再送の待機間隔（固定・エスカレートしない）
+    // 保持系失敗（408/429/5xx/通信失敗）の再送間隔テーブル：1回目15分・2回目30分・3回目60分・4回目以降120分。
+    var RETRY_BACKOFF_MS = [15 * 60 * 1000, 30 * 60 * 1000, 60 * 60 * 1000, 120 * 60 * 1000];
+    var PERMANENT_DELETE_STATUSES = [400, 404, 413, 422, 403];
+    var RETRYABLE_STATUSES = [408, 429];
+
+    // --- ページ生存中のメモリフォールバック（storage不能時でも同一ページ内は使い回す） ---
+    var memoryVisitState = null;
+    var memoryVisitorId = null;
+    var memoryStopState = null;
 
     function safeLocalGet(key) { try { return window.localStorage.getItem(key); } catch (err) { return null; } }
     function safeLocalSet(key, value) { try { window.localStorage.setItem(key, value); return true; } catch (err) { return false; } }
-    function safeLocalRemove(key) { try { window.localStorage.removeItem(key); } catch (err) {} }
     function safeSessionGet(key) { try { return window.sessionStorage.getItem(key); } catch (err) { return null; } }
     function safeSessionSet(key, value) { try { window.sessionStorage.setItem(key, value); return true; } catch (err) { return false; } }
 
     function nowMs() { return Date.now(); }
 
-    // event_id: EVENT_ID_PATTERN /^[A-Za-z0-9_-]{12,100}$/ ・ visit_id: VISIT_ID_PATTERN
-    // /^[A-Za-z0-9_-]{16,100}$/ ・ visitorId: 同じ文字集合で16文字以上（サーバー側
-    // VISITOR_ID_PATTERNと同一形式）。いずれもprefix込みでこれらの範囲に収まる長さにする。
     function randomToken() {
       try {
         if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID().replace(/-/g, '');
@@ -53,74 +70,98 @@
       return Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     }
 
+    function safeHref() { try { return window.location.href; } catch (err) { return ''; } }
+
+    /* ---- visitorId（長期・localStorage。不能時はページ内メモリを使い回す） ---- */
     function getOrCreateVisitorId() {
       var existing = safeLocalGet(VISITOR_ID_KEY);
-      if (existing) return { id: existing, persisted: true };
+      if (existing) { memoryVisitorId = existing; return { id: existing, persisted: true }; }
+      if (memoryVisitorId) return { id: memoryVisitorId, persisted: false };
       var id = 'vid2_' + randomToken();
+      memoryVisitorId = id;
       var wrote = safeLocalSet(VISITOR_ID_KEY, id);
-      // wrote=falseの場合（localStorage不可）でもidはこのページ内では一貫して使うが、
-      // 永続化できていないためvisitorIdPersisted=falseとして正直に送る
-      // （サーバー側evaluateVisitorIdentityがhashReliable=falseへ縮退させる）。
       return { id: id, persisted: wrote };
     }
 
+    /* ---- 現在ページの生信号（from／外部referrer） ---- */
     function currentUrlParams() {
       try { return new URLSearchParams(window.location.search); } catch (err) { return new URLSearchParams(); }
     }
-
-    // visit開始時にだけ計算する生の帰属候補（サーバー側で正規化・検証される前提の生値）。
-    function computeRawAttribution() {
-      var mediaCode = currentUrlParams().get('from') || '';
-      var webSource = '';
+    function currentSignal() {
+      var fromParam = null;
+      try { var raw = currentUrlParams().get('from'); if (raw) fromParam = raw; } catch (err) {}
+      var referrerHost = null;
       try {
-        if (!document.referrer) {
-          webSource = 'direct';
-        } else {
-          var refHost = new URL(document.referrer).hostname;
-          var curHost = window.location.hostname;
-          webSource = (refHost.toLowerCase() === curHost.toLowerCase()) ? 'direct' : refHost;
+        if (document.referrer) {
+          var refHost = new URL(document.referrer).hostname.toLowerCase();
+          var curHost = window.location.hostname.toLowerCase();
+          if (refHost !== curHost) referrerHost = refHost; // 外部（同一originは信号扱いしない）
         }
-      } catch (err) { webSource = ''; }
+      } catch (err) {}
+      return { from: fromParam, referrerHost: referrerHost };
+    }
+    /** 信号（from／外部referrer）が一切無ければnull（＝比較対象にしない＝現在帰属を維持）。 */
+    function boundaryKeyOf(signal) {
+      if (signal.from == null && signal.referrerHost == null) return null;
+      return (signal.from || '') + '|' + (signal.referrerHost || '');
+    }
+    /** 生のvisitMediaCode／visitWebSourceを信号から導出する（サーバー側で正規化される前提）。
+     * 媒体あり・外部referrerなし→webSource=''（正本仕様：status='none'）。
+     * 媒体も外部referrerも無い→'direct'（真の直接訪問のみ）。
+     * 外部referrerがあれば、媒体の有無に関わらず生のreferrerホストを送る。 */
+    function rawAttributionFromSignal(signal) {
+      var mediaCode = signal.from || '';
+      var webSource;
+      if (signal.referrerHost) webSource = signal.referrerHost;
+      else if (mediaCode) webSource = '';
+      else webSource = 'direct';
       return { mediaCode: mediaCode, webSource: webSource };
     }
 
+    /* ---- visit状態（sessionStorage。不能時はページ内メモリを使い回す） ---- */
     function loadVisitState() {
       try {
         var raw = safeSessionGet(VISIT_STATE_KEY);
-        if (!raw) return null;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return null;
-        return parsed;
-      } catch (err) { return null; }
+        if (raw) { var parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') return parsed; }
+      } catch (err) {}
+      return memoryVisitState;
     }
-    function saveVisitState(state) { safeSessionSet(VISIT_STATE_KEY, JSON.stringify(state)); }
+    function saveVisitState(state) {
+      memoryVisitState = state;
+      safeSessionSet(VISIT_STATE_KEY, JSON.stringify(state));
+    }
 
-    /** 30分の無操作でvisit境界（正本仕様：boundary判定）。既存visitが有効ならlastActivityAt
-     * だけ更新して再利用し、無効（無し・タイムアウト）なら新しいvisit_id・新しい帰属捕捉で
-     * 作り直す。 */
-    function getOrStartVisit() {
+    /** 訪問境界の確定判定（正本仕様・独立監査再提出版）。イベント送信のたびに呼ばれる。 */
+    function getOrUpdateVisit() {
       var now = nowMs();
       var state = loadVisitState();
-      if (state && state.visitId && (now - Number(state.lastActivityAt || 0)) <= VISIT_TIMEOUT_MS) {
+      var signal = currentSignal();
+      var key = boundaryKeyOf(signal);
+      var timedOut = !state || (now - Number(state.lastActivityAt || 0)) > VISIT_TIMEOUT_MS;
+      var keyChanged = !timedOut && !!state && key !== null && key !== state.boundaryKey;
+
+      if (!timedOut && !keyChanged) {
+        // 現在の訪問を維持（信号なし、または信号ありでも直前と同一）。
         state.lastActivityAt = now;
         saveVisitState(state);
         return state;
       }
-      var attribution = computeRawAttribution();
-      var landingPage = safeHref();
+
+      // 新しい訪問：境界を切り、今回の信号から帰属を再取得する。
+      var attribution = rawAttributionFromSignal(signal);
       var next = {
         visitId: 'vst2_' + randomToken(),
         startedAt: now,
         lastActivityAt: now,
+        boundaryKey: key, // nullの場合（初回訪問が無信号）もそのまま保存し、次回signal付きイベントとの比較に使う
         mediaCode: attribution.mediaCode,
         webSource: attribution.webSource,
-        landingPage: landingPage
+        landingPage: safeHref()
       };
       saveVisitState(next);
       return next;
     }
 
-    function safeHref() { try { return window.location.href; } catch (err) { return ''; } }
     function safeReferrerHost() {
       try {
         if (!document.referrer) return '';
@@ -128,7 +169,7 @@
       } catch (err) { return ''; }
     }
 
-    /* ---- outbox（送信できなかった/未確認のイベントの一時保管） ---- */
+    /* ---- outbox ---- */
     function loadOutbox() {
       try {
         var raw = safeLocalGet(OUTBOX_KEY);
@@ -138,36 +179,79 @@
       } catch (err) { return []; }
     }
     function saveOutbox(list) { safeLocalSet(OUTBOX_KEY, JSON.stringify(list)); }
-    /** 世代不一致（古いwriterの残骸）と24時間超過を除去し、最大50件（新しい方を残す）
-     * へ切り詰める。 */
+    function loadDiagnostics() {
+      try {
+        var raw = safeLocalGet(OUTBOX_DIAG_KEY);
+        var parsed = raw ? JSON.parse(raw) : null;
+        return (parsed && typeof parsed === 'object') ? parsed : { expiredDiscardCount: 0 };
+      } catch (err) { return { expiredDiscardCount: 0 }; }
+    }
+    function saveDiagnostics(diag) { safeLocalSet(OUTBOX_DIAG_KEY, JSON.stringify(diag)); }
+    function recordExpiredDiscard(count) {
+      if (!count) return;
+      var diag = loadDiagnostics();
+      diag.expiredDiscardCount = Number(diag.expiredDiscardCount || 0) + count;
+      saveDiagnostics(diag);
+    }
+
+    /** 世代不一致・24時間超過を除去し、最大50件（新しい方を残す）へ切り詰める。
+     * 24時間超過で破棄した件数を診断情報として記録する。 */
     function pruneOutbox(list) {
       var now = nowMs();
+      var expiredCount = 0;
       var filtered = (list || []).filter(function(item) {
-        return item && item.generation === WRITER_GENERATION &&
-          (now - Number(item.addedAt || 0)) <= OUTBOX_MAX_AGE_MS && item.event && item.event.event_id;
+        if (!item || item.generation !== WRITER_GENERATION || !item.event || !item.event.event_id) return false;
+        var expired = (now - Number(item.addedAt || 0)) > OUTBOX_MAX_AGE_MS;
+        if (expired) expiredCount++;
+        return !expired;
       });
+      if (expiredCount) recordExpiredDiscard(expiredCount);
       if (filtered.length > OUTBOX_MAX_ITEMS) filtered = filtered.slice(filtered.length - OUTBOX_MAX_ITEMS);
       return filtered;
     }
     function enqueue(event) {
       var list = pruneOutbox(loadOutbox());
-      list.push({ generation: WRITER_GENERATION, event: event, addedAt: nowMs() });
+      list.push({ generation: WRITER_GENERATION, event: event, addedAt: nowMs(), attempts: 0, nextRetryAt: 0 });
       saveOutbox(pruneOutbox(list));
     }
-    function dequeue(eventId) {
+    function removeFromOutbox(eventId) {
       saveOutbox(loadOutbox().filter(function(item) { return !item.event || item.event.event_id !== eventId; }));
     }
-
-    /* ---- PROD 401停止・試験再開 ---- */
-    function isStopped() {
-      var until = Number(safeLocalGet(STOP_UNTIL_KEY) || 0);
-      return until > nowMs();
+    function updateOutboxItem(eventId, patch) {
+      var list = loadOutbox();
+      var changed = false;
+      list = list.map(function(item) {
+        if (item.event && item.event.event_id === eventId) { changed = true; return Object.assign({}, item, patch); }
+        return item;
+      });
+      if (changed) saveOutbox(list);
     }
-    function stopSending() { safeLocalSet(STOP_UNTIL_KEY, String(nowMs() + STOP_DURATION_MS)); }
-    function resumeAfterStop() { safeLocalRemove(STOP_UNTIL_KEY); } // QA専用：試験的に即時再開する
+
+    /* ---- PROD 401 サーキットブレーカー ---- */
+    function loadStopState() {
+      try {
+        var raw = safeLocalGet(STOP_STATE_KEY);
+        if (raw) { var parsed = JSON.parse(raw); if (parsed && parsed.stoppedAt) return parsed; }
+      } catch (err) {}
+      return memoryStopState;
+    }
+    function saveStopState(state) { memoryStopState = state; safeLocalSet(STOP_STATE_KEY, state ? JSON.stringify(state) : ''); if (!state) { try { window.localStorage.removeItem(STOP_STATE_KEY); } catch (err) {} } }
+    function isStopped() { return !!loadStopState(); }
+    function beginStop() {
+      var now = nowMs();
+      saveStopState({ stoppedAt: now, nextTrialAt: now + STOP_TRIAL_INTERVAL_MS });
+    }
+    function rescheduleTrial() {
+      var state = loadStopState();
+      var now = nowMs();
+      saveStopState({ stoppedAt: state ? state.stoppedAt : now, nextTrialAt: now + STOP_TRIAL_INTERVAL_MS });
+    }
+    function clearStop() { saveStopState(null); }
+    /** QA専用：試験的に即時再開する。 */
+    function resumeAfterStop() { clearStop(); }
 
     function buildEvent(eventType, extra) {
-      var visit = getOrStartVisit();
+      var visit = getOrUpdateVisit();
       var visitor = getOrCreateVisitorId();
       var event = {
         schemaVersion: 2,
@@ -188,26 +272,49 @@
       return event;
     }
 
-    /** fetch優先の送信。成功（2xx）ならoutboxから外す。401ならサーキットブレーカーを起動
-     * する。それ以外の失敗はoutboxに残し、次回flushで同一event_idのまま再送する
-     * （新しいevent_idを発行しない＝サーバー側の重複排除に頼れる）。 */
-    function sendViaFetch(event) {
-      if (typeof window.fetch !== 'function') return false;
+    function classifyResponseStatus(status) {
+      if (status >= 200 && status < 300) return 'success';
+      if (status === 401) return 'stop';
+      if (PERMANENT_DELETE_STATUSES.indexOf(status) >= 0) return 'permanent';
+      if (RETRYABLE_STATUSES.indexOf(status) >= 0 || status >= 500) return 'retry';
+      return 'retry'; // 未知のステータスは安全側（保持・再送）に倒す
+    }
+    function backoffForAttempts(attempts) {
+      var idx = Math.min(Math.max(attempts - 1, 0), RETRY_BACKOFF_MS.length - 1);
+      return RETRY_BACKOFF_MS[idx];
+    }
+
+    /** 単一イベントをfetchで送信し、応答に応じてoutboxを更新する（確定契約）。 */
+    function sendViaFetch(item, onSettled) {
+      if (typeof window.fetch !== 'function') { if (onSettled) onSettled('skipped'); return; }
+      var event = item.event;
       try {
         window.fetch(ENDPOINT, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(event), keepalive: true
         }).then(function(res) {
-          if (res && res.status === 401) { stopSending(); return; }
-          if (res && res.ok) { dequeue(event.event_id); }
-        }).catch(function() { /* ネットワーク失敗：outboxに残したまま次回再送 */ });
-        return true;
-      } catch (err) { return false; }
+          var kind = classifyResponseStatus(res ? res.status : 0);
+          if (kind === 'success') {
+            removeFromOutbox(event.event_id);
+          } else if (kind === 'stop') {
+            beginStop(); // itemはoutboxに残す（次回の試験再送対象）
+          } else if (kind === 'permanent') {
+            removeFromOutbox(event.event_id);
+          } else {
+            var attempts = Number(item.attempts || 0) + 1;
+            updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
+          }
+          if (onSettled) onSettled(kind);
+        }).catch(function() {
+          var attempts = Number(item.attempts || 0) + 1;
+          updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
+          if (onSettled) onSettled('network_error');
+        });
+      } catch (err) { if (onSettled) onSettled('exception'); }
     }
 
-    /** 離脱時専用。navigator.sendBeaconはレスポンスを観測できないため、送信をキューへ
-     * 投入できた時点で楽観的にoutboxから外す（401等の失敗はこの経路では検知できない、
-     * という既知の制約。恒常的な失敗は次回ページ表示時のfetch再送フローで拾われる）。 */
+    /** 離脱時専用：sendBeaconで送るが、成功してもoutboxからは削除しない
+     * （送達確認ができないため。次回ページ表示時のfetch再送で2xxを確認してから削除する）。 */
     function sendViaBeaconBestEffort(event) {
       try {
         if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
@@ -219,21 +326,39 @@
     function track(eventType, extra) {
       var event = buildEvent(eventType, extra);
       enqueue(event);
-      if (isStopped()) return; // outboxには積むが、停止中は送信自体を試みない
-      if (!sendViaFetch(event)) sendViaBeaconBestEffort(event) && dequeue(event.event_id);
+      if (isStopped()) return; // outboxには積むが、停止中は送信を試みない（次回の試験再送・復帰を待つ）
+      sendViaFetch({ event: event, attempts: 0 });
     }
 
-    /** ページ表示時：前回積み残したoutboxを、同一event_idのままfetchで再送する。 */
+    /** 通常時：保持中のoutboxのうち、再送猶予（nextRetryAt）を過ぎたものだけをfetchで送る。 */
     function flushOutboxViaFetch() {
       if (isStopped()) return;
-      pruneOutbox(loadOutbox()).forEach(function(item) { sendViaFetch(item.event); });
+      var now = nowMs();
+      pruneOutbox(loadOutbox()).forEach(function(item) {
+        if (Number(item.nextRetryAt || 0) <= now) sendViaFetch(item);
+      });
     }
 
-    /** 離脱時：fetchのthenを待てないため、可能な限りsendBeaconで再送する。 */
-    function flushOutboxViaBeacon() {
-      pruneOutbox(loadOutbox()).forEach(function(item) {
-        if (sendViaBeaconBestEffort(item.event)) dequeue(item.event.event_id);
+    /** 停止中：outbox最古の1件だけを試験再送する。15分経過後、またはページ新規表示時に呼ぶ。
+     * force=trueはページ新規表示（init）専用：正本仕様「15分後、またはページを新規に開いた
+     * 時点のいずれか早い方」のうち後者を満たすため、15分の待機を無視して即時試験する。 */
+    function attemptTrialResend(force) {
+      var stopState = loadStopState();
+      if (!stopState) return;
+      var now = nowMs();
+      if (!force && now < Number(stopState.nextTrialAt || 0)) return;
+      var list = pruneOutbox(loadOutbox());
+      if (!list.length) { rescheduleTrial(); return; }
+      var oldest = list.reduce(function(a, b) { return Number(a.addedAt) <= Number(b.addedAt) ? a : b; });
+      sendViaFetch(oldest, function(kind) {
+        if (kind === 'success') { clearStop(); flushOutboxViaFetch(); }
+        else { rescheduleTrial(); }
       });
+    }
+
+    /** 離脱時：fetchのthenを待てないため、可能な限りsendBeaconで送る（削除はしない）。 */
+    function flushOutboxViaBeacon() {
+      pruneOutbox(loadOutbox()).forEach(function(item) { sendViaBeaconBestEffort(item.event); });
     }
 
     function isLineUrl(href) {
@@ -252,9 +377,9 @@
     }
 
     function init() {
-      // outboxのstale/世代不一致エントリを起動時に一度掃除しておく（他タブ経由の残骸対策）。
       saveOutbox(pruneOutbox(loadOutbox()));
-      flushOutboxViaFetch();
+      if (isStopped()) attemptTrialResend(true); // ページ新規表示＝正本仕様の「早い方」のトリガー
+      else flushOutboxViaFetch();
       track('page_view');
       bindClicks();
       try {
@@ -271,12 +396,18 @@
       track: track,
       resumeAfterStop: resumeAfterStop, // QA専用：401サーキットブレーカーの試験的即時解除
       isStopped: isStopped,
+      getDiagnostics: loadDiagnostics,
       _internal: {
-        buildEvent: buildEvent, getOrStartVisit: getOrStartVisit, computeRawAttribution: computeRawAttribution,
-        pruneOutbox: pruneOutbox, loadOutbox: loadOutbox, enqueue: enqueue, dequeue: dequeue,
+        buildEvent: buildEvent, getOrUpdateVisit: getOrUpdateVisit, currentSignal: currentSignal,
+        boundaryKeyOf: boundaryKeyOf, rawAttributionFromSignal: rawAttributionFromSignal,
+        pruneOutbox: pruneOutbox, loadOutbox: loadOutbox, enqueue: enqueue,
+        classifyResponseStatus: classifyResponseStatus, backoffForAttempts: backoffForAttempts,
+        attemptTrialResend: attemptTrialResend, flushOutboxViaFetch: flushOutboxViaFetch,
+        loadStopState: loadStopState, beginStop: beginStop,
         WRITER_GENERATION: WRITER_GENERATION, VISIT_TIMEOUT_MS: VISIT_TIMEOUT_MS,
         OUTBOX_MAX_ITEMS: OUTBOX_MAX_ITEMS, OUTBOX_MAX_AGE_MS: OUTBOX_MAX_AGE_MS,
-        STOP_DURATION_MS: STOP_DURATION_MS, ENDPOINT: ENDPOINT
+        STOP_TRIAL_INTERVAL_MS: STOP_TRIAL_INTERVAL_MS, RETRY_BACKOFF_MS: RETRY_BACKOFF_MS,
+        ENDPOINT: ENDPOINT
       }
     };
   } catch (err) {}

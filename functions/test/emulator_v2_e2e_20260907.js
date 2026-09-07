@@ -15,11 +15,11 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { signVerifyJwt } = require('../lib/funnelV2');
 
-// emulators:execはFunctions Emulator自身のランタイムへは.env.localを読み込むが、
+// emulators:execはFunctions Emulator自身のランタイムへは.secret.localを読み込むが、
 // このスクリプト自身のNodeプロセスへは読み込まないため、ここで明示的に読み込む
 // （このスクリプト内でJWT署名にVERIFY_JWT_SECRETを使うため必要）。
 (function loadDotEnvLocal() {
-  const envPath = path.join(__dirname, '..', '.env.local');
+  const envPath = path.join(__dirname, '..', '.secret.local');
   if (!fs.existsSync(envPath)) return;
   fs.readFileSync(envPath, 'utf8').split('\n').forEach((line) => {
     const trimmed = line.trim();
@@ -106,23 +106,43 @@ async function main() {
     ok('logInteractionV2: 数値visitorIdは実HTTP経由でもhash_reliable=falseへ縮退する', rawLog && rawLog.hash_reliable === false, JSON.stringify(rawLog));
   }
 
-  // --- 4. VERIFY writer：JWTなしは401・jtiを含まない ---
+  // --- 3b. 独立監査再提出・項目7：クライアントのreferrerHost生値は保存されない
+  // （webSourceStatusが'none'ならreferrer_hostは常に''。webSourceに悪意ある生値
+  // 〔userinfo等〕を送っても、webSourceの検証を通らなければreferrer_hostへは残らない）。 ---
   {
-    const res = await request('logInteractionVerify', {
+    const eventId = 'e2e_referrerhost_' + randomSuffix();
+    const res = await request('logInteractionV2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://aoki-tosou.net' },
+      body: JSON.stringify({
+        schemaVersion: 2, event_id: eventId, visit_id: 'v2e2e_refh_' + randomSuffix() + '0000000000', occurredAt: Date.now(), eventType: 'page_view',
+        visitMediaCode: 'meishi', visitWebSource: '', visitorId: 'vidrefh_' + randomSuffix() + '0000000000', visitorIdPersisted: true,
+        referrerHost: 'evil.example.com/?x=1#frag' // 生値を直接送っても、サーバーはこれを一切参照しない設計
+      })
+    });
+    ok('logInteractionV2: referrerHostフィールドを送っても200（無視されるだけで拒否はしない）', res.status === 200);
+    const rawLog = (await db.collection('interaction_logs').doc(eventId).get()).data();
+    ok('logInteractionV2: visitWebSource=""（webSourceStatus=none）の場合、referrer_hostは常に""（クライアントの生値を保存しない）', rawLog && rawLog.referrer_host === '', JSON.stringify(rawLog));
+  }
+
+  // --- 4. VERIFY writer（logInteractionV2Verify）：JWTなしは401・jtiを含まない ---
+  {
+    const res = await request('logInteractionV2Verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schemaVersion: 2, event_id: 'e2e_verify_noauth_' + randomSuffix(), visit_id: visitId, occurredAt: Date.now(), eventType: 'page_view' })
     });
     const body = await res.json();
-    ok('logInteractionVerify: JWTなしは401', res.status === 401, 'status=' + res.status);
-    ok('logInteractionVerify: 401レスポンスにjtiが含まれない', !Object.prototype.hasOwnProperty.call(body, 'jti'), JSON.stringify(body));
+    ok('logInteractionV2Verify: JWTなしは401', res.status === 401, 'status=' + res.status);
+    ok('logInteractionV2Verify: 401レスポンスにjtiが含まれない', !Object.prototype.hasOwnProperty.call(body, 'jti'), JSON.stringify(body));
   }
 
-  // --- 5. VERIFY writer：正しいJWTでPRODとは別コレクションへ書き込まれる ---
+  // --- 5. VERIFY writer：正しいJWT（aud=logInteractionV2Verify）でPRODとは別コレクションへ書き込まれる ---
+  let verifyVisitId;
   {
-    const { token } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionVerify', scope: 'write:interaction_logs_v2_verify' });
-    const verifyVisitId = 'v2e2everify_' + randomSuffix() + '0000000000';
+    const { token } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
+    verifyVisitId = 'v2e2everify_' + randomSuffix() + '0000000000';
     const eventId = 'e2e_verify_ok_' + randomSuffix();
-    const res = await request('logInteractionVerify', {
+    const res = await request('logInteractionV2Verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -131,31 +151,63 @@ async function main() {
       })
     });
     const body = await res.json();
-    ok('logInteractionVerify: 正しいJWTは200', res.status === 200 && body.success === true, JSON.stringify(body));
+    ok('logInteractionV2Verify: 正しいJWTは200', res.status === 200 && body.success === true, JSON.stringify(body));
 
     const verifySession = (await db.collection('visit_sessions_verify').doc(verifyVisitId).get()).data();
-    ok('logInteractionVerify: visit_sessions_verify（VERIFY専用コレクション）へ書き込まれる', !!verifySession && verifySession.mediaCode === 'area_check_v1', JSON.stringify(verifySession));
+    ok('logInteractionV2Verify: visit_sessions_verify（VERIFY専用コレクション）へ書き込まれる', !!verifySession && verifySession.mediaCode === 'area_check_v1', JSON.stringify(verifySession));
 
     const prodSession = await db.collection('visit_sessions').doc(verifyVisitId).get();
-    ok('logInteractionVerify: PROD側visit_sessionsには一切書き込まれない（完全分離）', !prodSession.exists);
+    ok('logInteractionV2Verify: PROD側visit_sessionsには一切書き込まれない（完全分離）', !prodSession.exists);
 
     const verifyRawLog = (await db.collection('interaction_logs_verify').doc(eventId).get()).data();
     const prodRawLogForVerifyEvent = await db.collection('interaction_logs').doc(eventId).get();
-    ok('logInteractionVerify: interaction_logs_verifyへ書き込まれ、PROD側interaction_logsには存在しない', !!verifyRawLog && !prodRawLogForVerifyEvent.exists);
+    ok('logInteractionV2Verify: interaction_logs_verifyへ書き込まれ、PROD側interaction_logsには存在しない', !!verifyRawLog && !prodRawLogForVerifyEvent.exists);
+  }
+
+  // --- 5b. VERIFY writer：aud不一致（正式名でないaud）は401（正本仕様：正式名logInteractionV2Verify・audも同名） ---
+  {
+    const { token: wrongAud } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionVerify', scope: 'write:interaction_logs_v2_verify' });
+    const res = await request('logInteractionV2Verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${wrongAud}` },
+      body: JSON.stringify({ schemaVersion: 2, event_id: 'e2e_verify_wrongaud_' + randomSuffix(), visit_id: visitId, occurredAt: Date.now(), eventType: 'page_view' })
+    });
+    ok('logInteractionV2Verify: audが旧名"logInteractionVerify"（正式名でない）だと401', res.status === 401, 'status=' + res.status);
   }
 
   // --- 6. VERIFY writer：偽造JWT（別Secretで署名）は401・PROD/VERIFYどちらにも書き込まれない ---
   {
-    const { token: forged } = signVerifyJwt('a-completely-different-secret-not-the-real-one', { sub: 'info@aoki-tosou.net', aud: 'logInteractionVerify', scope: 'write:interaction_logs_v2_verify' });
+    const { token: forged } = signVerifyJwt('a-completely-different-secret-not-the-real-one', { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
     const eventId = 'e2e_verify_forged_' + randomSuffix();
-    const res = await request('logInteractionVerify', {
+    const res = await request('logInteractionV2Verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${forged}` },
       body: JSON.stringify({ schemaVersion: 2, event_id: eventId, visit_id: visitId, occurredAt: Date.now(), eventType: 'page_view' })
     });
-    ok('logInteractionVerify: 偽造JWT（別Secret署名）は401', res.status === 401, 'status=' + res.status);
+    ok('logInteractionV2Verify: 偽造JWT（別Secret署名）は401', res.status === 401, 'status=' + res.status);
     const verifyRawLog = await db.collection('interaction_logs_verify').doc(eventId).get();
-    ok('logInteractionVerify: 偽造JWTでは何も書き込まれない', !verifyRawLog.exists);
+    ok('logInteractionV2Verify: 偽造JWTでは何も書き込まれない', !verifyRawLog.exists);
+  }
+
+  // --- 6b. 単位6：isTest訪問はV2の全readerから除外される ---
+  let testVisitId;
+  {
+    testVisitId = 'v2e2e_test_' + randomSuffix() + '0000000000';
+    const eventId = 'e2e_istest_' + randomSuffix();
+    const token = process.env.FUNNEL_DASHBOARD_TOKEN;
+    const res = await request('logInteractionV2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://aoki-tosou.net', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        schemaVersion: 2, event_id: eventId, visit_id: testVisitId, occurredAt: Date.now(), eventType: 'page_view',
+        visitMediaCode: 'meishi', visitWebSource: 'direct', visitorId: 'vidtest_' + randomSuffix() + '0000000000', visitorIdPersisted: true,
+        testRequested: true
+      })
+    });
+    const body = await res.json();
+    ok('logInteractionV2: testRequested=true＋正しいトークンでisTest=trueとして記録される', res.status === 200 && body.success === true, JSON.stringify(body));
+    const session = (await db.collection('visit_sessions').doc(testVisitId).get()).data();
+    ok('logInteractionV2: isTest=trueがvisit_sessionsに保持される', !!session && session.isTest === true, JSON.stringify(session));
   }
 
   // --- 7. PROD V2 reader（getFunnelInsightsV2）：トークンなしは401 ---
@@ -178,6 +230,49 @@ async function main() {
     ok('getFunnelInsightsV2: 手順2で書いたPROD側の訪問がleadScoreCardsへ反映される（hashReliable=trueなのでカード化）', !!ourCard, JSON.stringify(body.leadScoreCards));
     const verifyLeak = (body.leadScoreCards || []).find((c) => c.mediaCode === 'area_check_v1');
     ok('getFunnelInsightsV2: VERIFY側の訪問（area_check_v1）はPROD readerへ一切混入しない', !verifyLeak);
+    const testLeak = (body.leadScoreCards || []).find((c) => c.visitId === testVisitId);
+    ok('getFunnelInsightsV2: isTest=trueの訪問（手順6b）はleadScoreCardsに混入しない', !testLeak);
+  }
+
+  // --- 8b. VERIFY reader（getFunnelInsightsV2Verify）：手順5のVERIFY訪問だけが見え、PROD訪問は混入しない ---
+  {
+    const { token } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'getFunnelInsightsV2Verify', scope: 'write:interaction_logs_v2_verify' });
+    const res = await request('getFunnelInsightsV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json();
+    ok('getFunnelInsightsV2Verify: 正しいJWTで200', res.status === 200, JSON.stringify(body).slice(0, 300));
+    const verifyCard = (body.leadScoreCards || []).find((c) => c.mediaCode === 'area_check_v1');
+    ok('getFunnelInsightsV2Verify: 手順5で書いたVERIFY側の訪問が見える', !!verifyCard, JSON.stringify(body.leadScoreCards));
+    const prodLeak = (body.leadScoreCards || []).find((c) => c.mediaCode === 'meishi');
+    ok('getFunnelInsightsV2Verify: PROD側の訪問（meishi）はVERIFY readerへ一切混入しない', !prodLeak);
+  }
+
+  // --- 9. PROD V2版ドリルダウン（getFunnelDrilldownV2）：visit_sessions正本へjoinした結果を返す ---
+  {
+    const token = process.env.FUNNEL_DASHBOARD_TOKEN;
+    const res = await request('getFunnelDrilldownV2?period=thisMonth&metric=visitors', { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json();
+    ok('getFunnelDrilldownV2: metric=visitorsで200', res.status === 200, JSON.stringify(body).slice(0, 200));
+    const ourVisit = (body.items || []).find((v) => v.mediaCode === 'meishi');
+    ok('getFunnelDrilldownV2: 手順2の訪問がvisitors一覧に含まれる', !!ourVisit, JSON.stringify(body.items || []).slice(0, 300));
+    const testLeak = (body.items || []).find((v) => v.visitId === testVisitId);
+    ok('getFunnelDrilldownV2: isTest=trueの訪問（手順6b）は混入しない', !testLeak);
+  }
+
+  // --- 10. PROD V2版直近アクティビティ（getFunnelRecentActivityV2） ---
+  {
+    const token = process.env.FUNNEL_DASHBOARD_TOKEN;
+    const res = await request('getFunnelRecentActivityV2', { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json();
+    ok('getFunnelRecentActivityV2: 正しいトークンで200・ok:true', res.status === 200 && body.ok === true, JSON.stringify(body));
+    ok('getFunnelRecentActivityV2: newVisitsが1件以上（このテストで書いた訪問を反映）', Number(body.newVisits) >= 1, JSON.stringify(body));
+  }
+
+  // --- 11. VERIFY版の読み取り3エンドポイントも認可なしは401（配線の存在確認を兼ねる） ---
+  {
+    const r1 = await request('getFunnelDrilldownV2Verify?period=thisMonth&metric=visitors', { method: 'GET' });
+    ok('getFunnelDrilldownV2Verify: JWTなしは401', r1.status === 401, 'status=' + r1.status);
+    const r2 = await request('getFunnelRecentActivityV2Verify', { method: 'GET' });
+    ok('getFunnelRecentActivityV2Verify: JWTなしは401', r2.status === 401, 'status=' + r2.status);
   }
 
   const failed = results.filter((r) => !r.ok);

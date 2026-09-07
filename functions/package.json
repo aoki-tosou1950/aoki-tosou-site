@@ -5,7 +5,9 @@
     "serve": "firebase emulators:start --only functions",
     "test": "node --test test/*.test.js",
     "predeploy:dataenv": "node scripts/predeploy_check_dataenv.js",
-    "deploy": "npm run predeploy:dataenv && firebase deploy --only functions",
+    "deploy:v1": "npm run predeploy:dataenv && firebase deploy --only functions:submitForm,functions:logInteraction,functions:submitOtherInquiry,functions:lineWebhook,functions:syncSalesFunnel,functions:getFunnelDashboard,functions:getFunnelDrilldown,functions:getFunnelInsights,functions:getFunnelRecentActivity,functions:funnelDashboard",
+    "deploy:v2-prod-additive": "npm run predeploy:dataenv && firebase deploy --only functions:logInteractionV2,functions:getFunnelInsightsV2,functions:getFunnelDrilldownV2,functions:getFunnelRecentActivityV2",
+    "deploy:v2-verify": "npm run predeploy:dataenv && firebase deploy --only functions:logInteractionV2Verify,functions:getFunnelInsightsV2Verify,functions:getFunnelDrilldownV2Verify,functions:getFunnelRecentActivityV2Verify",
     "logs": "firebase functions:log"
   },
   "engines": {
