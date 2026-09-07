@@ -205,6 +205,63 @@ test('同一boundaryKeyの繰り返し（同一from）は新visitにしない', 
   assert.equal(second.fetchCalls[0].body.visit_id, visitId1, '同じboundaryKeyの再送はvisitを切らない');
 });
 
+/* ---- 独立監査再提出R6 #3：同一from・外部referrerだけ消える特則 ---- */
+test('R6#3 シナリオA：30分以内に同じfromが再度届くが今回は外部referrerが無い場合、同一visit_idを継続し元のmediaCode・webSourceを両方維持する', async () => {
+  const first = browser({
+    url: 'https://aoki-tosou.net/?from=meishi', referrer: 'https://www.google.com/search?q=x',
+    now: RealDate.parse('2026-09-07T10:00:00+09:00')
+  });
+  const visitId1 = first.fetchCalls[0].body.visit_id;
+  assert.equal(first.fetchCalls[0].body.visitMediaCode, 'meishi');
+  assert.equal(first.fetchCalls[0].body.visitWebSource, 'www.google.com');
+  await tick();
+  const second = browser({
+    // 同じfrom=meishiがURLに付いているが、今回のreferrerは同一origin遷移
+    // （外部referrerではない＝currentSignal()はreferrerHost=nullを返す）。
+    url: 'https://aoki-tosou.net/?from=meishi', referrer: 'https://aoki-tosou.net/?from=meishi',
+    sessionStore: first.sessionStore, localStore: first.localStore, now: RealDate.parse('2026-09-07T10:20:00+09:00')
+  });
+  assert.equal(second.fetchCalls[0].body.visit_id, visitId1, '同じfromで信号が弱くなっただけなので同一visitを継続する（境界キー文字列の単純比較だけで新visitにしない）');
+  assert.equal(second.fetchCalls[0].body.visitMediaCode, 'meishi', 'mediaCodeを維持する');
+  assert.equal(second.fetchCalls[0].body.visitWebSource, 'www.google.com', '元の外部referrer由来のwebSourceをリセットせず維持する（監査差し戻しR6 #3の核心）');
+});
+test('R6#3 シナリオB：タイムアウト後に同じfrom・referrerなしが届いた場合は特則を適用せず新visit_id・webSource=""', async () => {
+  const first = browser({
+    url: 'https://aoki-tosou.net/?from=meishi', referrer: 'https://www.google.com/search?q=x',
+    now: RealDate.parse('2026-09-07T10:00:00+09:00')
+  });
+  const visitId1 = first.fetchCalls[0].body.visit_id;
+  await tick();
+  const second = browser({
+    url: 'https://aoki-tosou.net/?from=meishi',
+    sessionStore: first.sessionStore, localStore: first.localStore, now: RealDate.parse('2026-09-07T10:31:00+09:00') // 30分超過
+  });
+  assert.notEqual(second.fetchCalls[0].body.visit_id, visitId1, 'タイムアウト後は特則を適用せず新visitを開始する');
+  assert.equal(second.fetchCalls[0].body.visitMediaCode, 'meishi');
+  assert.equal(second.fetchCalls[0].body.visitWebSource, '', 'タイムアウト後の新visitは現在ページの信号（媒体はあるが外部referrerは無い）から再取得するのでwebSourceは空');
+});
+
+/* ---- 独立監査再提出R6 #10：referrerHostの完全削除 ---- */
+test('R6#10：送信payloadに"referrerHost"キーが一切存在しない（値が空文字ではなく、キー自体が無い）', () => {
+  // 監査差し戻し：前回「削除した」と報告していたが、実際にはbuildEvent()の返却
+  // オブジェクトにreferrerHost: safeReferrerHost()が残ったままだった（削除漏れ）。
+  // 空文字が送られる状態と「キー自体が存在しない」状態は別物であり、hasOwnPropertyで
+  // 厳密に確認する（JSON.stringify後の文字列に"referrerHost"という部分文字列が
+  // 含まれないことも合わせて確認し、キー名の書き方を変えて紛れ込ませていないかも見る）。
+  const b = browser({ url: 'https://aoki-tosou.net/?from=meishi', referrer: 'https://www.google.com/search?q=x' });
+  const body = b.fetchCalls[0].body;
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'referrerHost'), false, 'referrerHostキー自体が存在しないこと');
+  assert.equal(JSON.stringify(body).indexOf('referrerHost'), -1, 'シリアライズ後の送信payload文字列にも"referrerHost"という部分文字列が一切含まれないこと');
+});
+test('R6#10：line_click／phone_clickイベントの送信payloadにも"referrerHost"キーが存在しない', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', referrer: 'https://www.google.com/' });
+  b.api.track('line_click', { contactChannel: 'LINE' });
+  await tick();
+  const body = b.fetchCalls[b.fetchCalls.length - 1].body;
+  assert.equal(body.eventType, 'line_click');
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'referrerHost'), false);
+});
+
 test('visitorIdはlocalStorageに永続化され、次回ロードでもvisitorIdPersisted=trueとして同じIDが送られる', async () => {
   const first = browser({ url: 'https://aoki-tosou.net/' });
   const firstId = first.fetchCalls[0].body.visitorId;
@@ -339,37 +396,103 @@ test('試験再送が成功（2xx）すれば停止を解除し、残りのoutbo
   await tick();
   assert.equal(b.api.isStopped(), false, '試験再送が2xxなら停止解除');
 });
-test('試験再送が再び401なら停止を継続し、次回試験を15分後へ再設定する', async () => {
+test('R6#9：試験再送が再び401なら停止を継続し、trialCountを1つ進めて次回試験を30分後（15→30分へエスカレート、15分固定ではない）へ再設定する', async () => {
   const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) });
   await tick();
   const stopBefore = b.api._internal.loadStopState();
+  assert.equal(stopBefore.trialCount, 0, '停止開始直後はtrialCount=0');
   b.advance(15 * 60 * 1000 + 1000);
   b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true);
   const stopAfter = b.api._internal.loadStopState();
-  assert.ok(stopAfter.nextTrialAt > stopBefore.nextTrialAt, '次回試験時刻が15分後へ再設定される');
+  assert.equal(stopAfter.trialCount, 1, '1回目の試験再送失敗でtrialCountが1になる');
+  assert.equal(stopAfter.finalStopped, false, '1回目の失敗だけではfinalStoppedにならない');
+  assert.equal(stopAfter.nextTrialAt, stopBefore.nextTrialAt + 1000 + 30 * 60 * 1000, '次回試験時刻は15分固定ではなく30分後へエスカレートする（15→30→60→120分）');
 });
-test('ページを新規に開いた時点（init）でも、15分未経過でも試験再送を試みる', async () => {
+test('R6#9：試験再送が恒久的4xx（例：400）を返しても、trialCountを1つ進めて停止状態を継続する（successでなければ全て「試験失敗」として数える）', async () => {
+  const b = browser({
+    url: 'https://aoki-tosou.net/',
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 400 })
+  });
+  await tick();
+  assert.equal(b.api.isStopped(), true);
+  b.advance(15 * 60 * 1000 + 1000);
+  b.api._internal.attemptTrialResend();
+  await tick();
+  assert.equal(b.api.isStopped(), true, '恒久4xxでも停止状態は継続する（successでなければクリアしない）');
+  const state = b.api._internal.loadStopState();
+  assert.equal(state.trialCount, 1, '恒久4xxの試験失敗もtrialCountを1つ進める');
+});
+test('R6#9：試験再送が一時的失敗（例：503）でも、trialCountを1つ進めて停止状態を継続する', async () => {
+  const b = browser({
+    url: 'https://aoki-tosou.net/',
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 503 })
+  });
+  await tick();
+  b.advance(15 * 60 * 1000 + 1000);
+  b.api._internal.attemptTrialResend();
+  await tick();
+  assert.equal(b.api.isStopped(), true);
+  const state = b.api._internal.loadStopState();
+  assert.equal(state.trialCount, 1, '一時的失敗（5xx）の試験失敗もtrialCountを1つ進める');
+});
+test('R6#9：試験再送は15→30→60→120分とエスカレートし、4回連続失敗するとfinalStopped=trueになり以後は時間が経っても自動試験しない（上限4回・確定契約）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) }); // 常に401（初回＋4回とも失敗）
+  await tick();
+  let state = b.api._internal.loadStopState();
+  assert.equal(state.trialCount, 0);
+
+  const expectedIntervalsMin = [15, 30, 60, 120]; // 各試験（1〜4回目）を行うまでの待機分
+  for (let i = 0; i < 4; i++) {
+    b.advance(expectedIntervalsMin[i] * 60 * 1000 + 1000);
+    b.api._internal.attemptTrialResend();
+    await tick();
+    state = b.api._internal.loadStopState();
+    if (i < 3) {
+      assert.equal(state.trialCount, i + 1, `${i + 1}回目の試験失敗後、trialCount=${i + 1}`);
+      assert.equal(state.finalStopped, false, `${i + 1}回目まではfinalStoppedにならない`);
+    } else {
+      assert.equal(state.trialCount, 4, '4回目の試験失敗でtrialCount=4');
+      assert.equal(state.finalStopped, true, '4回失敗したらfinalStopped=trueになる（無制限試験の禁止・上限4回の確定契約）');
+      assert.equal(state.nextTrialAt, null, 'finalStopped後はnextTrialAtが無い（自動試験を予定しない）');
+    }
+  }
+  const fetchCountAtFinal = b.fetchCalls.length;
+  b.advance(999 * 60 * 60 * 1000); // 999時間経過させても
+  b.api._internal.attemptTrialResend();
+  await tick();
+  assert.equal(b.fetchCalls.length, fetchCountAtFinal, 'finalStopped後は時間がいくら経過しても自動試験しない（fetch回数が増えない）');
+  assert.equal(b.api.isStopped(), true, 'finalStopped後もisStopped()はtrueのまま（QAのresumeAfterStop()だけが復帰手段）');
+});
+test('R6#9訂正：ページを新規に開いても（何度リロードしても）、nextTrialAtを過ぎていなければ試験再送しない（旧force=true仕様の廃止＝無制限試験の禁止）', async () => {
   const first = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) });
   await tick();
   assert.equal(first.api.isStopped(), true);
-  // 15分経過させず、すぐ次のページロードを模す
+  assert.equal(first.fetchCalls.length, 1);
+  // 15分経過させず、すぐ次のページロードを模す（何度リロードしても同じはず）。
   const second = browser({
     url: 'https://aoki-tosou.net/about.html', localStore: first.localStore, sessionStore: first.sessionStore,
     fetchResponder: () => ({ status: 200 })
   });
   await tick();
-  // 2回目のブラウザ初期化時、init()内のattemptTrialResendが（15分未経過でも）呼ばれ、
-  // 停止状態が解除されているはず。
-  assert.equal(second.api.isStopped(), false, '次回ロード時は15分未経過でも試験再送のトリガーになる');
+  assert.equal(second.api.isStopped(), true, '15分未経過のページ再読み込みは試験再送のトリガーにならない（旧仕様＝force=trueは誤りだったため廃止）');
+  assert.equal(second.fetchCalls.length, 0, '停止中の新規ページロードはfetchを一切呼ばない（試験再送も通常送信も行わない。track()はoutboxへ積むだけ）');
+  const secondReload = browser({
+    url: 'https://aoki-tosou.net/contact.html', localStore: first.localStore, sessionStore: first.sessionStore,
+    fetchResponder: () => ({ status: 200 })
+  });
+  await tick();
+  assert.equal(secondReload.api.isStopped(), true, '2回目のリロードでもまだ試験されない（何度リロードしても回数制限をバイパスできない）');
+  assert.equal(secondReload.fetchCalls.length, 0);
 });
-test('resumeAfterStop()でQA目的に即時再開できる', async () => {
+test('resumeAfterStop()でQA目的に即時再開できる（trialCount・finalStoppedを含む状態を完全に破棄する）', async () => {
   const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) });
   await tick();
   assert.equal(b.api.isStopped(), true);
   b.api.resumeAfterStop();
   assert.equal(b.api.isStopped(), false);
+  assert.equal(b.api._internal.loadStopState(), null, 'resumeAfterStop後は停止状態（trialCount・finalStopped含む）そのものが存在しない');
 });
 
 /* ===================================================================

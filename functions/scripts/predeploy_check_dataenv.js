@@ -6,18 +6,26 @@
  * functions/index.jsのソーステキストを静的解析し、次を機械的に確認する：
  *  1. 関数名に"Verify"を含むエンドポイントは、VERIFY専用コレクション定数
  *     （V2_VERIFY_COLLECTIONS）だけを参照し、PROD専用コレクション定数
- *     （V2_PROD_COLLECTIONS）を参照しないこと。secrets配列に'VERIFY_JWT_SECRET'を
- *     含むこと。専用runtime service account（serviceAccount:オプション）を
- *     明示していること（独立監査再提出・項目5）。
+ *     （V2_PROD_COLLECTIONS）を参照しないこと。
+ *  1a. 書き込み専用のlogInteractionV2Verifyだけが、secrets配列に'VERIFY_JWT_SECRET'
+ *     （署名鍵）を含み、専用runtime service account（serviceAccount:オプション）を
+ *     明示していること。VERIFY_READ_TOKEN（読み取り専用トークン）は持たないこと
+ *     （監査差し戻し・独立監査再提出R6・項目4：署名鍵は書き込み専用に厳密に限定する）。
+ *  1b. 読み取り3系（getFunnelInsightsV2Verify／getFunnelDrilldownV2Verify／
+ *     getFunnelRecentActivityV2Verify）は、VERIFY_JWT_SECRET・serviceAccount
+ *     （funnel-verify-runtime専用SA）のいずれも一切持たないこと（BLOCK対象）。
+ *     代わりにsecrets配列に'VERIFY_READ_TOKEN'を含み、requireVerifyReadToken()を
+ *     呼んでいること。verifyVerifyRequest_（署名鍵検証）を一切呼んでいないこと。
  *  2. 関数名に"V2"を含み"Verify"を含まないエンドポイントは、V2_PROD_COLLECTIONSを
  *     参照する場合、V2_VERIFY_COLLECTIONSを参照しないこと。secrets配列に
- *     'VERIFY_JWT_SECRET'を含まないこと（VERIFY専用SecretがPROD関数へ漏れることを防ぐ）。
- *     serviceAccountオプションを持たないこと（VERIFY専用service accountがPROD関数へ
- *     漏れることを防ぐ）。
+ *     'VERIFY_JWT_SECRET'も'VERIFY_READ_TOKEN'も含まないこと（VERIFY専用SecretがPROD
+ *     関数へ漏れることを防ぐ）。serviceAccountオプションを持たないこと（VERIFY専用
+ *     service accountがPROD関数へ漏れることを防ぐ）。
  *  3. V2_VERIFY_COLLECTIONSを参照するのに関数名へ"Verify"を含まない関数、または
  *     その逆（"Verify"を含むのにV2_VERIFY_COLLECTIONSを参照しない関数）が無いこと
  *     （命名規約と実装の乖離を検知する）。
- *  4. Verify関数のaudが関数名と同一であること（正本仕様：正式名と同名のaud）。
+ *  4. logInteractionV2VerifyのJWT audが自分自身の関数名と同一であること
+ *     （正本仕様：正式名と同名のaud）。
  *
  * 実際のFirestoreへは一切接続しない、純粋なテキスト静的解析。
  * 使い方: node scripts/predeploy_check_dataenv.js
@@ -42,12 +50,14 @@ const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
  * - deploy:v2-prod-additive の --only 対象に"Verify"を含む関数名が一切無いこと
  *   （VERIFY関数が誤ってPROD追加deployへ混入しないことを保証する）。
  */
-function checkDeployScripts(blockList) {
-  if (!fs.existsSync(PACKAGE_JSON_PATH)) {
-    blockList.push({ severity: 'BLOCK', item: 'package.json', detail: 'package.jsonが見つからない。' });
-    return;
+function checkDeployScripts(blockList, pkg) {
+  if (!pkg) {
+    if (!fs.existsSync(PACKAGE_JSON_PATH)) {
+      blockList.push({ severity: 'BLOCK', item: 'package.json', detail: 'package.jsonが見つからない。' });
+      return;
+    }
+    pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
   }
-  const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
   const scripts = pkg.scripts || {};
   if (Object.prototype.hasOwnProperty.call(scripts, 'deploy')) {
     blockList.push({ severity: 'BLOCK', item: 'package.json:deploy', detail: '汎用"deploy"スクリプトが存在する（独立監査再提出・項目8：npm run deployへ追加--onlyを渡す方式は禁止。deploy:v1/deploy:v2-prod-additive/deploy:v2-verifyのように限定スコープの名前付きスクリプトのみを使うこと）。' });
@@ -75,10 +85,17 @@ function checkDeployScripts(blockList) {
   }
 }
 
-function main() {
-  const source = fs.readFileSync(INDEX_PATH, 'utf8');
+/**
+ * 監査差し戻し（独立監査再提出R6）：負のテスト（意図的に欠陥を注入したsource/pkgを
+ * 渡してBLOCKされることを確認するテスト）から呼べるよう、ファイルI/O・exitCode設定を
+ * 行わない純粋な検査関数として分離した（main()はCLI用の薄いラッパーとしてこれを呼ぶ）。
+ * @param {string} source functions/index.jsのソーステキスト
+ * @param {object} pkg functions/package.jsonをJSON.parseしたオブジェクト（省略時は実ファイル）
+ * @returns {Array<{severity:string,item:string,detail:string}>} blockList
+ */
+function checkSource(source, pkg) {
   const blockList = [];
-  checkDeployScripts(blockList);
+  checkDeployScripts(blockList, pkg);
 
   // exports.NAME = onRequest( ... ) の出現位置ごとに、次のexports.出現（または末尾）
   // までをそのエンドポイントの完全なソース片とみなす（ネストした{}を厳密にパースせず、
@@ -106,9 +123,11 @@ function main() {
     const secretsMatch = ep.body.match(/secrets:\s*\[([^\]]*)\]/);
     const secretsList = secretsMatch ? secretsMatch[1] : '';
     const hasVerifySecret = /['"]VERIFY_JWT_SECRET['"]/.test(secretsList);
+    const hasReadToken = /['"]VERIFY_READ_TOKEN['"]/.test(secretsList);
     const hasServiceAccountOption = /serviceAccount\s*:/.test(ep.body.split(/async\s*\(req/)[0] || ep.body);
-    const audMatch = ep.body.match(/verifyVerifyRequest_\(\s*req\s*,\s*'([^']+)'\s*\)/);
-    const audUsed = audMatch ? audMatch[1] : null;
+    const callsVerifyJwtCheck = /verifyVerifyRequest_\s*\(/.test(ep.body);
+    const callsReadTokenCheck = /requireVerifyReadToken\s*\(/.test(ep.body);
+    const isVerifyWriter = ep.name === 'logInteractionV2Verify';
 
     if (nameHasVerify) {
       if (usesProdCollections) {
@@ -117,17 +136,38 @@ function main() {
       if (!usesVerifyCollections) {
         blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名に"Verify"を含むが、VERIFY専用コレクション定数(V2_VERIFY_COLLECTIONS)を一切参照していない（命名と実装の乖離）。' });
       }
-      if (!hasVerifySecret) {
-        blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名に"Verify"を含むが、secrets配列にVERIFY_JWT_SECRETが含まれていない（JWT検証に必要なSecretが配線されていない）。' });
-      }
-      if (!hasServiceAccountOption) {
-        blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名に"Verify"を含むが、onRequestオプションにserviceAccountが明示されていない（正本仕様：VERIFY writerへ専用runtime serviceAccount名を明示する）。' });
-      }
-      // logInteractionV2Verify自身はverifyVerifyRequest_(req)を第2引数省略で呼ぶ（既定値が
-      // 自分自身の関数名と一致する設計）ため、audチェックはlogInteractionV2Verify以外の
-      // 読み取り系Verify関数（第2引数に明示的なaudを渡す設計）にのみ適用する。
-      if (ep.name !== 'logInteractionV2Verify' && audUsed && audUsed !== ep.name) {
-        blockList.push({ severity: 'BLOCK', item: ep.name, detail: `audが関数名と一致しない（正本仕様：正式名と同名のaud）。検出されたaud: ${audUsed}` });
+
+      if (isVerifyWriter) {
+        // 監査差し戻し（独立監査再提出R6）#4：書き込み専用のlogInteractionV2Verifyだけが
+        // 署名鍵VERIFY_JWT_SECRET・専用runtime service accountを持ってよい（必須）。
+        if (!hasVerifySecret) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '書き込み専用Verify関数だが、secrets配列にVERIFY_JWT_SECRETが含まれていない（JWT署名に必要なSecretが配線されていない）。' });
+        }
+        if (!hasServiceAccountOption) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '書き込み専用Verify関数だが、onRequestオプションにserviceAccountが明示されていない（正本仕様：VERIFY writerへ専用runtime serviceAccount名を明示する）。' });
+        }
+        if (hasReadToken) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '書き込み専用Verify関数がVERIFY_READ_TOKEN（読み取り専用トークン）を持っている（署名鍵と読み取りトークンを分離すること）。' });
+        }
+      } else {
+        // 監査差し戻し（独立監査再提出R6）#4の核心：読み取り3系はVERIFY_JWT_SECRETも
+        // 専用service accountも一切使ってはならない（BLOCK対象）。VERIFY_READ_TOKENと
+        // requireVerifyReadToken()だけで認可すること。
+        if (hasVerifySecret) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '読み取り専用Verify関数だが、secrets配列にVERIFY_JWT_SECRET（書き込み専用署名鍵）が含まれている（読み取り系は署名鍵を使ってはならない）。' });
+        }
+        if (hasServiceAccountOption) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '読み取り専用Verify関数だが、onRequestオプションにserviceAccount（書き込み専用runtime SA）が指定されている（読み取り系は専用service accountを使ってはならない）。' });
+        }
+        if (callsVerifyJwtCheck) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '読み取り専用Verify関数がverifyVerifyRequest_（署名鍵JWT検証）を呼んでいる（読み取り系から署名鍵ロジックを排除すること）。' });
+        }
+        if (!hasReadToken) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '読み取り専用Verify関数だが、secrets配列にVERIFY_READ_TOKENが含まれていない。' });
+        }
+        if (!callsReadTokenCheck) {
+          blockList.push({ severity: 'BLOCK', item: ep.name, detail: '読み取り専用Verify関数だが、requireVerifyReadToken()を呼んでいない（認可ロジックが配線されていない）。' });
+        }
       }
     } else if (nameHasV2) {
       if (usesVerifyCollections) {
@@ -136,6 +176,9 @@ function main() {
       if (hasVerifySecret) {
         blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名は"Verify"を含まないPROD系（V2）だが、secrets配列にVERIFY_JWT_SECRETが含まれている（VERIFY専用SecretがPROD関数へ漏れている）。' });
       }
+      if (hasReadToken) {
+        blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名は"Verify"を含まないPROD系（V2）だが、secrets配列にVERIFY_READ_TOKENが含まれている（VERIFY専用SecretがPROD関数へ漏れている）。' });
+      }
       if (hasServiceAccountOption) {
         blockList.push({ severity: 'BLOCK', item: ep.name, detail: '関数名は"Verify"を含まないPROD系（V2）だが、onRequestオプションにserviceAccountが指定されている（VERIFY専用service accountがPROD関数へ漏れている）。' });
       }
@@ -143,8 +186,15 @@ function main() {
     // "Verify"も"V2"も含まない関数（V1の既存エンドポイント等）はこのチェックの対象外。
   });
 
+  return { blockList, endpointNames: endpoints.filter((e) => /V2|Verify/.test(e.name)).map((e) => e.name) };
+}
+
+function main() {
+  const source = fs.readFileSync(INDEX_PATH, 'utf8');
+  const { blockList, endpointNames } = checkSource(source);
+
   console.log('=== predeploy dataEnv検査結果 ===');
-  console.log('検出したV2/VERIFY関連エンドポイント: ' + endpoints.filter((e) => /V2|Verify/.test(e.name)).map((e) => e.name).join(', '));
+  console.log('検出したV2/VERIFY関連エンドポイント: ' + endpointNames.join(', '));
   if (blockList.length === 0) {
     console.log('BLOCKなし。関数名とdataEnv（コレクション定数・Secret）の対応は全て規約どおり。');
   } else {
@@ -153,4 +203,8 @@ function main() {
   process.exitCode = blockList.length > 0 ? 1 : 0;
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { checkSource, checkDeployScripts };

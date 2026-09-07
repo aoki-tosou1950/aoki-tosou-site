@@ -45,9 +45,15 @@
     var VISITOR_ID_KEY = 'aoki_analytics_v2_visitor_id';
     var VISIT_STATE_KEY = 'aoki_analytics_v2_visit';
     var STOP_STATE_KEY = 'aoki_analytics_v2_stop_state';
-    var STOP_TRIAL_INTERVAL_MS = 15 * 60 * 1000; // 401停止中の試験再送の待機間隔（固定・エスカレートしない）
-    // 保持系失敗（408/429/5xx/通信失敗）の再送間隔テーブル：1回目15分・2回目30分・3回目60分・4回目以降120分。
+    // 監査差し戻し（独立監査再提出R6）#9：401停止中の試験再送は15→30→60→120分と
+    // エスカレートし、最大4回で打ち切る（確定契約）。以前のSTOP_TRIAL_INTERVAL_MSは
+    // 15分固定でエスカレートせず、かつattemptTrialResend(force=true)がinit()から
+    // 無条件に呼ばれていたため、ページを何度リロードしても15分の待機すら無視して
+    // 即時に試験再送が発生し、事実上「無制限試験」になっていた（禁止事項）。
+    // 保持系失敗（408/429/5xx/通信失敗）の再送間隔テーブルと同じ値・同じエスカレート
+    // 方式を、401停止中の試験再送スケジュールにも流用する（backoffForAttempts()を共用）。
     var RETRY_BACKOFF_MS = [15 * 60 * 1000, 30 * 60 * 1000, 60 * 60 * 1000, 120 * 60 * 1000];
+    var STOP_TRIAL_MAX_ATTEMPTS = 4; // 試験再送は最大4回まで（4回とも失敗したら自動再試行を打ち切る＝finalStopped）
     var PERMANENT_DELETE_STATUSES = [400, 404, 413, 422, 403];
     var RETRYABLE_STATUSES = [408, 429];
 
@@ -131,14 +137,25 @@
       safeSessionSet(VISIT_STATE_KEY, JSON.stringify(state));
     }
 
-    /** 訪問境界の確定判定（正本仕様・独立監査再提出版）。イベント送信のたびに呼ばれる。 */
+    /** 訪問境界の確定判定（正本仕様・独立監査再提出R6版）。イベント送信のたびに呼ばれる。 */
     function getOrUpdateVisit() {
       var now = nowMs();
       var state = loadVisitState();
       var signal = currentSignal();
       var key = boundaryKeyOf(signal);
       var timedOut = !state || (now - Number(state.lastActivityAt || 0)) > VISIT_TIMEOUT_MS;
-      var keyChanged = !timedOut && !!state && key !== null && key !== state.boundaryKey;
+
+      // 監査差し戻し（独立監査再提出R6）#3特則：直前と同じfromが再度届いたが、
+      // 今回は外部referrerが無い（＝信号が「弱くなった」だけで、fromそのものは
+      // 変わっていない）場合は境界変化とみなさず、同一訪問を継続する。
+      // 境界キー文字列の単純比較だけで判定すると（'meishi|' !== 'meishi|google.com'）、
+      // このケースを誤って境界変化と判定し、既にある外部referrer由来のwebSourceを
+      // 失って新しい訪問（webSource=''）を始めてしまう。30分のタイムアウトを跨いだ
+      // 場合はこの特則を適用しない（timedOut時は下の新規訪問ロジックでwebSource=''の
+      // 新しい訪問を正しく開始する＝仕様どおり）。
+      var sameFromWeakerSignal = !timedOut && !!state && signal.from != null &&
+        signal.from === state.mediaCode && signal.referrerHost == null;
+      var keyChanged = !timedOut && !!state && key !== null && key !== state.boundaryKey && !sameFromWeakerSignal;
 
       if (!timedOut && !keyChanged) {
         // 現在の訪問を維持（信号なし、または信号ありでも直前と同一）。
@@ -160,13 +177,6 @@
       };
       saveVisitState(next);
       return next;
-    }
-
-    function safeReferrerHost() {
-      try {
-        if (!document.referrer) return '';
-        return new URL(document.referrer).hostname.toLowerCase();
-      } catch (err) { return ''; }
     }
 
     /* ---- outbox ---- */
@@ -227,7 +237,16 @@
       if (changed) saveOutbox(list);
     }
 
-    /* ---- PROD 401 サーキットブレーカー ---- */
+    /* ---- PROD 401 サーキットブレーカー（確定契約：独立監査再提出R6・項目9） ----
+     * 状態は{stoppedAt, trialCount, nextTrialAt, finalStopped}。trialCountは「これまでに
+     * 実際に試験再送を試みて失敗した回数」（成功していれば即clearStopされ状態自体が
+     * 消える）。nextTrialAtは次に試験してよい時刻（15→30→60→120分とエスカレート、
+     * backoffForAttempts()を共用）。trialCountがSTOP_TRIAL_MAX_ATTEMPTS（4）に達したら
+     * finalStopped=trueとし、nextTrialAtをnullにして以後は自動試験を一切行わない
+     * （QAのresumeAfterStop()による手動解除のみが復帰手段）。この状態は
+     * localStorage（不可の場合はページ内メモリ）へ永続化されるため、ページを何度
+     * リロードしても、この記録済みのtrialCount／nextTrialAt／finalStoppedを迂回して
+     * 追加の試験再送を行うことはできない（旧実装のforce=trueバイパスを廃止）。 */
     function loadStopState() {
       try {
         var raw = safeLocalGet(STOP_STATE_KEY);
@@ -239,17 +258,42 @@
     function isStopped() { return !!loadStopState(); }
     function beginStop() {
       var now = nowMs();
-      saveStopState({ stoppedAt: now, nextTrialAt: now + STOP_TRIAL_INTERVAL_MS });
+      saveStopState({ stoppedAt: now, trialCount: 0, nextTrialAt: now + backoffForAttempts(1), finalStopped: false });
     }
-    function rescheduleTrial() {
+    /** 実際に試験再送を試みて失敗した後に呼ぶ：trialCountを1つ進め、上限（4回）に
+     * 達していればfinalStopped化し、達していなければ次のエスカレート間隔を設定する。 */
+    function rescheduleTrialAfterFailedAttempt() {
       var state = loadStopState();
       var now = nowMs();
-      saveStopState({ stoppedAt: state ? state.stoppedAt : now, nextTrialAt: now + STOP_TRIAL_INTERVAL_MS });
+      var priorCount = Number(state && state.trialCount || 0);
+      var newCount = priorCount + 1;
+      if (newCount >= STOP_TRIAL_MAX_ATTEMPTS) {
+        saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, nextTrialAt: null, finalStopped: true });
+      } else {
+        saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, nextTrialAt: now + backoffForAttempts(newCount + 1), finalStopped: false });
+      }
+    }
+    /** outboxが空で実際には何も試せなかった場合に呼ぶ：trialCount（＝実試行回数）は
+     * 消費せず、現在のエスカレート段階のまま次回チェック時刻だけを先送りする。 */
+    function rescheduleTrialWait() {
+      var state = loadStopState();
+      var now = nowMs();
+      var count = Number(state && state.trialCount || 0);
+      saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: count, nextTrialAt: now + backoffForAttempts(count + 1), finalStopped: false });
     }
     function clearStop() { saveStopState(null); }
-    /** QA専用：試験的に即時再開する。 */
+    /** QA専用：試験的に即時再開する（trialCount・finalStoppedを含む状態を完全に破棄する）。 */
     function resumeAfterStop() { clearStop(); }
 
+    /** 監査差し戻し（独立監査再提出R6）#10：この関数が返すイベントに"referrerHost"
+     * キーを含めない。サーバー側（recordWebEventV2）はクライアントの生referrerHostを
+     * 一切信用せず、既に検証済みのwebSource/webSourceStatusから自前で導出している
+     * （webSourceStatus==='referrer'の場合のみ、その検証済みホスト名を使う）ため、
+     * クライアントからの重複証跡フィールドは不要かつ有害（実質使われない値を送り続ける
+     * ことになる）。前回はこの意図で削除したつもりだったが、実際にはこの関数の返却
+     * オブジェクトに"referrerHost: safeReferrerHost()"が残ったままだった（削除漏れ）。
+     * 今回、実際に送信payloadから削除し、下のsafeReferrerHost()自体も呼び出し元が
+     * 無くなったため削除した。 */
     function buildEvent(eventType, extra) {
       var visit = getOrUpdateVisit();
       var visitor = getOrCreateVisitorId();
@@ -265,7 +309,6 @@
         visitorIdPersisted: visitor.persisted,
         currentPage: safeHref(),
         landingPage: visit.landingPage || safeHref(),
-        referrerHost: safeReferrerHost(),
         contactChannel: ''
       };
       if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) event[k] = extra[k]; } }
@@ -297,7 +340,13 @@
           if (kind === 'success') {
             removeFromOutbox(event.event_id);
           } else if (kind === 'stop') {
-            beginStop(); // itemはoutboxに残す（次回の試験再送対象）
+            // 監査差し戻し（独立監査再提出R6）#9：既に停止中（＝これがattemptTrialResend経由の
+            // 試験再送）であれば、ここでbeginStop()を呼び直さない。呼び直すとtrialCount・
+            // エスカレート段階（15/30/60/120分）がリセットされ、上限4回が実質無効化される。
+            // 停止状態の前進（trialCountを進める・上限判定）は呼び出し側
+            // （attemptTrialResendのonSettled → rescheduleTrialAfterFailedAttempt）が行う。
+            // 初回401（まだ停止していない状態からの通常送信）のときだけ、ここで新規に停止する。
+            if (!isStopped()) beginStop(); // itemはoutboxに残す（次回の試験再送対象）
           } else if (kind === 'permanent') {
             removeFromOutbox(event.event_id);
           } else {
@@ -339,20 +388,27 @@
       });
     }
 
-    /** 停止中：outbox最古の1件だけを試験再送する。15分経過後、またはページ新規表示時に呼ぶ。
-     * force=trueはページ新規表示（init）専用：正本仕様「15分後、またはページを新規に開いた
-     * 時点のいずれか早い方」のうち後者を満たすため、15分の待機を無視して即時試験する。 */
-    function attemptTrialResend(force) {
+    /** 停止中：outbox最古の1件だけを試験再送する。エスカレートするnextTrialAtを
+     * 過ぎている場合にのみ試みる（呼び出しごとに毎回チェックする＝ページ表示のたび・
+     * track()実行のたびに呼んでよい設計）。
+     * 監査差し戻し（独立監査再提出R6）#9：以前存在したforce引数（ページ新規表示時に
+     * 15分待機を無視して即時試験する）は廃止した。これがあると、ページを繰り返し
+     * リロードするたびに待機時間を無視した即時試験再送が発生し、15/30/60/120分への
+     * エスカレート・4回上限のいずれも実質的に無意味化する（「無制限試験」で禁止事項）。
+     * 廃止後は、この関数はいつ・何度呼ばれても、永続化されたnextTrialAt／trialCount／
+     * finalStoppedの記録だけを見て判定するため、ページリロードによる回数制限の
+     * バイパスができない。 */
+    function attemptTrialResend() {
       var stopState = loadStopState();
-      if (!stopState) return;
+      if (!stopState || stopState.finalStopped) return; // 上限到達後は自動試験を一切行わない（QAのresumeAfterStop()のみが復帰手段）
       var now = nowMs();
-      if (!force && now < Number(stopState.nextTrialAt || 0)) return;
+      if (now < Number(stopState.nextTrialAt || 0)) return;
       var list = pruneOutbox(loadOutbox());
-      if (!list.length) { rescheduleTrial(); return; }
+      if (!list.length) { rescheduleTrialWait(); return; } // 送るものが無い＝実際には試行していないのでtrialCountは消費しない
       var oldest = list.reduce(function(a, b) { return Number(a.addedAt) <= Number(b.addedAt) ? a : b; });
       sendViaFetch(oldest, function(kind) {
         if (kind === 'success') { clearStop(); flushOutboxViaFetch(); }
-        else { rescheduleTrial(); }
+        else { rescheduleTrialAfterFailedAttempt(); } // 401再発・恒久4xx・一時的失敗のいずれも「試験1回」として数える
       });
     }
 
@@ -378,7 +434,11 @@
 
     function init() {
       saveOutbox(pruneOutbox(loadOutbox()));
-      if (isStopped()) attemptTrialResend(true); // ページ新規表示＝正本仕様の「早い方」のトリガー
+      // 監査差し戻し（独立監査再提出R6）#9：以前はattemptTrialResend(true)でforce=trueを
+      // 渡し、ページ新規表示のたびに待機時間を無視した即時試験再送を行っていた
+      // （「無制限試験」で禁止事項）。force引数は廃止し、永続化されたnextTrialAtを
+      // 過ぎている場合にのみ試験する（attemptTrialResend内部で判定する）。
+      if (isStopped()) attemptTrialResend();
       else flushOutboxViaFetch();
       track('page_view');
       bindClicks();
@@ -404,9 +464,10 @@
         classifyResponseStatus: classifyResponseStatus, backoffForAttempts: backoffForAttempts,
         attemptTrialResend: attemptTrialResend, flushOutboxViaFetch: flushOutboxViaFetch,
         loadStopState: loadStopState, beginStop: beginStop,
+        rescheduleTrialAfterFailedAttempt: rescheduleTrialAfterFailedAttempt, rescheduleTrialWait: rescheduleTrialWait,
         WRITER_GENERATION: WRITER_GENERATION, VISIT_TIMEOUT_MS: VISIT_TIMEOUT_MS,
         OUTBOX_MAX_ITEMS: OUTBOX_MAX_ITEMS, OUTBOX_MAX_AGE_MS: OUTBOX_MAX_AGE_MS,
-        STOP_TRIAL_INTERVAL_MS: STOP_TRIAL_INTERVAL_MS, RETRY_BACKOFF_MS: RETRY_BACKOFF_MS,
+        STOP_TRIAL_MAX_ATTEMPTS: STOP_TRIAL_MAX_ATTEMPTS, RETRY_BACKOFF_MS: RETRY_BACKOFF_MS,
         ENDPOINT: ENDPOINT
       }
     };

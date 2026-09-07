@@ -234,12 +234,15 @@ exports.logInteractionV2Verify = onRequest(
   }
 );
 
-/** VERIFY読み取り系エンドポイント共通のJWT検証（Authorization: Bearerヘッダ）。
- * audはエンドポイントごとに異なる正式名を要求する（正本仕様：関数名とaudが同名）。 */
-function verifyVerifyRequest_(req, expectedAud) {
+/** logInteractionV2Verify（書き込み専用）のJWT検証（Authorization: Bearerヘッダ）。
+ * 監査差し戻し（独立監査再提出R6）#4：VERIFY_JWT_SECRET（署名鍵）はこの書き込み
+ * エンドポイントだけが使う。以前はVERIFY読み取り3系もこの関数を（audだけ変えて）
+ * 共用していたが、読み取り3系はrequireVerifyReadToken（別の固定トークン）へ
+ * 切り替えたため、このJWT検証の呼び出し元はlogInteractionV2Verifyのみになった。 */
+function verifyVerifyRequest_(req) {
   const token = extractBearerToken(req.headers.authorization);
   return verifyVerifyJwt(token, process.env.VERIFY_JWT_SECRET, {
-    expectedAud: expectedAud || 'logInteractionV2Verify',
+    expectedAud: 'logInteractionV2Verify',
     expectedScope: 'write:interaction_logs_v2_verify',
     expectedSub: 'info@aoki-tosou.net'
   });
@@ -255,10 +258,18 @@ function v2PeriodBoundsMs_(bounds) {
 
 /** legacy（visit_idを持たないraw log）を、V1のgroupVisits_がそのまま受け取れる形状
  * （eventType/dayKey/visitorHashValue）へ整形し、hash有り（legacy_unknown）／
- * hash無し（legacy_hash_missing）に分けて返す。isTestは除外する（単位6）。 */
+ * hash無し（legacy_hash_missing）に分けて返す。isTestは除外する（単位6）。
+ * 監査差し戻し（独立監査再提出R6）#1：V1 logInteraction起源のraw logには
+ * occurred_atフィールドが存在しない（created_atのみ、FieldValue.serverTimestamp()）。
+ * occurred_atでwhereすると、legacy行は構造的に0件しかヒットしない
+ * （旧ログ／判定不能が常に過小＝実質ゼロになるバグ）。legacyの期間特定は
+ * created_atで行う。legacy判定そのものはclassifyLogCategory内でvisit_idの
+ * 有無だけを見ており（occurred_atには一切依存しない）、V2行（occurred_at・
+ * visit_idともに保持）もこのcreated_atクエリには混ざって返るが、classifyLogCategoryが
+ * new_reliable/new_unreliableへ分類し以下のフィルタで除外されるため問題ない。 */
 async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
   const snapshot = await db.collection(collections.interactionLogs)
-    .where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
+    .where('created_at', '>=', new Date(startAt)).where('created_at', '<', new Date(endAt)).get();
   const hashPresentRows = [];
   const hashMissingRows = [];
   snapshot.forEach((doc) => {
@@ -283,8 +294,36 @@ async function fetchPriorVisitSessions_(collections, beforeMs) {
 }
 
 /**
+ * 監査差し戻し（独立監査再提出R6）#8：legacy（visit_idを持たない旧方式のraw log）は
+ * V1のfetchLegacyRowsForGrouping_経由でleadScoreBreakdownの旧ログ／判定不能の件数には
+ * 含まれる（findings#1・#2で修正済み）が、mediaQuality／webSourceQuality（独立2軸）と
+ * 個別訪問・反応のdrilldown一覧（getFunnelDrilldownV2のmetric=visitors/lineClicks/
+ * phoneClicks）には含まれない。legacy行はvisit_sessionsドキュメントを持たない
+ * （visit_idという概念自体が存在しない旧方式のため）ため、mediaQuality／
+ * webSourceQuality（visit_sessions由来）・drilldown（visit_sessions結合または
+ * occurred_atクエリ由来。occurred_atもlegacy行には存在しない）のいずれの構築経路にも
+ * 現れようがない。
+ * legacy・新方式を真に統合したmedia/webSource軸・drilldownを実装するには、V1の
+ * groupVisits_出力（日付＋visitor_hash単位の擬似visit）をvisit_sessionsと同じ形へ変換し、
+ * 両者をマージする設計が必要になるが、今回はそこまでは実装していない（監査の代替方針：
+ * 「実装できないなら期間をpost-cutoverのみへ明示的に限定し、UI/応答へその境界を明示する」
+ * を採用した。ここでは固定の1本のcutover日付を持たない設計＝legacy／新方式はrow単位で
+ * visit_idの有無により判定されるため、「post-cutoverのみに限定する」とは実務上
+ * 「media/webSource軸・drilldownは新方式行のみを対象とする」という恒常的なスコープ限定
+ * を意味する。旧ログ・判定不能に含まれる件数と、mediaQuality/webSourceQualityの合計件数
+ * が一致しないのは、この設計上の限定によるものであり、バグではない）。
+ * この限定をAPI応答へ機械可読な形で明示するのがlegacyAttributionScopeフィールド。
+ */
+const V2_LEGACY_ATTRIBUTION_SCOPE = {
+  includedIn: ['leadScoreBreakdown.旧ログ', 'leadScoreBreakdown.判定不能'],
+  excludedFrom: ['mediaQuality', 'webSourceQuality', 'drilldown(metric=visitors)', 'drilldown(metric=lineClicks)', 'drilldown(metric=phoneClicks)'],
+  note: 'legacy（visit_idを持たない旧方式のraw log）は旧ログ／判定不能の件数には含まれるが、media/webSource独立2軸および個別訪問・反応のdrilldown一覧には含まれない（visit_sessionsドキュメントを持たないため）。バックワード互換は「完了」ではなくこのスコープに限定されている（独立監査再提出R6・項目8）。'
+};
+
+/**
  * media/webSource独立2軸、見込み度5区分（高・中・低・判定不能・旧ログ）、
  * legacy＋新方式4分類の集計を返す読み取り専用の中核処理（PROD/VERIFY共通）。
+ * legacy行のmediaQuality/webSourceQualityへの扱いはV2_LEGACY_ATTRIBUTION_SCOPE参照。
  */
 async function runV2InsightsQuery_(collections, period, levelFilter) {
   const bounds = periodBounds(period, new Date());
@@ -306,7 +345,8 @@ async function runV2InsightsQuery_(collections, period, levelFilter) {
     mediaQuality,
     webSourceQuality,
     leadScoreBreakdown: counts,
-    leadScoreCards: filteredCards
+    leadScoreCards: filteredCards,
+    legacyAttributionScope: V2_LEGACY_ATTRIBUTION_SCOPE
   };
 }
 
@@ -341,16 +381,18 @@ exports.getFunnelInsightsV2 = onRequest(
  * VERIFY版getFunnelInsightsV2。JWT認可・VERIFY専用コレクションのみを読む。
  * DATA_ENV: VERIFY
  */
+// 監査差し戻し（独立監査再提出R6）#4：読み取り専用エンドポイントはVERIFY_JWT_SECRET
+// （書き込みJWT署名鍵）もfunnel-verify-runtime service accountも一切参照しない
+// （requireVerifyReadToken＝専用の固定読み取りトークンのみで認可する）。
 exports.getFunnelInsightsV2Verify = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['VERIFY_JWT_SECRET'],
-    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+    secrets: ['VERIFY_READ_TOKEN']
   },
   async (req, res) => {
     if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
-    if (!verifyVerifyRequest_(req, 'getFunnelInsightsV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    if (!requireVerifyReadToken(req, res)) return;
     const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
     const levelFilter = ['高', '中', '低', '判定不能'].includes(req.query.level) ? req.query.level : null;
     try {
@@ -393,7 +435,10 @@ async function runV2DrilldownQuery_(collections, period, metric) {
         pageViewCount: Number(v.pageViewCount || 0),
         reactionCount: Number(v.reactionCount || 0)
       }));
-    return { kind: 'visit', metric, items, total: items.length };
+    // 監査差し戻し（独立監査再提出R6）#8：visit_sessionsだけを読むため、legacy
+    // （visit_id無しの旧方式raw log）はこの一覧に一切含まれない（V2_LEGACY_ATTRIBUTION_
+    // SCOPE参照）。今回はここまでの実装とし、legacy行の混入は行っていない。
+    return { kind: 'visit', metric, items, total: items.length, legacyAttributionScope: V2_LEGACY_ATTRIBUTION_SCOPE };
   }
 
   const eventTypeByMetric = { lineClicks: 'line_click', phoneClicks: 'phone_click' };
@@ -422,7 +467,9 @@ async function runV2DrilldownQuery_(collections, period, metric) {
       visitPageViewCount: session ? Number(session.pageViewCount || 0) : null
     };
   });
-  return { kind: 'event', metric, items, total: items.length };
+  // 監査差し戻し（独立監査再提出R6）#8：occurred_atはlegacy行に存在しないため、この
+  // クエリ自体がlegacy行を一切拾わない（新方式行のみ。V2_LEGACY_ATTRIBUTION_SCOPE参照）。
+  return { kind: 'event', metric, items, total: items.length, legacyAttributionScope: V2_LEGACY_ATTRIBUTION_SCOPE };
 }
 
 /**
@@ -460,12 +507,11 @@ exports.getFunnelDrilldownV2Verify = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['VERIFY_JWT_SECRET'],
-    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+    secrets: ['VERIFY_READ_TOKEN']
   },
   async (req, res) => {
     if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
-    if (!verifyVerifyRequest_(req, 'getFunnelDrilldownV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    if (!requireVerifyReadToken(req, res)) return;
     const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period) ? req.query.period : 'thisMonth';
     const metric = String(req.query.metric || '');
     try {
@@ -483,11 +529,22 @@ exports.getFunnelDrilldownV2Verify = onRequest(
 /**
  * 直近24時間の「今日」パルス向け軽量サマリ。V1のfunnelRecentActivityと同じ目的だが、
  * V2ネイティブのvisit_sessionsだけを使う。
- * 【既知の未実装】V1が持つrevisitImproved（再訪で閲覧が深まった／反応が強まった件数）・
- * lineFollowIncrease（LINE友だち純増数）はこの関数では算出しない
- * （revisitImprovedはleadScoreカードへrevisit詳細を持たせる追加実装が必要、
- * lineFollowIncreaseはLINE Webhook側のイベントでschemaVersion:2の対象外のため）。
- * 「未確認事項」として最終報告に明記する。
+ *
+ * 独立監査再提出R6・項目10で、V1が持つ2つのフィールドの扱いを確定させた（「EF完成」を
+ * 主張するのではなく、それぞれのスコープを明示する）：
+ * - revisitImproved：実装した。buildLeadScoreBreakdownV2が既に呼んでいる
+ *   computeSessionLeadScoreV1Compat_（V1のcomputeLeadScore_をそのまま使う）の
+ *   revisit.deeperThanPrevious／revisit.strongerReactionThanPrevious判定結果を
+ *   そのまま数える（V1のfunnelRecentActivityと同一の定義・同一の判定式）。
+ * - lineFollowIncrease：今回のV2切替のスコープから明示的に除外する（実装しない）。
+ *   LINE公式アカウントの友だち増減はLINE Webhook（lineWebhook、schemaVersion:2の
+ *   analyticsイベントパイプラインとは別の入力経路・別のデータ形状）でのみ観測でき、
+ *   このV2 reader（visit_sessions／interaction_logsのみを読む設計）の対象データには
+ *   一切含まれない。将来対応する場合は、LINE Webhookイベントの集計を別途this関数へ
+ *   結合する設計が必要（今回は未着手）。応答にはlineFollowIncrease: nullと
+ *   lineFollowIncreaseExcludedReasonを返し、フィールドを黙って省略したり0で
+ *   ごまかしたりしない（呼び出し側の契約：nullは「対応外」、0は「対応済みで実測0件」
+ *   と区別できる）。
  */
 async function runV2RecentActivityQuery_(collections, hours) {
   const now = new Date();
@@ -495,12 +552,16 @@ async function runV2RecentActivityQuery_(collections, hours) {
   const sessionSnapshot = await db.collection(collections.visitSessions).where('startedAt', '>=', startAt).get();
   const visitSessions = sessionSnapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data())).filter((v) => v.isTest !== true);
   const priorVisitSessions = await fetchPriorVisitSessions_(collections, startAt);
-  const { counts } = buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, [], []);
+  const { counts, revisitImproved } = buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, [], []);
   const newVisits = visitSessions.filter((v) => v.hasPageView === true).length;
   const lineOrPhoneReactions = visitSessions.reduce((sum, v) => sum + Number(v.reactionCount || 0), 0);
   const highLeadVisits = counts.高;
-  const hasNotable = newVisits > 0 || lineOrPhoneReactions > 0;
-  return { hasNotable, newVisits, highLeadVisits, lineOrPhoneReactions };
+  const hasNotable = newVisits > 0 || lineOrPhoneReactions > 0 || revisitImproved > 0;
+  return {
+    hasNotable, newVisits, highLeadVisits, lineOrPhoneReactions, revisitImproved,
+    lineFollowIncrease: null,
+    lineFollowIncreaseExcludedReason: 'LINE友だち増減はLINE Webhook経由のデータであり、このV2 reader（visit_sessions／interaction_logsのみ）の対象外（独立監査再提出R6・項目10で明示的にスコープ除外）。'
+  };
 }
 
 /**
@@ -535,12 +596,11 @@ exports.getFunnelRecentActivityV2Verify = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    secrets: ['VERIFY_JWT_SECRET'],
-    serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
+    secrets: ['VERIFY_READ_TOKEN']
   },
   async (req, res) => {
     if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
-    if (!verifyVerifyRequest_(req, 'getFunnelRecentActivityV2Verify').ok) return res.status(401).json({ error: 'Unauthorized' });
+    if (!requireVerifyReadToken(req, res)) return;
     try {
       const result = await runV2RecentActivityQuery_(V2_VERIFY_COLLECTIONS, 24);
       res.set('Cache-Control', 'private, no-store');
@@ -591,6 +651,22 @@ function parseRequestBody(req) {
 
 function requireDashboardToken(req, res) {
   if (!authorizeBearer(req.headers.authorization, process.env.FUNNEL_DASHBOARD_TOKEN)) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  return true;
+}
+
+/** VERIFY読み取り3系（getFunnelInsightsV2Verify／getFunnelDrilldownV2Verify／
+ * getFunnelRecentActivityV2Verify）専用の認可。監査差し戻し（独立監査再提出R6）#4：
+ * VERIFY_JWT_SECRET（署名鍵）・funnel-verify-runtime service accountは
+ * logInteractionV2Verify（書き込み専用）だけが使える必要があり、読み取り3系は
+ * どちらも一切参照してはならない。FUNNEL_DASHBOARD_TOKEN（PROD読み取りが使う既存の
+ * 固定トークン）とも別に、VERIFY読み取り専用の固定トークンVERIFY_READ_TOKENを新設し、
+ * 署名鍵からもPROD読み取りトークンからも完全に分離する（VERIFY環境の隔離原則を
+ * 認可トークンの面でも維持する）。 */
+function requireVerifyReadToken(req, res) {
+  if (!authorizeBearer(req.headers.authorization, process.env.VERIFY_READ_TOKEN)) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }

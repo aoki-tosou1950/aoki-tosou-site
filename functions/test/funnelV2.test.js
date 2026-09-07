@@ -885,6 +885,16 @@ test('契約テスト（単位D）：再訪ボーナス（前回より深い閲�
 
   assert.ok(v2Card, '再訪込みでもnew_reliableなcardが生成されること');
   assert.equal(v2Card.level, v1Result.level, '再訪ボーナスを含めてもV1とV2のleadScore.levelが一致すること');
+  // 独立監査再提出R6・項目10：revisitImprovedはこの「前回より深い閲覧」の再訪1件を数える。
+  assert.equal(v2Result.revisitImproved, 1, 'revisitImproved（前回より深い閲覧／反応が強まった再訪の件数）が1になる');
+});
+test('buildLeadScoreBreakdownV2: revisitImprovedは初回訪問（再訪ではない）や判定不能・legacyを含めない', () => {
+  const sessions = [
+    { visitId: 'v_first', hashReliable: true, hasPageView: true, pageViewCount: 1, lineClickCount: 0, phoneClickCount: 0, reactionCount: 0, pageCategories: [null], startedAt: Date.now(), visitorHash: 'hash_first' },
+    { visitId: 'v_unreliable', hashReliable: false, hasPageView: true, pageViewCount: 5, lineClickCount: 1, phoneClickCount: 0, reactionCount: 1, pageCategories: [], startedAt: Date.now() }
+  ];
+  const result = buildLeadScoreBreakdownV2(sessions, [], [], []);
+  assert.equal(result.revisitImproved, 0, '初回訪問・判定不能（hashReliable=false）はrevisitImprovedへ計上されない');
 });
 
 test('buildLeadScoreBreakdownV2: hashReliable=falseのsessionは行動によらず判定不能へ集計され、cardsには含まれない（正本仕様：unreliable/hash欠損は判定不能）', () => {
@@ -930,7 +940,18 @@ test('buildLeadScoreBreakdownV2: legacy_hash_missingは「旧ログ」ではな�
   ];
   const { counts } = buildLeadScoreBreakdownV2([], [], [], legacyHashMissingRows);
   assert.equal(counts.旧ログ, 0, 'legacy_hash_missingは旧ログへ混ぜない');
-  assert.equal(counts.判定不能, 1, '同一日・hash無し（(不明)キー共通）は1visitとして判定不能へ計上される');
+  // 独立監査再提出R6 #2で訂正：hash無しはgroupVisits_の共通"(不明)"キーへ集約せず、
+  // page_view行を1行＝1visitとして個別カウントする。同日・visitor_hash空の
+  // page_viewが2件なら判定不能は2件（1件へ潰れる旧仕様は誤りだった）。
+  assert.equal(counts.判定不能, 2, '同一日・hash無しでも、hash無しの複数行を同一訪問とみなす根拠が無いため1行＝1visitとして個別カウントする（2行→2）');
+});
+test('buildLeadScoreBreakdownV2: legacy_hash_missingのpage_view以外（line_click等）はvisit数に数えない', () => {
+  const legacyHashMissingRows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: '' },
+    { eventType: 'line_click', dayKey: '2026-09-01', visitorHashValue: '' }
+  ];
+  const { counts } = buildLeadScoreBreakdownV2([], [], [], legacyHashMissingRows);
+  assert.equal(counts.判定不能, 1, 'page_view行のみを訪問としてカウントする（groupVisits_と同じeventType絞り込み方針）');
 });
 test('buildLeadScoreBreakdownV2: isTest===trueのvisit_sessionは全区分から除外される', () => {
   const sessions = [

@@ -147,10 +147,29 @@ test('getFunnelInsightsV2: POSTは405', async () => {
   });
   assert.equal(result.statusCode, 405);
 });
-test('getFunnelInsightsV2Verify: JWTなしは401', async () => {
-  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+// 監査差し戻し（独立監査再提出R6）#4：読み取り専用Verify3系はVERIFY_JWT_SECRET
+// （書き込み専用署名鍵）ではなく、専用のVERIFY_READ_TOKENで認可する。
+test('getFunnelInsightsV2Verify: トークンなしは401', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
   const result = await invoke(functions.getFunnelInsightsV2Verify, { method: 'GET' });
   assert.equal(result.statusCode, 401);
+});
+test('getFunnelInsightsV2Verify: 誤ったVERIFY_READ_TOKENは401', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
+  const result = await invoke(functions.getFunnelInsightsV2Verify, {
+    method: 'GET', headers: { authorization: 'Bearer wrong-token' }
+  });
+  assert.equal(result.statusCode, 401);
+});
+test('getFunnelInsightsV2Verify: 書き込み専用のVERIFY_JWT_SECRETで署名した正しいJWTを渡しても認可されない（読み取り系は署名鍵を一切使わない）', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
+  const { signVerifyJwt } = require('../lib/funnelV2');
+  const { token } = signVerifyJwt(process.env.VERIFY_JWT_SECRET, { sub: 'info@aoki-tosou.net', aud: 'getFunnelInsightsV2Verify', scope: 'write:interaction_logs_v2_verify' });
+  const result = await invoke(functions.getFunnelInsightsV2Verify, {
+    method: 'GET', headers: { authorization: `Bearer ${token}` }
+  });
+  assert.equal(result.statusCode, 401, '読み取り系はJWTを一切検証しない設計なので、正しい署名でも生の文字列としてVERIFY_READ_TOKENと一致しない限り拒否される');
 });
 
 test('getFunnelDrilldownV2: トークンなしは401', async () => {
@@ -163,10 +182,17 @@ test('getFunnelDrilldownV2: POSTは405', async () => {
   const result = await invoke(functions.getFunnelDrilldownV2, { method: 'POST', headers: { authorization: 'Bearer unit-dashboard-token' } });
   assert.equal(result.statusCode, 405);
 });
-test('getFunnelDrilldownV2Verify: JWTなしは401', async () => {
-  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+test('getFunnelDrilldownV2Verify: トークンなしは401', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
   const result = await invoke(functions.getFunnelDrilldownV2Verify, { method: 'GET' });
   assert.equal(result.statusCode, 401);
+});
+test('getFunnelDrilldownV2Verify: 正しいVERIFY_READ_TOKENは401にならない（400=metric未指定として先へ進む）', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
+  const result = await invoke(functions.getFunnelDrilldownV2Verify, {
+    method: 'GET', headers: { authorization: 'Bearer unit-verify-read-token-not-real' }
+  });
+  assert.notEqual(result.statusCode, 401, '認可自体は通ること');
 });
 
 test('getFunnelRecentActivityV2: トークンなしは401', async () => {
@@ -174,8 +200,15 @@ test('getFunnelRecentActivityV2: トークンなしは401', async () => {
   const result = await invoke(functions.getFunnelRecentActivityV2, { method: 'GET' });
   assert.equal(result.statusCode, 401);
 });
-test('getFunnelRecentActivityV2Verify: JWTなしは401', async () => {
-  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+test('getFunnelRecentActivityV2Verify: トークンなしは401', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
   const result = await invoke(functions.getFunnelRecentActivityV2Verify, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+test('getFunnelRecentActivityV2Verify: 誤ったVERIFY_READ_TOKENは401', async () => {
+  process.env.VERIFY_READ_TOKEN = 'unit-verify-read-token-not-real';
+  const result = await invoke(functions.getFunnelRecentActivityV2Verify, {
+    method: 'GET', headers: { authorization: 'Bearer wrong-token' }
+  });
   assert.equal(result.statusCode, 401);
 });

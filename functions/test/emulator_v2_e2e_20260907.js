@@ -38,7 +38,14 @@ const db = getFirestore(initializeApp({ projectId: project }, 'v2-e2e-test'));
 
 const VERIFY_SECRET = process.env.VERIFY_JWT_SECRET;
 if (!VERIFY_SECRET) {
-  console.error('VERIFY_JWT_SECRET未設定（functions/.env.localが読み込まれていない）。中止。');
+  console.error('VERIFY_JWT_SECRET未設定（functions/.secret.localが読み込まれていない）。中止。');
+  process.exit(1);
+}
+// 監査差し戻し（独立監査再提出R6）#4：読み取り専用Verify3系はVERIFY_JWT_SECRETを
+// 一切使わず、専用のVERIFY_READ_TOKENで認可する（.secret.local参照）。
+const VERIFY_READ_TOKEN = process.env.VERIFY_READ_TOKEN;
+if (!VERIFY_READ_TOKEN) {
+  console.error('VERIFY_READ_TOKEN未設定（functions/.secret.localが読み込まれていない）。中止。');
   process.exit(1);
 }
 
@@ -235,15 +242,22 @@ async function main() {
   }
 
   // --- 8b. VERIFY reader（getFunnelInsightsV2Verify）：手順5のVERIFY訪問だけが見え、PROD訪問は混入しない ---
+  // 監査差し戻し（独立監査再提出R6）#4：読み取り専用Verify3系はVERIFY_JWT_SECRETで
+  // 署名したJWTではなく、専用のVERIFY_READ_TOKEN（固定Bearerトークン）で認可する。
   {
-    const { token } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'getFunnelInsightsV2Verify', scope: 'write:interaction_logs_v2_verify' });
-    const res = await request('getFunnelInsightsV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
+    const res = await request('getFunnelInsightsV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${VERIFY_READ_TOKEN}` } });
     const body = await res.json();
-    ok('getFunnelInsightsV2Verify: 正しいJWTで200', res.status === 200, JSON.stringify(body).slice(0, 300));
+    ok('getFunnelInsightsV2Verify: 正しいVERIFY_READ_TOKENで200', res.status === 200, JSON.stringify(body).slice(0, 300));
     const verifyCard = (body.leadScoreCards || []).find((c) => c.mediaCode === 'area_check_v1');
     ok('getFunnelInsightsV2Verify: 手順5で書いたVERIFY側の訪問が見える', !!verifyCard, JSON.stringify(body.leadScoreCards));
     const prodLeak = (body.leadScoreCards || []).find((c) => c.mediaCode === 'meishi');
     ok('getFunnelInsightsV2Verify: PROD側の訪問（meishi）はVERIFY readerへ一切混入しない', !prodLeak);
+
+    // 監査差し戻しR6#4の核心：書き込み専用のVERIFY_JWT_SECRETで正しく署名したJWTを
+    // 渡しても、読み取り系は一切JWTを検証しないため認可されない（401）ことを確認する。
+    const { token: writerJwt } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'getFunnelInsightsV2Verify', scope: 'write:interaction_logs_v2_verify' });
+    const jwtRes = await request('getFunnelInsightsV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${writerJwt}` } });
+    ok('getFunnelInsightsV2Verify: 書き込み専用VERIFY_JWT_SECRETで署名した正しいJWTでも401（読み取り系は署名鍵を一切使わない）', jwtRes.status === 401, 'status=' + jwtRes.status);
   }
 
   // --- 9. PROD V2版ドリルダウン（getFunnelDrilldownV2）：visit_sessions正本へjoinした結果を返す ---
@@ -265,14 +279,149 @@ async function main() {
     const body = await res.json();
     ok('getFunnelRecentActivityV2: 正しいトークンで200・ok:true', res.status === 200 && body.ok === true, JSON.stringify(body));
     ok('getFunnelRecentActivityV2: newVisitsが1件以上（このテストで書いた訪問を反映）', Number(body.newVisits) >= 1, JSON.stringify(body));
+    // 監査差し戻し（独立監査再提出R6）#10：revisitImprovedは実装済みの数値、
+    // lineFollowIncreaseはnull＋除外理由（黙って省略しない・0で誤魔化さない）で返る。
+    ok('getFunnelRecentActivityV2（finding#10）: revisitImprovedが数値として返る（未実装ではなく実装済み）', typeof body.revisitImproved === 'number', JSON.stringify(body));
+    ok('getFunnelRecentActivityV2（finding#10）: lineFollowIncreaseはnull（スコープ除外を明示。0で偽装しない）', body.lineFollowIncrease === null, JSON.stringify(body));
+    ok('getFunnelRecentActivityV2（finding#10）: lineFollowIncreaseExcludedReasonで除外理由が文字列として明示される', typeof body.lineFollowIncreaseExcludedReason === 'string' && body.lineFollowIncreaseExcludedReason.length > 0, JSON.stringify(body));
   }
 
-  // --- 11. VERIFY版の読み取り3エンドポイントも認可なしは401（配線の存在確認を兼ねる） ---
+  // --- 11. VERIFY版の読み取り3エンドポイントも認可なしは401、正しいVERIFY_READ_TOKENなら
+  // 認可を通過する（配線の存在確認を兼ねる。監査差し戻しR6#4：VERIFY_JWT_SECRETではなく
+  // VERIFY_READ_TOKEN） ---
   {
     const r1 = await request('getFunnelDrilldownV2Verify?period=thisMonth&metric=visitors', { method: 'GET' });
-    ok('getFunnelDrilldownV2Verify: JWTなしは401', r1.status === 401, 'status=' + r1.status);
+    ok('getFunnelDrilldownV2Verify: トークンなしは401', r1.status === 401, 'status=' + r1.status);
+    const r1ok = await request('getFunnelDrilldownV2Verify?period=thisMonth&metric=visitors', { method: 'GET', headers: { Authorization: `Bearer ${VERIFY_READ_TOKEN}` } });
+    ok('getFunnelDrilldownV2Verify: 正しいVERIFY_READ_TOKENで200', r1ok.status === 200, 'status=' + r1ok.status);
+
     const r2 = await request('getFunnelRecentActivityV2Verify', { method: 'GET' });
-    ok('getFunnelRecentActivityV2Verify: JWTなしは401', r2.status === 401, 'status=' + r2.status);
+    ok('getFunnelRecentActivityV2Verify: トークンなしは401', r2.status === 401, 'status=' + r2.status);
+    const r2ok = await request('getFunnelRecentActivityV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${VERIFY_READ_TOKEN}` } });
+    ok('getFunnelRecentActivityV2Verify: 正しいVERIFY_READ_TOKENで200', r2ok.status === 200, 'status=' + r2ok.status);
+  }
+
+  // --- 12. 監査差し戻し（独立監査再提出R6）#1・#2：occurred_atを持たないV1形状の
+  // raw log（logInteractionが実際に書く形状そのもの＝created_atのみ・visit_id無し）を
+  // 実Firestoreへ直接書き込み、legacy集計（旧ログ／判定不能）へ正しく反映されることを
+  // 確認する。#2も合わせて確認：同日・hash空のpage_view行2件は判定不能へ+2で
+  // 反映される（+1へ潰れない）こと。 ---
+  {
+    const before = await (await request('getFunnelInsightsV2', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    })).json();
+
+    const legacyHashPresentId = 'e2e_v1legacy_hash_' + randomSuffix();
+    const legacyHashMissingId1 = 'e2e_v1legacy_nohash1_' + randomSuffix();
+    const legacyHashMissingId2 = 'e2e_v1legacy_nohash2_' + randomSuffix();
+    // V1のlogInteractionハンドラ（functions/index.js）が実際にinteraction_logsへ書く
+    // フィールド集合そのもの：occurred_atフィールドは一切存在しない（created_atのみ、
+    // FieldValue.serverTimestamp()相当）。visit_idフィールドも一切存在しない。
+    await db.collection('interaction_logs').doc(legacyHashPresentId).set({
+      event_type: 'page_view', contact_channel: '', source: 'other', from: '',
+      landing_page: '/', current_page: '/', referrer: '', is_test: false,
+      visitor_hash: 'e2e_v1_hash_' + randomSuffix(),
+      created_at: new Date()
+    });
+    await db.collection('interaction_logs').doc(legacyHashMissingId1).set({
+      event_type: 'page_view', contact_channel: '', source: 'other', from: '',
+      landing_page: '/', current_page: '/', referrer: '', is_test: false,
+      visitor_hash: '',
+      created_at: new Date()
+    });
+    await db.collection('interaction_logs').doc(legacyHashMissingId2).set({
+      event_type: 'page_view', contact_channel: '', source: 'other', from: '',
+      landing_page: '/', current_page: '/', referrer: '', is_test: false,
+      visitor_hash: '',
+      created_at: new Date()
+    });
+
+    const after = await (await request('getFunnelInsightsV2', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    })).json();
+
+    ok('getFunnelInsightsV2（finding#1）: occurred_atを持たないV1形状のraw log（hash有り）が旧ログへ+1反映される',
+      after.leadScoreBreakdown.旧ログ === before.leadScoreBreakdown.旧ログ + 1,
+      `before=${before.leadScoreBreakdown.旧ログ} after=${after.leadScoreBreakdown.旧ログ}`);
+    ok('getFunnelInsightsV2（finding#1・#2）: occurred_atを持たないV1形状のraw log（hash無し）2件が判定不能へ+2反映される（+1へ潰れない）',
+      after.leadScoreBreakdown.判定不能 === before.leadScoreBreakdown.判定不能 + 2,
+      `before=${before.leadScoreBreakdown.判定不能} after=${after.leadScoreBreakdown.判定不能}`);
+  }
+
+  // --- 13. 監査差し戻し（独立監査再提出R6）#8：同一期間へV1実形状（legacy）とV2実形状
+  // （新方式）を両方投入し、reader（getFunnelInsightsV2・getFunnelDrilldownV2）の実際の
+  // 挙動を確認する。今回の設計選択＝「media/webSource独立2軸・drilldownはlegacyを含めず、
+  // 明示的にlegacyAttributionScopeフィールドで境界を示す」ことを、実データで裏付ける。 ---
+  {
+    const beforeInsights = await (await request('getFunnelInsightsV2', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    })).json();
+    const beforeMeishi = (beforeInsights.mediaQuality || []).find((m) => m.mediaCode === 'meishi');
+    const beforeMeishiVisits = beforeMeishi ? Number(beforeMeishi.visits || 0) : 0;
+
+    // V1実形状（legacy）：mediaCode='meishi'相当のfromを持つが、visit_idもoccurred_atも
+    // 持たない（手順12と同じ実形状）。これがmediaQualityの'meishi'集計へ紛れ込まないことを
+    // 確認する（紛れ込んだ場合はvisits件数が意図せず増える）。
+    const legacyMarkerId = 'e2e_v8legacy_' + randomSuffix();
+    await db.collection('interaction_logs').doc(legacyMarkerId).set({
+      event_type: 'page_view', contact_channel: '', source: 'other', from: 'meishi',
+      landing_page: '/', current_page: '/', referrer: '', is_test: false,
+      visitor_hash: 'e2e_v8_legacyhash_' + randomSuffix(),
+      created_at: new Date()
+    });
+
+    const afterLegacyOnly = await (await request('getFunnelInsightsV2', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    })).json();
+    const afterLegacyMeishi = (afterLegacyOnly.mediaQuality || []).find((m) => m.mediaCode === 'meishi');
+    const afterLegacyMeishiVisits = afterLegacyMeishi ? Number(afterLegacyMeishi.visits || 0) : 0;
+    ok('getFunnelInsightsV2（finding#8）: legacy（V1実形状・from=meishi）を追加してもmediaQualityの"meishi"visits件数は変化しない（legacyはmedia/webSource軸に混入しない設計）',
+      afterLegacyMeishiVisits === beforeMeishiVisits,
+      `before=${beforeMeishiVisits} afterLegacyOnly=${afterLegacyMeishiVisits}`);
+
+    // V2実形状（新方式）：同じmediaCode='meishi'の実visitを実エンドポイント経由で追加する。
+    // こちらはmediaQualityへ確実に反映されることを確認する（legacy除外が「全部除外」の
+    // バグではなく「legacyだけ除外」の意図した設計であることの対照実験）。
+    const v2VisitId = 'v2e2e_v8marker_' + randomSuffix() + '0000000000';
+    const v2EventId = 'e2e_v8marker_' + randomSuffix();
+    const v2Res = await request('logInteractionV2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://aoki-tosou.net' },
+      body: JSON.stringify({
+        schemaVersion: 2, event_id: v2EventId, visit_id: v2VisitId, occurredAt: Date.now(), eventType: 'page_view',
+        visitMediaCode: 'meishi', visitWebSource: '', visitorId: 'vid2e2e_v8marker_' + randomSuffix() + '0000000000', visitorIdPersisted: true,
+        currentPage: 'https://aoki-tosou.net/', landingPage: 'https://aoki-tosou.net/'
+      })
+    });
+    const v2Body = await v2Res.json();
+    ok('logInteractionV2（finding#8用マーカー訪問）: 正常page_viewは200', v2Res.status === 200 && v2Body.success === true, JSON.stringify(v2Body));
+
+    const afterBoth = await (await request('getFunnelInsightsV2', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    })).json();
+    const afterBothMeishi = (afterBoth.mediaQuality || []).find((m) => m.mediaCode === 'meishi');
+    const afterBothMeishiVisits = afterBothMeishi ? Number(afterBothMeishi.visits || 0) : 0;
+    ok('getFunnelInsightsV2（finding#8）: V2実形状（新方式）の同一mediaCode訪問を追加するとmediaQualityの"meishi"visitsが+1される（legacyは0件寄与・V2は正しく反映という対照結果）',
+      afterBothMeishiVisits === beforeMeishiVisits + 1,
+      `before=${beforeMeishiVisits} afterBoth=${afterBothMeishiVisits}`);
+
+    ok('getFunnelInsightsV2（finding#8）: 応答にlegacyAttributionScope（機械可読なスコープ境界の明示）が含まれる',
+      !!afterBoth.legacyAttributionScope &&
+      Array.isArray(afterBoth.legacyAttributionScope.excludedFrom) && afterBoth.legacyAttributionScope.excludedFrom.includes('mediaQuality') &&
+      Array.isArray(afterBoth.legacyAttributionScope.includedIn) && afterBoth.legacyAttributionScope.includedIn.some((s) => s.indexOf('旧ログ') >= 0),
+      JSON.stringify(afterBoth.legacyAttributionScope));
+
+    // getFunnelDrilldownV2（metric=visitors）も同じスコープ明示・同じ除外設計であることを確認する。
+    const drilldownRes = await request('getFunnelDrilldownV2?period=thisMonth&metric=visitors', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    });
+    const drilldownBody = await drilldownRes.json();
+    ok('getFunnelDrilldownV2（finding#8）: 応答にlegacyAttributionScopeが含まれる',
+      !!drilldownBody.legacyAttributionScope && Array.isArray(drilldownBody.legacyAttributionScope.excludedFrom) && drilldownBody.legacyAttributionScope.excludedFrom.some((s) => s.indexOf('visitors') >= 0),
+      JSON.stringify(drilldownBody.legacyAttributionScope));
+    const v2MarkerInDrilldown = (drilldownBody.items || []).find((v) => v.visitId === v2VisitId);
+    ok('getFunnelDrilldownV2（finding#8）: V2実形状のマーカー訪問はvisitors一覧に含まれる（legacyは元々visit_idを持たないため、この一覧に紛れ込みようがないことの確認を兼ねる）',
+      !!v2MarkerInDrilldown, JSON.stringify((drilldownBody.items || []).slice(0, 3)));
   }
 
   const failed = results.filter((r) => !r.ok);

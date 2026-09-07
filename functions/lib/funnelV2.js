@@ -591,10 +591,18 @@ function computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash) {
  *   V1のcomputeLeadScore_をそのまま適用して得た結果。reaction-only（hasPageView=false）は
  *   V1のfunnelDrilldownと同じ方針で判定不能とする。
  * - 判定不能にはさらに、new_unreliable（hashReliable!==true）なvisit_sessions、および
- *   legacy_hash_missing（visit_id無し・visitor_hashも無し）のraw logをV1と同じ
- *   日付＋visitor_hash単位でvisit集約したものを加算する（V1判定不能とV2高中低を
- *   混在させない＝「判定不能」バケット内部でV1由来／V2由来の区別はしないが、レベルとしては
- *   両者とも同一の「判定不能」でしかありえないため区分の混在は生じない）。
+ *   legacy_hash_missing（visit_id無し・visitor_hashも無し）のraw log（page_view行）を
+ *   1行＝1visitとして加算する（V1判定不能とV2高中低を混在させない＝「判定不能」バケット
+ *   内部でV1由来／V2由来の区別はしないが、レベルとしては両者とも同一の「判定不能」でしか
+ *   ありえないため区分の混在は生じない）。
+ *   監査差し戻し（独立監査再提出R6）#2：legacy_hash_missing行はvisitor_hashが全て空文字
+ *   のため、V1のgroupVisits_（日付＋visitor_hash単位）へそのまま通すと、同日の複数行が
+ *   groupVisits_内部の共通キー"dayKey:(不明)"へ全て集約され「1visit」に潰れてしまう
+ *   （hashが無い以上、複数の行が本当に同一訪問かどうかはそもそも判定できない＝
+ *   誤って1件に見せかけるより、行単位で個別カウントする方が実態に近い）。そのため
+ *   legacy_hash_missingはgroupVisits_を通さず、page_view行の数をそのまま判定不能へ
+ *   加算する（同日・hash空のpage_viewが2件なら判定不能は2件）。legacy_unknown
+ *   （hash有り）はhashによる同一訪問の判定が可能なため、引き続きgroupVisits_を使う。
  * - 旧ログ：legacy_unknown（visit_id無し・visitor_hashは有り）のraw logをV1のgroupVisits_
  *   （日付＋visitor_hash単位）でvisit集約した件数。raw log単位ではなくvisit単位。
  * - 高・中・低の個別カードのみ生成する（判定不能・旧ログは個別カード化しない）。
@@ -604,6 +612,13 @@ function computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash) {
  * @param {Array<object>} legacyHashPresentRows legacy_unknownのraw log行
  *   （{eventType:'page_view', dayKey, visitorHashValue}形状。groupVisits_の入力形状）
  * @param {Array<object>} legacyHashMissingRows legacy_hash_missingのraw log行（同上の形状）
+ * @returns {{counts: object, cards: Array<object>, revisitImproved: number}} revisitImproved：
+ *   独立監査再提出R6・項目10で追加。V1のfunnelRecentActivityが持つrevisitImproved
+ *   （再訪で閲覧が深まった、または反応が強まった件数＝V1のcomputeLeadScore_が返す
+ *   revisit.deeperThanPrevious／revisit.strongerReactionThanPrevious）と同じ定義を、
+ *   同じcomputeLeadScore_呼び出し結果（このループが既に呼んでいる）からそのまま
+ *   数える。new_reliableかつhasPageViewな訪問（＝実際にcomputeLeadScore_を呼んだ訪問）
+ *   だけを対象とする（判定不能・reaction-only・legacyは対象外＝V1と同じ前提条件）。
  */
 function buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, legacyHashPresentRows, legacyHashMissingRows) {
   const sessions = (visitSessions || []).filter((v) => v && v.isTest !== true);
@@ -613,6 +628,7 @@ function buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, legacyHash
 
   const counts = { 高: 0, 中: 0, 低: 0, 判定不能: 0, 旧ログ: 0 };
   const cards = [];
+  let revisitImproved = 0;
 
   sessions.forEach((session) => {
     const reliable = session.hashReliable === true;
@@ -622,7 +638,9 @@ function buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, legacyHash
     } else if (session.hasPageView !== true) {
       level = '判定不能'; // reaction-only：V1と同じ方針（存在しない閲覧文脈を捏造しない）
     } else {
-      level = computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash).level;
+      const scored = computeSessionLeadScoreV1Compat_(session, priorIndex, inPeriodByHash);
+      level = scored.level;
+      if (scored.revisit && (scored.revisit.deeperThanPrevious || scored.revisit.strongerReactionThanPrevious)) revisitImproved += 1;
     }
     counts[level] += 1;
     if (reliable && level !== '判定不能') {
@@ -643,9 +661,11 @@ function buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, legacyHash
   const legacyKnownRows = (legacyHashPresentRows || []).filter((r) => !r.isTest);
   const legacyMissingRows = (legacyHashMissingRows || []).filter((r) => !r.isTest);
   counts.旧ログ = groupVisits_(legacyKnownRows).size;
-  counts.判定不能 += groupVisits_(legacyMissingRows).size;
+  // 監査差し戻し（独立監査再提出R6）#2：hash無しはgroupVisits_の共通"(不明)"キーで
+  // 潰さず、page_view行を1行＝1visitとして個別カウントする（詳細は上のJSDoc参照）。
+  counts.判定不能 += legacyMissingRows.filter((r) => r.eventType === 'page_view').length;
 
-  return { counts, cards };
+  return { counts, cards, revisitImproved };
 }
 
 /* ============================================================================
