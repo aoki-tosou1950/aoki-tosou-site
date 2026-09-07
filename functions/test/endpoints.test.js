@@ -69,3 +69,70 @@ test('既存フォームは必須項目不足を従来どおり拒否する', as
   assert.equal(result.statusCode, 400);
   assert.match(result.body.error, /name, address, phone/);
 });
+
+/* ===================================================================
+ * 単位EF配線（logInteractionV2 / logInteractionVerify / getFunnelInsightsV2）
+ * 2026-09-07追加：認可・検証まわりだけをここで単体テストする（実Firestore書込みを
+ * 伴う経路はfunctions/test/emulator_v2_e2e_20260907.jsで別途確認済み）。
+ * =================================================================== */
+test('logInteractionV2: Origin未許可は403（V1のlogInteractionと同じCORS規約）', async () => {
+  const result = await invoke(functions.logInteractionV2, {
+    method: 'POST', headers: { origin: 'https://evil.example.com', 'content-type': 'application/json' },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 403);
+});
+test('logInteractionV2: schemaVersionが2でなければ400', async () => {
+  const result = await invoke(functions.logInteractionV2, {
+    method: 'POST', headers: { origin: 'https://aoki-tosou.net', 'content-type': 'application/json' },
+    body: { schemaVersion: 1, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 400);
+});
+test('logInteractionV2: GETは405', async () => {
+  const result = await invoke(functions.logInteractionV2, { method: 'GET', headers: { origin: 'https://aoki-tosou.net' } });
+  assert.equal(result.statusCode, 405);
+});
+test('logInteractionV2: Content-Lengthヘッダがrequest size上限を超えると413', async () => {
+  const result = await invoke(functions.logInteractionV2, {
+    method: 'POST',
+    headers: { origin: 'https://aoki-tosou.net', 'content-type': 'application/json', 'content-length': '999999' },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 413);
+});
+
+test('logInteractionVerify: Authorizationヘッダなしは401でjtiを含まない', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  const result = await invoke(functions.logInteractionVerify, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 401);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.body, 'jti'), false);
+});
+test('logInteractionVerify: 不正なJWT文字列は401', async () => {
+  process.env.VERIFY_JWT_SECRET = 'unit-verify-secret-not-real-0123456789abcdef';
+  const result = await invoke(functions.logInteractionVerify, {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer not-a-real-jwt' },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 401);
+});
+test('logInteractionVerify: GETは405', async () => {
+  const result = await invoke(functions.logInteractionVerify, { method: 'GET', headers: {} });
+  assert.equal(result.statusCode, 405);
+});
+
+test('getFunnelInsightsV2: トークンなしは401（既存getFunnelDashboard等と同じ認可契約）', async () => {
+  process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
+  const result = await invoke(functions.getFunnelInsightsV2, { method: 'GET' });
+  assert.equal(result.statusCode, 401);
+});
+test('getFunnelInsightsV2: POSTは405', async () => {
+  process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
+  const result = await invoke(functions.getFunnelInsightsV2, {
+    method: 'POST', headers: { authorization: 'Bearer unit-dashboard-token' }
+  });
+  assert.equal(result.statusCode, 405);
+});

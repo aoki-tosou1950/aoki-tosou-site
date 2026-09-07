@@ -24,11 +24,269 @@ const {
   visitorToken
 } = require('./lib/funnel');
 const { sendAdminLinePush } = require('./lib/line');
+const {
+  validateCoreFields: validateCoreFieldsV2,
+  normalizeMediaCode,
+  normalizeWebSource,
+  evaluateVisitorIdentity,
+  recordWebEventV2,
+  classifyLogCategory,
+  buildQualityAxes,
+  buildLeadScoreBreakdownV2,
+  verifyVerifyJwt
+} = require('./lib/funnelV2');
 
 initializeApp();
 const db = getFirestore();
 const DASHBOARD_HTML = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
 const { recordInternalMetric, recordLineEvent, recordWebEvent } = createFunnelStore(db);
+
+/* ============================================================================
+ * 単位EF：schemaVersion:2 配線（2026-09-07追加）
+ *
+ * predeploy検査（scripts/predeploy_check_dataenv.js）が関数名とdataEnvの対応を機械検査
+ * できるよう、各V2/VERIFYエンドポイントは以下の規約を守ること：
+ *   - PROD V2の関数名は末尾に"V2"を含み、"Verify"は含まない。V2_PROD_COLLECTIONSのみを
+ *     参照し、secrets配列にVERIFY_JWT_SECRETを含めない。
+ *   - VERIFYの関数名は"Verify"を含む。V2_VERIFY_COLLECTIONSのみを参照し、
+ *     secrets配列に必ずVERIFY_JWT_SECRETを含める。
+ * この規約自体はコード上のコメントだけでなく、predeploy_check_dataenv.jsが関数本体の
+ * ソーステキストを直接静的解析して機械的に確認する（人間のレビュー漏れに依存しない）。
+ * ============================================================================ */
+
+// PRODは既存V1と同じコレクション名を共有する（interaction_logs／funnel_dailyは
+// V1のfunnelDrilldown/funnelInsightsが読む既存コレクションそのもの。classifyLogCategory
+// が「legacy（V1由来・visit_idなし）」と「new_reliable/new_unreliable（V2由来）」を
+// 同一コレクション内のフィールド有無で区別する設計のため、意図的に分離しない。
+// visit_sessionsはV2が新設する専用コレクション）。
+const V2_PROD_COLLECTIONS = Object.freeze({
+  interactionLogs: 'interaction_logs',
+  funnelDaily: 'funnel_daily',
+  visitSessions: 'visit_sessions'
+});
+
+// VERIFYはPRODと完全分離した専用コレクション（正本仕様：VERIFYコレクションとPROD
+// コレクションを完全分離）。本番の実データには一切触れない。
+const V2_VERIFY_COLLECTIONS = Object.freeze({
+  interactionLogs: 'interaction_logs_verify',
+  funnelDaily: 'funnel_daily_verify',
+  visitSessions: 'visit_sessions_verify'
+});
+
+const V2_MAX_BODY_BYTES = 8192; // request size制限：通常のトラッキングpayloadに対し十分大きく、異常payloadは拒否する
+
+/**
+ * schemaVersion:2の生payloadを検証・正規化し、recordWebEventV2へ渡せるevent
+ * オブジェクトを組み立てる（PROD/VERIFY共通）。クライアント側では一切正規化・検証を
+ * 行わない設計（クライアントは生値を送るだけ。信頼できるのは常にサーバー側の判定のみ）。
+ */
+function buildV2Event(body, headers, dashboardToken) {
+  if (!isPlainObjectV2(body)) return { ok: false, status: 400, error: 'Invalid JSON body' };
+  const core = validateCoreFieldsV2(body, new Date());
+  if (!core.ok) return { ok: false, status: 400, error: core.error };
+
+  const mediaResult = normalizeMediaCode(body.visitMediaCode);
+  const webSourceResult = normalizeWebSource(body.visitWebSource);
+  const identity = evaluateVisitorIdentity(body.visitorId, body.visitorIdPersisted);
+  const isTest = isAuthorizedTestEvent(body.testRequested, headers.authorization, dashboardToken);
+
+  const event = Object.assign({}, core.core, {
+    mediaCode: mediaResult.mediaCode,
+    mediaValidity: mediaResult.mediaValidity,
+    invalidMediaCodeHash: mediaResult.invalidMediaCodeHash,
+    webSource: webSourceResult.webSource,
+    webSourceStatus: webSourceResult.webSourceStatus,
+    invalidWebSourceHash: webSourceResult.invalidWebSourceHash,
+    visitorHash: identity.visitorHash,
+    hashReliable: identity.hashReliable,
+    visitorIdStatus: identity.visitorIdStatus,
+    rawVisitorId: typeof body.visitorId === 'string' ? body.visitorId : '',
+    contactChannel: optionalString(body.contactChannel, 30),
+    currentPage: optionalString(body.currentPage, 500),
+    landingPage: optionalString(body.landingPage, 500),
+    referrerHost: optionalString(body.referrerHost, 255),
+    isTest
+  });
+  return { ok: true, event };
+}
+
+function isPlainObjectV2(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+
+function extractBearerToken(header) {
+  const match = String(header || '').match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : '';
+}
+
+async function handleV2Write(req, res, collections, dashboardToken) {
+  if (!setCorsHeaders(req, res)) return res.status(403).json({ error: 'Forbidden: Origin not allowed' });
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  const contentLength = Number(req.headers['content-length'] || 0);
+  if (contentLength > V2_MAX_BODY_BYTES) {
+    return res.status(413).json({ error: 'Payload Too Large' });
+  }
+  const contentType = req.headers['content-type'] || '';
+  if (!contentType.includes('application/json') && !contentType.includes('text/plain')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json or text/plain' });
+  }
+
+  let body;
+  try {
+    body = parseRequestBody(req);
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid JSON body' });
+  }
+  if (Buffer.byteLength(JSON.stringify(body || {}), 'utf8') > V2_MAX_BODY_BYTES) {
+    return res.status(413).json({ error: 'Payload Too Large' });
+  }
+
+  const built = buildV2Event(body, req.headers, dashboardToken);
+  if (!built.ok) return res.status(built.status).json({ error: built.error });
+
+  try {
+    const result = await recordWebEventV2(db, collections, built.event, new Date());
+    return res.status(200).json({ success: true, aggregate: result });
+  } catch (err) {
+    console.error('handleV2Write failed:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * PROD V2 writer。既存の`logInteraction`（V1）とは別関数として並行deployする
+ * （正本仕様：V2関数をV1と並行deploy）。V1エンドポイントは無変更のまま残す。
+ * DATA_ENV: PROD_V2
+ */
+exports.logInteractionV2 = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => handleV2Write(req, res, V2_PROD_COLLECTIONS, process.env.FUNNEL_DASHBOARD_TOKEN)
+);
+
+/**
+ * VERIFY writer。専用JWT（HS256・VERIFY_JWT_SECRET）で認可し、PRODとは完全に分離された
+ * コレクションへのみ書き込む。本番サイト・本番トラフィックからは一切呼ばれない
+ * （検証用スクリプト専用のエンドポイント）。
+ * DATA_ENV: VERIFY
+ *
+ * secrets配列にVERIFY_JWT_SECRETを含める（Secret Managerでの作成・IAMアクセス制限
+ * ＝info@aoki-tosou.netと専用service accountのみへの限定は、今回のセッションでは
+ * 未実施＝人間の実施が必要。詳細は最終報告を参照）。
+ */
+exports.logInteractionVerify = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['VERIFY_JWT_SECRET']
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+    const token = extractBearerToken(req.headers.authorization);
+    const verdict = verifyVerifyJwt(token, process.env.VERIFY_JWT_SECRET, {
+      expectedAud: 'logInteractionVerify',
+      expectedScope: 'write:interaction_logs_v2_verify',
+      expectedSub: 'info@aoki-tosou.net'
+    });
+    if (!verdict.ok) {
+      // 監査差し戻し#6：署名不正時などverdict.jtiが無い場合はレスポンスにも一切含めない
+      // （verifyVerifyJwt自体が既に保証しているが、ここでも生payloadを追加で出力しない）。
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const contentLength = Number(req.headers['content-length'] || 0);
+    if (contentLength > V2_MAX_BODY_BYTES) return res.status(413).json({ error: 'Payload Too Large' });
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.includes('application/json') && !contentType.includes('text/plain')) {
+      return res.status(415).json({ error: 'Content-Type must be application/json or text/plain' });
+    }
+    let body;
+    try {
+      body = parseRequestBody(req);
+    } catch (err) {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+    if (Buffer.byteLength(JSON.stringify(body || {}), 'utf8') > V2_MAX_BODY_BYTES) {
+      return res.status(413).json({ error: 'Payload Too Large' });
+    }
+
+    const built = buildV2Event(body, req.headers, undefined); // VERIFYはis_test概念を使わない（常にfalse）
+    if (!built.ok) return res.status(built.status).json({ error: built.error });
+
+    try {
+      const result = await recordWebEventV2(db, V2_VERIFY_COLLECTIONS, built.event, new Date());
+      return res.status(200).json({ success: true, aggregate: result });
+    } catch (err) {
+      console.error('logInteractionVerify failed:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * PROD V2 reader：media/webSource独立2軸、見込み度5区分（高・中・低・判定不能・旧ログ）、
+ * legacy＋新方式4分類の集計を返す読み取り専用API。既存getFunnelInsights（V1）とは別関数
+ * （V1は無変更のまま残す）。
+ * DATA_ENV: PROD_V2
+ */
+exports.getFunnelInsightsV2 = onRequest(
+  {
+    region: 'us-central1',
+    cors: false,
+    secrets: ['FUNNEL_DASHBOARD_TOKEN']
+  },
+  async (req, res) => {
+    if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+    if (!requireDashboardToken(req, res)) return;
+    const period = ['thisMonth', 'lastMonth', 'thisWeek'].includes(req.query.period)
+      ? req.query.period
+      : 'thisMonth';
+    const bounds = periodBounds(period, new Date());
+    const levelFilter = ['高', '中', '低', '判定不能'].includes(req.query.level) ? req.query.level : null;
+
+    try {
+      const startAt = new Date(`${bounds.start}T00:00:00.000+09:00`).getTime();
+      const endAt = new Date(`${shiftDateKey(bounds.end, 1)}T00:00:00.000+09:00`).getTime();
+
+      const sessionSnapshot = await db.collection(V2_PROD_COLLECTIONS.visitSessions)
+        .where('startedAt', '>=', startAt).where('startedAt', '<', endAt).get();
+      const visitSessions = sessionSnapshot.docs.map((doc) => Object.assign({ visitId: doc.id }, doc.data()));
+
+      // legacy件数（visit_idを持たないV1時代のraw log）はinteraction_logsを直接読んで数える。
+      // V1のloadInteractionRows_・訪問グルーピングは複製しない（V1無変更の方針）ため、
+      // 「訪問単位」ではなく「raw log単位」の件数であることをレスポンスのnoteで明示する。
+      const logSnapshot = await db.collection(V2_PROD_COLLECTIONS.interactionLogs)
+        .where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
+      let legacyLogCount = 0;
+      logSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.is_test) return;
+        if (classifyLogCategory(data) === 'legacy_unknown' || classifyLogCategory(data) === 'legacy_hash_missing') legacyLogCount += 1;
+      });
+
+      const { mediaQuality, webSourceQuality } = buildQualityAxes(visitSessions);
+      const { counts, cards } = buildLeadScoreBreakdownV2(visitSessions, legacyLogCount);
+      const filteredCards = levelFilter ? cards.filter((c) => c.level === levelFilter) : cards;
+
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json({
+        period: Object.assign({ key: period }, bounds),
+        mediaQuality,
+        webSourceQuality,
+        leadScoreBreakdown: counts,
+        leadScoreCards: filteredCards,
+        note: '旧ログ（leadScoreBreakdown.旧ログ）は訪問単位ではなくraw log単位の件数です。'
+      });
+    } catch (error) {
+      console.error('getFunnelInsightsV2 failed:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
 
 const ALLOWED_ORIGINS = [
   'https://aoki-tosou.net',

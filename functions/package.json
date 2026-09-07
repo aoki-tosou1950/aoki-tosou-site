@@ -4,7 +4,8 @@
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "test": "node --test test/*.test.js",
-    "deploy": "firebase deploy --only functions",
+    "predeploy:dataenv": "node scripts/predeploy_check_dataenv.js",
+    "deploy": "npm run predeploy:dataenv && firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
   "engines": {

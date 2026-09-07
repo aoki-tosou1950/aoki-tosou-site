@@ -324,6 +324,8 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
     daily.sources[sKey] = source;
     if (event.isTest) daily.testSources[sKey] = testSource;
 
+    const isPageView = event.eventType === 'page_view';
+    const isReaction = event.eventType === 'line_click' || event.eventType === 'phone_click';
     let visitSessionWrite = null;
     if (!visitSessionSnapshot.exists) {
       visitSessionWrite = {
@@ -331,8 +333,15 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
         webSource: event.webSource, webSourceStatus: event.webSourceStatus,
         attributionOccurredAt: event.occurredAt, attributionEventId: event.eventId,
         startedAt: event.occurredAt,
-        hasPageView: event.eventType === 'page_view',
-        attributionMismatch: false
+        hasPageView: isPageView,
+        attributionMismatch: false,
+        // 単位D（見込み度個別カード）向け：帰属を決めるイベントと同じ更新規則で
+        // hashReliableも保持する（「誰の訪問か」の信頼度は帰属の正本と同じ更新契機で
+        // 変わるべき値のため）。pageViewCount/reactionCountはイベント種別ごとの
+        // 単純加算（帰属の新旧比較とは無関係に、実際に届いたイベント数をそのまま数える）。
+        hashReliable: Boolean(event.hashReliable),
+        pageViewCount: isPageView ? 1 : 0,
+        reactionCount: isReaction ? 1 : 0
       };
     } else {
       const existing = visitSessionSnapshot.data();
@@ -346,7 +355,7 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
       );
       const update = {};
       if (isOlderTuple(thisTuple, existingTuple)) {
-        // より古いイベントの後着＝7項目を一括更新。
+        // より古いイベントの後着＝7項目（＋hashReliable）を一括更新。
         // 監査差し戻し（R2 #2）：正本を更新する場合でも、更新前の値と今回の値が異なれば
         // attributionMismatch=trueを同一transaction内で立てる（従来は正本の更新有無に
         // かかわらずelse節でしか判定しておらず、より古いイベントが後着して正本が
@@ -356,12 +365,15 @@ async function recordWebEventV2(db, collections, event, now = new Date()) {
         update.webSource = event.webSource; update.webSourceStatus = event.webSourceStatus;
         update.attributionOccurredAt = event.occurredAt; update.attributionEventId = event.eventId;
         update.startedAt = event.occurredAt;
+        update.hashReliable = Boolean(event.hashReliable);
         if (attributionDiffers) update.attributionMismatch = true;
       } else if (attributionDiffers) {
         update.attributionMismatch = true;
       }
-      if (event.eventType === 'page_view' && !existing.hasPageView) update.hasPageView = true;
-      if (Object.keys(update).length) visitSessionWrite = update;
+      if (isPageView && !existing.hasPageView) update.hasPageView = true;
+      update.pageViewCount = Number(existing.pageViewCount || 0) + (isPageView ? 1 : 0);
+      update.reactionCount = Number(existing.reactionCount || 0) + (isReaction ? 1 : 0);
+      visitSessionWrite = update;
     }
 
     transaction.set(rawLogRef, {
@@ -467,6 +479,78 @@ function buildQualityAxes(visitSessions) {
 }
 
 /* ============================================================================
+ * V2見込み度（単位D、2026-09-07追加）
+ * V1のcomputeLeadScore_（functions/lib/funnel.js）は、V1固有の訪問グルーピング
+ * （日付＋visitor_hash）とページカテゴリ・再訪履歴という、V2のvisit_sessionsには
+ * 存在しない入力に依存している。V1は無変更のまま維持する方針のため複製・改造せず、
+ * ここではvisit_sessionsが実際に持つデータ（hasPageView・pageViewCount・
+ * reactionCount・hashReliable）だけを使う、V1とは独立した新規のV2専用ルールを
+ * 定義する（V1の判定基準の複製ではない・意図的に簡易な別アルゴリズム）。
+ * ============================================================================ */
+
+/**
+ * V2ネイティブの見込み度判定（visit_sessions 1件から算出）。
+ * 戻り値: '高'|'中'|'低'|'判定不能'
+ * - page_viewが1件も無い（reaction-onlyのvisit_session）: 判定不能
+ *   （V1のfunnelDrilldownと同じ方針＝存在しない閲覧文脈を捏造しない）。
+ * - LINEクリック・電話タップのいずれかがある: 高
+ * - page_view 3件以上（反応なし）: 中
+ * - それ以外: 低
+ */
+function computeLeadScoreLevelV2_(session) {
+  if (!session || session.hasPageView !== true) return '判定不能';
+  if (Number(session.reactionCount || 0) > 0) return '高';
+  if (Number(session.pageViewCount || 0) >= 3) return '中';
+  return '低';
+}
+
+/**
+ * visit_sessions一覧から、見込み度「高・中・低・判定不能・旧ログ」の5区分を集計する
+ * （正本仕様の単位D：高・中・低の個別カードはnew_reliableだけ・legacy_unknownは
+ * 「旧ログ」へ独立表示・unreliable／hash欠損は判定不能）。
+ *
+ * visit_sessionsはrecordWebEventV2だけが作成するドキュメントであり、生成される時点で
+ * 必ず有効なvisit_idを伴う＝構造的に「新方式ログ」しか存在しない（isNewMethodLogでの
+ * 判定自体が不要）。したがってvisit_sessions内での分類は実質
+ * hashReliable（true/false）の2値のみで足りる。「旧ログ」（legacy、visit_id自体が
+ * 存在しないV1時代のinteraction_logs）はvisit_sessionsに現れないため、呼び出し側が
+ * 別途classifyLogCategoryで数えたraw logの件数をlegacyLogCountとして渡す
+ * （visit単位の件数ではなくraw log単位の件数である点に注意。V1の訪問グルーピングを
+ * 複製しない設計判断のため、他4区分＝visit単位の件数とは単位が異なることを呼び出し側の
+ * 表示レイヤーで明示すること）。
+ *
+ * @param {Array<object>} visitSessions visit_sessionsドキュメントの配列
+ * @param {number} legacyLogCount 期間内のlegacy_unknown/legacy_hash_missing raw log件数
+ * @returns {{counts: {高:number,中:number,低:number,判定不能:number,旧ログ:number},
+ *   cards: Array<{visitId:string, level:string, mediaCode:string, mediaValidity:string,
+ *   webSource:string, webSourceStatus:string, pageViewCount:number, reactionCount:number,
+ *   startedAt:number}>}}
+ */
+function buildLeadScoreBreakdownV2(visitSessions, legacyLogCount) {
+  const counts = { 高: 0, 中: 0, 低: 0, 判定不能: 0, 旧ログ: Number(legacyLogCount || 0) };
+  const cards = [];
+  (visitSessions || []).forEach((session) => {
+    const reliable = session && session.hashReliable === true;
+    const level = reliable ? computeLeadScoreLevelV2_(session) : '判定不能';
+    counts[level] += 1;
+    if (reliable) {
+      cards.push({
+        visitId: session.visitId || session.id || '',
+        level,
+        mediaCode: session.mediaValidity === 'valid' ? session.mediaCode : '',
+        mediaValidity: session.mediaValidity,
+        webSource: session.webSource,
+        webSourceStatus: session.webSourceStatus,
+        pageViewCount: Number(session.pageViewCount || 0),
+        reactionCount: Number(session.reactionCount || 0),
+        startedAt: session.startedAt
+      });
+    }
+  });
+  return { counts, cards };
+}
+
+/* ============================================================================
  * VERIFY JWT（HS256・専用署名。正本仕様§12-2、監査差し戻し#6で修正）
  * ============================================================================ */
 
@@ -564,6 +648,8 @@ module.exports = {
   isNewMethodLog,
   classifyLogCategory,
   buildQualityAxes,
+  computeLeadScoreLevelV2_,
+  buildLeadScoreBreakdownV2,
   signVerifyJwt,
   verifyVerifyJwt,
   // V1互換ヘルパー（契約テストで直接比較するためexportする）
