@@ -1,5 +1,6 @@
 functions/.env
 functions/.env.*
+functions/.secret.local
 functions/node_modules/
 .claude/
 
