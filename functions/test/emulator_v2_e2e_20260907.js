@@ -470,7 +470,13 @@ async function main() {
   // sendBeaconはこの経路で一切呼ばれないことも確認する（VERIFY用にはfetch+Bearer+
   // keepaliveのみを使う、という確定契約どおり）。
   {
-    const analyticsScript = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2.js'), 'utf8');
+    // R9再監査対応・項目2：js/analytics-v2.jsはoutbox＋PROD 401サーキットブレーカーを
+    // js/analytics-v2-outbox-engine.jsへ委譲するようになったため、実HTML同様にengine→
+    // トラッカー本体の順でvmコンテキストへロードする（engineが無いと即座に例外→
+    // フェイルソフトでinit()が丸ごと動かず、このテストが検出しようとしている
+    // 「実クライアントが1回だけfetchを呼ぶ」という挙動自体が発生しなくなる）。
+    const engineScript = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2-outbox-engine.js'), 'utf8');
+    const analyticsScript = engineScript + '\n' + fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2.js'), 'utf8');
     const { token: clientVerifyToken } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
 
     const capturedRequests = [];
@@ -557,6 +563,9 @@ async function main() {
   const failed = results.filter((r) => !r.ok);
   results.forEach((r) => console.log((r.ok ? '[PASS] ' : '[FAIL] ') + r.name + (r.detail ? ' :: ' + r.detail : '')));
   console.log('TOTAL ' + results.length + ' PASS ' + (results.length - failed.length) + ' FAIL ' + failed.length);
+  if (process.env.V2_E2E_RESULT_FILE) {
+    fs.writeFileSync(process.env.V2_E2E_RESULT_FILE, JSON.stringify({ total: results.length, pass: results.length - failed.length, fail: failed.length, failedNames: failed.map((r) => r.name) }, null, 2), 'utf8');
+  }
   process.exitCode = failed.length ? 1 : 0;
 }
 

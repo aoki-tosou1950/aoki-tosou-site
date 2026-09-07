@@ -134,6 +134,11 @@ if (require.main === module) {
 
 module.exports = {
   issueVerifyJwtLocal,
+  // R9再監査対応・項目3：defaultDeps_を公開する（実gcloud呼び出しを行う実装。
+  // 「アカウント確認は本物のgcloudを呼び、Secret Manager取得だけを差し替える」
+  // という部分的な統合ハーネス（scripts/verify_jwt_real_issuance_harness.js）が、
+  // このモジュール自身のgcloud呼び出しロジックを複製せずに再利用するため）。
+  defaultDeps_,
   REQUIRED_ACTIVE_ACCOUNT,
   VERIFY_JWT_SECRET_NAME,
   VERIFY_JWT_AUD,

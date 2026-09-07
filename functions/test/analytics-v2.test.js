@@ -6,7 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const script = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2.js'), 'utf8');
+// R9再監査対応・項目2：outbox＋PROD 401サーキットブレーカーをjs/analytics-v2-outbox-engine.js
+// へ共通化したため、テストのvmコンテキストにも同じ順序（エンジン→トラッカー本体）で
+// ソースをロードする（実HTMLでのscriptタグ順序と同じ制約）。
+const engineScript = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2-outbox-engine.js'), 'utf8');
+const trackerScript = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2.js'), 'utf8');
+const script = engineScript + '\n' + trackerScript;
 const RealDate = Date;
 
 function tick() { return new Promise((resolve) => setTimeout(resolve, 0)); }

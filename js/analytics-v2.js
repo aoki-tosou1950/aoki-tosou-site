@@ -50,46 +50,22 @@
    *     メモリ上のvisit_id／visitorIdをそのまま使い回す（ページ内で毎回新規発行しない）。
    */
   try {
-    var ENDPOINT = 'https://us-central1-aokitosou-miniapp.cloudfunctions.net/logInteractionV2';
-    var WRITER_GENERATION = 2; // 訪問境界・outbox契約を全面改訂したため世代を1→2へ引き上げる
+    // 独立監査再提出R9再監査対応・項目2：outbox＋PROD 401サーキットブレーカーは
+    // js/analytics-v2-outbox-engine.jsへ共通化した（js/analytics-v2-drain-only.jsと
+    // 同じエンジンを呼ぶ。停止処理を2箇所で独立実装して食い違わせない）。このファイルは
+    // HTML側でjs/analytics-v2-outbox-engine.jsより後に読み込まれる必要がある
+    // （window.__aokiAnalyticsV2OutboxEngineFactory_が未定義ならエンジン未ロード＝
+    // 即座に例外→上位try/catchでフェイルソフト。docs/v1-v2-analytics-switch.md参照）。
+    var engine = window.__aokiAnalyticsV2OutboxEngineFactory_();
+    var ENDPOINT = engine.ENDPOINT;
+    var WRITER_GENERATION = engine.WRITER_GENERATION; // 訪問境界・outbox契約を全面改訂したため世代を1→2へ引き上げる
     var VISIT_TIMEOUT_MS = 30 * 60 * 1000;
-    var OUTBOX_KEY = 'aoki_analytics_v2_outbox';
-    var OUTBOX_DIAG_KEY = 'aoki_analytics_v2_outbox_diag';
-    var OUTBOX_MAX_ITEMS = 50;
-    var OUTBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
     var VISITOR_ID_KEY = 'aoki_analytics_v2_visitor_id';
     var VISIT_STATE_KEY = 'aoki_analytics_v2_visit';
-    var STOP_STATE_KEY = 'aoki_analytics_v2_stop_state';
-    // 監査差し戻し（独立監査再提出R6）#9：401停止中の試験再送は15→30→60→120分と
-    // エスカレートし、最大4回で打ち切る（確定契約）。以前のSTOP_TRIAL_INTERVAL_MSは
-    // 15分固定でエスカレートせず、かつattemptTrialResend(force=true)がinit()から
-    // 無条件に呼ばれていたため、ページを何度リロードしても15分の待機すら無視して
-    // 即時に試験再送が発生し、事実上「無制限試験」になっていた（禁止事項）。
-    // 保持系失敗（408/429/5xx/通信失敗）の再送間隔テーブルと同じ値・同じエスカレート
-    // 方式を、401停止中の試験再送スケジュールにも流用する（backoffForAttempts()を共用）。
-    var RETRY_BACKOFF_MS = [15 * 60 * 1000, 30 * 60 * 1000, 60 * 60 * 1000, 120 * 60 * 1000];
-    var STOP_TRIAL_MAX_ATTEMPTS = 4; // 401再発の待機エスカレーション回数上限（4回とも401なら自動再試行を打ち切る＝finalStopped）
-    // 独立監査再提出R8・項目10：401の待機エスカレーション回数（trialCount。上のSTOP_TRIAL_
-    // MAX_ATTEMPTS）とは独立した、実際にfetchを試みた総回数（結果を問わず＝401・恒久4xx・
-    // 一時的失敗・通信エラーすべてを含む）に対する上限。trialCountは401再発時にしか
-    // 進まないため、401以外の失敗（一時的な5xx・通信エラー等）だけが続く限り、
-    // エスカレーション段階が15分固定のまま実質無制限に試行し続けられてしまう
-    // （ページ再読込を挟むかどうかに関わらず発生し得るが、この状態はページ再読込の
-    // たびに再現しやすい＝「無制限ポーリング／リロードによる回数上限の迂回」と
-    // 同じ実害になる）。この総数上限は、401再発かどうかに関わらず、実際に試行を
-    // 開始した時点で必ず1つ消費し、上限に達したら以後の自動試験を一切行わない
-    // （finalStopped=true。QAのresumeAfterStop()による手動解除のみが復帰手段）。
-    // 独立監査再提出R9：この20という値は「無制限リトライを防ぐ」という目的を満たす
-    // ための暫定値であり、確定仕様として決定されたものではない（運用実績・実際の
-    // 一時的障害の継続時間分布を踏まえて、別途正式な値を決定する余地を残す）。
-    var STOP_TOTAL_ATTEMPT_LIMIT = 20;
-    var PERMANENT_DELETE_STATUSES = [400, 404, 413, 422, 403];
-    var RETRYABLE_STATUSES = [408, 429];
 
     // --- ページ生存中のメモリフォールバック（storage不能時でも同一ページ内は使い回す） ---
     var memoryVisitState = null;
     var memoryVisitorId = null;
-    var memoryStopState = null;
     // 独立監査再提出R9・項目1：離脱時beaconの対象範囲・重複防止をページ単位の
     // メモリだけで管理する（永続化しない＝ページを離れれば自然に消える。この
     // 集合自体を次ページへ引き継ぐ必要は無い）。
@@ -103,9 +79,9 @@
     // 送信しない。hidden後に新規発生したイベントは、この集合にまだ無いため、
     // 後続のpagehideで1回だけ送信できる。
     var beaconSentEventIds = {};
-    // 独立監査再提出R9・項目2：nextTrialAtまでの単発setTimeoutのハンドル
-    // （このページの生存中だけ有効。ページを離れれば自然に消える）。
-    var trialTimerHandle = null;
+    // trialTimerHandle（nextTrialAtまでの単発setTimeoutのハンドル）はR9再監査対応・
+    // 項目2でjs/analytics-v2-outbox-engine.jsのengine内部クロージャへ移動した
+    // （engine.getTrialTimerHandle_()で参照できる。ここでは保持しない）。
 
     function safeLocalGet(key) { try { return window.localStorage.getItem(key); } catch (err) { return null; } }
     function safeLocalSet(key, value) { try { window.localStorage.setItem(key, value); return true; } catch (err) { return false; } }
@@ -292,165 +268,32 @@
       return next;
     }
 
-    /* ---- outbox ---- */
-    function loadOutbox() {
-      try {
-        var raw = safeLocalGet(OUTBOX_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch (err) { return []; }
-    }
-    function saveOutbox(list) { safeLocalSet(OUTBOX_KEY, JSON.stringify(list)); }
-    function loadDiagnostics() {
-      try {
-        var raw = safeLocalGet(OUTBOX_DIAG_KEY);
-        var parsed = raw ? JSON.parse(raw) : null;
-        return (parsed && typeof parsed === 'object') ? parsed : { expiredDiscardCount: 0 };
-      } catch (err) { return { expiredDiscardCount: 0 }; }
-    }
-    function saveDiagnostics(diag) { safeLocalSet(OUTBOX_DIAG_KEY, JSON.stringify(diag)); }
-    function recordExpiredDiscard(count) {
-      if (!count) return;
-      var diag = loadDiagnostics();
-      diag.expiredDiscardCount = Number(diag.expiredDiscardCount || 0) + count;
-      saveDiagnostics(diag);
-    }
-
-    /** 世代不一致・24時間超過を除去し、最大50件（新しい方を残す）へ切り詰める。
-     * 24時間超過で破棄した件数を診断情報として記録する。 */
-    function pruneOutbox(list) {
-      var now = nowMs();
-      var expiredCount = 0;
-      var filtered = (list || []).filter(function(item) {
-        if (!item || item.generation !== WRITER_GENERATION || !item.event || !item.event.event_id) return false;
-        var expired = (now - Number(item.addedAt || 0)) > OUTBOX_MAX_AGE_MS;
-        if (expired) expiredCount++;
-        return !expired;
-      });
-      if (expiredCount) recordExpiredDiscard(expiredCount);
-      if (filtered.length > OUTBOX_MAX_ITEMS) filtered = filtered.slice(filtered.length - OUTBOX_MAX_ITEMS);
-      return filtered;
-    }
-    function enqueue(event) {
-      var list = pruneOutbox(loadOutbox());
-      list.push({ generation: WRITER_GENERATION, event: event, addedAt: nowMs(), attempts: 0, nextRetryAt: 0 });
-      saveOutbox(pruneOutbox(list));
-    }
-    function removeFromOutbox(eventId) {
-      saveOutbox(loadOutbox().filter(function(item) { return !item.event || item.event.event_id !== eventId; }));
-    }
-    function updateOutboxItem(eventId, patch) {
-      var list = loadOutbox();
-      var changed = false;
-      list = list.map(function(item) {
-        if (item.event && item.event.event_id === eventId) { changed = true; return Object.assign({}, item, patch); }
-        return item;
-      });
-      if (changed) saveOutbox(list);
-    }
-
-    /* ---- PROD 401 サーキットブレーカー（確定契約：独立監査再提出R6・項目9、
-     * 独立監査再提出R8・項目10でtotalAttemptsを追加） ----
-     * 状態は{stoppedAt, trialCount, totalAttempts, nextTrialAt, finalStopped}。
-     * trialCountは「401が再発して失敗した回数」（401以外の失敗では進まない。
-     * 401の待機エスカレーション＝15→30→60→120分の段階を決めるためだけに使う）。
-     * totalAttemptsは「結果を問わず実際にfetchを試みた総回数」（401・恒久4xx・
-     * 一時的失敗・通信エラーすべてを含む。trialCountとは独立した安全弁）。
-     * 成功していれば即clearStopされ状態自体が消える。nextTrialAtは次に試験して
-     * よい時刻（backoffForAttempts()を共用）。trialCountがSTOP_TRIAL_MAX_ATTEMPTS
-     * （4）に達するか、totalAttemptsがSTOP_TOTAL_ATTEMPT_LIMIT（20）に達したら、
-     * いずれか早い方でfinalStopped=trueとし、nextTrialAtをnullにして以後は自動
-     * 試験を一切行わない（QAのresumeAfterStop()による手動解除のみが復帰手段）。
-     * この状態はlocalStorage（不可の場合はページ内メモリ）へ永続化されるため、
-     * ページを何度リロードしても、この記録済みのtrialCount／totalAttempts／
-     * nextTrialAt／finalStoppedを迂回して追加の試験再送を行うことはできない
-     * （旧実装のforce=trueバイパスを廃止。R8でtotalAttemptsを追加したことで、
-     * 401以外の失敗が続く場合の実質無制限リトライも同様に防ぐ）。 */
-    function loadStopState() {
-      try {
-        var raw = safeLocalGet(STOP_STATE_KEY);
-        if (raw) { var parsed = JSON.parse(raw); if (parsed && parsed.stoppedAt) return parsed; }
-      } catch (err) {}
-      return memoryStopState;
-    }
-    function saveStopState(state) { memoryStopState = state; safeLocalSet(STOP_STATE_KEY, state ? JSON.stringify(state) : ''); if (!state) { try { window.localStorage.removeItem(STOP_STATE_KEY); } catch (err) {} } }
-    function isStopped() { return !!loadStopState(); }
-
-    /** 独立監査再提出R9・項目2：nextTrialAtまでの単発setTimeoutを実装する。
-     * 以前は停止中の試験再送がinit()（ページ読み込み時）の1回きりの同期チェック
-     * でしか行われず、ページを再読込しない限り、期限が来ても自動的には試験再送
-     * されなかった（開いたままのタブでは永久に停止したままになり得た）。
-     * scheduleTrialTimer_()は、既存タイマーがあれば一旦clearしてから
-     * （重複タイマー防止）、永続化されたnextTrialAtまでの単発setTimeoutを
-     * 新たに設定する。stopState自体が無い・finalStopped・nextTrialAtが無い
-     * 場合は何もスケジュールしない（＝以後の自動試験を行わない）。
-     * 期限が既に過ぎていてもsetTimeout(fn, 0)相当で必ず非同期にfireする
-     * （同期的な即時試験は行わない＝「期限前reloadだけでは試験再送しない」を
-     * 維持したまま、期限到来後は確実に・かつ非同期に試験する）。 */
-    function clearTrialTimer_() {
-      if (trialTimerHandle !== null) {
-        try { window.clearTimeout(trialTimerHandle); } catch (err) {}
-        trialTimerHandle = null;
-      }
-    }
-    function scheduleTrialTimer_() {
-      clearTrialTimer_();
-      var stopState = loadStopState();
-      if (!stopState || stopState.finalStopped) return;
-      var nextTrialAt = Number(stopState.nextTrialAt || 0);
-      if (!nextTrialAt) return;
-      var delay = Math.max(0, nextTrialAt - nowMs());
-      try {
-        trialTimerHandle = window.setTimeout(function() {
-          trialTimerHandle = null;
-          attemptTrialResend();
-        }, delay);
-      } catch (err) {}
-    }
-
-    function beginStop() {
-      var now = nowMs();
-      saveStopState({ stoppedAt: now, trialCount: 0, totalAttempts: 0, nextTrialAt: now + backoffForAttempts(1), finalStopped: false });
-      scheduleTrialTimer_();
-    }
-    /** 実際に試験再送を試みて401で失敗した後に呼ぶ：trialCountを1つ進め、上限
-     * （4回）に達していればfinalStopped化し、達していなければ次のエスカレート
-     * 間隔を設定する。totalAttempts（実試行総数。attemptTrialResend側で既に
-     * 加算済み）はここでは変更せず、そのまま引き継ぐ。結果に応じてタイマーを
-     * clear（finalStopped）またはreschedule（次のエスカレート間隔）する。 */
-    function rescheduleTrialAfterFailedAttempt() {
-      var state = loadStopState();
-      var now = nowMs();
-      var priorCount = Number(state && state.trialCount || 0);
-      var newCount = priorCount + 1;
-      var totalAttempts = Number(state && state.totalAttempts || 0);
-      if (newCount >= STOP_TRIAL_MAX_ATTEMPTS) {
-        saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, totalAttempts: totalAttempts, nextTrialAt: null, finalStopped: true });
-        clearTrialTimer_();
-      } else {
-        saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, totalAttempts: totalAttempts, nextTrialAt: now + backoffForAttempts(newCount + 1), finalStopped: false });
-        scheduleTrialTimer_();
-      }
-    }
-    /** (a) outboxが空で実際には何も試せなかった場合、または (b) 実際に試験再送を
-     * 試みたが401以外の理由（恒久4xx・一時的失敗・通信エラー等）で終わった場合に
-     * 呼ぶ：trialCount（＝401再発回数）は消費せず、現在のエスカレート段階のまま
-     * 次回チェック時刻だけを先送りする。totalAttempts（実試行総数）は
-     * attemptTrialResend側で既に加算済みのものをそのまま引き継ぐ（(a)の場合は
-     * 実際に試行していないため元々加算されていない）。次回のためにタイマーを
-     * rescheduleする。 */
-    function rescheduleTrialWait() {
-      var state = loadStopState();
-      var now = nowMs();
-      var count = Number(state && state.trialCount || 0);
-      var totalAttempts = Number(state && state.totalAttempts || 0);
-      saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: count, totalAttempts: totalAttempts, nextTrialAt: now + backoffForAttempts(count + 1), finalStopped: false });
-      scheduleTrialTimer_();
-    }
-    function clearStop() { saveStopState(null); clearTrialTimer_(); }
-    /** QA専用：試験的に即時再開する（trialCount・totalAttempts・finalStoppedを含む状態を完全に破棄する）。 */
-    function resumeAfterStop() { clearStop(); }
+    /* ---- outbox ＋ PROD 401サーキットブレーカー ----
+     * R9再監査対応・項目2で js/analytics-v2-outbox-engine.js へ共通化した
+     * （js/analytics-v2-drain-only.js と同じエンジンインスタンス生成コードを呼ぶ。
+     * ここでは薄いエイリアスだけを保持し、実装は一切複製しない）。 */
+    var loadOutbox = engine.loadOutbox;
+    var saveOutbox = engine.saveOutbox;
+    var loadDiagnostics = engine.loadDiagnostics;
+    var pruneOutbox = engine.pruneOutbox;
+    var enqueue = engine.enqueue;
+    var removeFromOutbox = engine.removeFromOutbox;
+    var updateOutboxItem = engine.updateOutboxItem;
+    var loadStopState = engine.loadStopState;
+    var isStopped = engine.isStopped;
+    var isFinalStopped = engine.isFinalStopped;
+    var clearTrialTimer_ = engine.clearTrialTimer_;
+    var scheduleTrialTimer_ = engine.scheduleTrialTimer_;
+    var beginStop = engine.beginStop;
+    var rescheduleTrialAfterFailedAttempt = engine.rescheduleTrialAfterFailedAttempt;
+    var rescheduleTrialWait = engine.rescheduleTrialWait;
+    var clearStop = engine.clearStop;
+    var resumeAfterStop = engine.resumeAfterStop;
+    var classifyResponseStatus = engine.classifyResponseStatus;
+    var backoffForAttempts = engine.backoffForAttempts;
+    var sendViaFetch = engine.sendViaFetch;
+    var flushOutboxViaFetch = engine.flushOutboxViaFetch;
+    var attemptTrialResend = engine.attemptTrialResend;
 
     /** 監査差し戻し（独立監査再提出R6）#10：この関数が返すイベントに"referrerHost"
      * キーを含めない。サーバー側（recordWebEventV2）はクライアントの生referrerHostを
@@ -480,62 +323,6 @@
       };
       if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) event[k] = extra[k]; } }
       return event;
-    }
-
-    function classifyResponseStatus(status) {
-      if (status >= 200 && status < 300) return 'success';
-      if (status === 401) return 'stop';
-      if (PERMANENT_DELETE_STATUSES.indexOf(status) >= 0) return 'permanent';
-      if (RETRYABLE_STATUSES.indexOf(status) >= 0 || status >= 500) return 'retry';
-      return 'retry'; // 未知のステータスは安全側（保持・再送）に倒す
-    }
-    function backoffForAttempts(attempts) {
-      var idx = Math.min(Math.max(attempts - 1, 0), RETRY_BACKOFF_MS.length - 1);
-      return RETRY_BACKOFF_MS[idx];
-    }
-
-    /** 単一イベントをfetchで送信し、応答に応じてoutboxを更新する（確定契約）。 */
-    function sendViaFetch(item, onSettled) {
-      if (typeof window.fetch !== 'function') { if (onSettled) onSettled('skipped'); return; }
-      var event = item.event;
-      try {
-        window.fetch(ENDPOINT, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(event), keepalive: true
-        }).then(function(res) {
-          var kind = classifyResponseStatus(res ? res.status : 0);
-          if (kind === 'success') {
-            removeFromOutbox(event.event_id);
-          } else if (kind === 'stop') {
-            // 監査差し戻し（独立監査再提出R6）#9：既に停止中（＝これがattemptTrialResend経由の
-            // 試験再送）であれば、ここでbeginStop()を呼び直さない。呼び直すとtrialCount・
-            // エスカレート段階（15/30/60/120分）がリセットされ、上限4回が実質無効化される。
-            // 停止状態の前進（trialCountを進める・上限判定）は呼び出し側
-            // （attemptTrialResendのonSettled → rescheduleTrialAfterFailedAttempt）が行う。
-            // 初回401（まだ停止していない状態からの通常送信）のときだけ、ここで新規に停止する。
-            if (!isStopped()) beginStop(); // itemはoutboxに残す（次回の試験再送対象）
-          } else if (kind === 'permanent') {
-            removeFromOutbox(event.event_id);
-          } else {
-            var attempts = Number(item.attempts || 0) + 1;
-            updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
-          }
-          if (onSettled) onSettled(kind);
-        }).catch(function() {
-          var attempts = Number(item.attempts || 0) + 1;
-          updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
-          if (onSettled) onSettled('network_error');
-        });
-      } catch (err) {
-        // 監査差し戻し（独立監査再提出R7）#5：window.fetch(...)の呼び出し自体が同期的に
-        // 例外を投げた場合（.then/.catchへ到達する前の失敗。CSP違反等で稀に発生し得る）も、
-        // 非同期の.catch()分岐と同じくattempts/nextRetryAtを更新する。以前はここが未更新の
-        // ままonSettled('exception')だけを呼んでおり、このitemの通常再送スケジュール
-        // （backoffForAttempts）が一切進まないまま取り残される欠陥だった。
-        var attempts = Number(item.attempts || 0) + 1;
-        updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
-        if (onSettled) onSettled('exception');
-      }
     }
 
     /** 離脱時専用：sendBeaconで送るが、成功してもoutboxからは削除しない
@@ -568,73 +355,6 @@
       pageOriginEventIds[event.event_id] = true;
       if (isStopped()) return; // outboxには積むが、停止中は送信を試みない（次回の試験再送・復帰を待つ）
       sendViaFetch({ event: event, attempts: 0 });
-    }
-
-    /** 通常時：保持中のoutboxのうち、再送猶予（nextRetryAt）を過ぎたものだけをfetchで送る。 */
-    function flushOutboxViaFetch() {
-      if (isStopped()) return;
-      var now = nowMs();
-      pruneOutbox(loadOutbox()).forEach(function(item) {
-        if (Number(item.nextRetryAt || 0) <= now) sendViaFetch(item);
-      });
-    }
-
-    /** 停止中：outbox最古の1件だけを試験再送する。エスカレートするnextTrialAtを
-     * 過ぎている場合にのみ試みる（呼び出しごとに毎回チェックする＝ページ表示のたび・
-     * track()実行のたびに呼んでよい設計）。
-     * 監査差し戻し（独立監査再提出R6）#9：以前存在したforce引数（ページ新規表示時に
-     * 15分待機を無視して即時試験する）は廃止した。これがあると、ページを繰り返し
-     * リロードするたびに待機時間を無視した即時試験再送が発生し、15/30/60/120分への
-     * エスカレート・4回上限のいずれも実質的に無意味化する（「無制限試験」で禁止事項）。
-     * 廃止後は、この関数はいつ・何度呼ばれても、永続化されたnextTrialAt／trialCount／
-     * finalStoppedの記録だけを見て判定するため、ページリロードによる回数制限の
-     * バイパスができない。
-     * 独立監査再提出R9・項目2：この関数自体は、init()からの1回きりの直接呼び出しでは
-     * なく、scheduleTrialTimer_()が設定する単発setTimeoutのコールバックとして
-     * 呼ばれる（ページを再読込しなくても、開いたままのタブでnextTrialAtの期限が
-     * 来た時点で自動的に呼ばれるようにするため）。この関数自身がnextTrialAtを
-     * 再チェックするため、タイマーが多少ずれて発火しても安全（期限前なら何もしない）。 */
-    function attemptTrialResend() {
-      var stopState = loadStopState();
-      if (!stopState || stopState.finalStopped) return; // 上限到達後は自動試験を一切行わない（QAのresumeAfterStop()のみが復帰手段）
-      var now = nowMs();
-      if (now < Number(stopState.nextTrialAt || 0)) return;
-      var list = pruneOutbox(loadOutbox());
-      if (!list.length) { rescheduleTrialWait(); return; } // 送るものが無い＝実際には試行していないのでtrialCountは消費しない
-      // 独立監査再提出R8・項目10：実際にfetchを試みる直前に、401再発かどうかとは
-      // 無関係な「結果を問わない総試行回数」（totalAttempts）の上限を独立にチェックする。
-      // 401以外の失敗（一時的な5xx・通信エラー等）が続く限りtrialCountは進まないため、
-      // これが無いとエスカレーション段階が15分固定のまま実質無制限に試行し続けられて
-      // しまう（無制限ポーリング・ページ再読込による回数上限の迂回と同じ実害）。
-      // 上限に達している場合は、今回は試行そのものを行わずfinalStopped化する
-      // （401のtrialCount上限到達時と同じ扱い＝以後は自動試験を一切行わない）。
-      var totalAttempts = Number(stopState.totalAttempts || 0);
-      if (totalAttempts >= STOP_TOTAL_ATTEMPT_LIMIT) {
-        saveStopState(Object.assign({}, stopState, { nextTrialAt: null, finalStopped: true }));
-        clearTrialTimer_();
-        return;
-      }
-      saveStopState(Object.assign({}, stopState, { totalAttempts: totalAttempts + 1 }));
-      var oldest = list.reduce(function(a, b) { return Number(a.addedAt) <= Number(b.addedAt) ? a : b; });
-      sendViaFetch(oldest, function(kind) {
-        if (kind === 'success') { clearStop(); flushOutboxViaFetch(); }
-        else if (kind === 'stop') {
-          // 監査差し戻し（独立監査再提出R7）#5：401（認可拒否）の再発だけがtrialCountを
-          // 進める（15/30/60/120分・上限4回の対象）。恒久4xx・一時的失敗・通信エラーは
-          // 401の試行回数を消費しない（下のelse節）。
-          rescheduleTrialAfterFailedAttempt();
-        } else {
-          // 監査差し戻し（独立監査再提出R7）#5：恒久4xx（400/403/404/413/422。sendViaFetch
-          // 側で最古エントリ自体は既に削除済み）・一時的失敗（408/429/5xx・network_error・
-          // exception。エントリはsendViaFetch側で保持・per-item再送スケジュール更新済み）は、
-          // 401の認可問題とは無関係のため、trialCountを進めない・エスカレートしない
-          // （rescheduleTrialAfterFailedAttempt()を呼ばない）。停止状態自体は維持し、
-          // 次回はrescheduleTrialWait()と同じ非エスカレートの間隔で、次の最古エントリ
-          // （恒久4xxで削除済みなら別のエントリ、一時的失敗ならそのままのエントリを
-          // 含む現在のoutbox）を試す。
-          rescheduleTrialWait();
-        }
-      });
     }
 
     /** 離脱時：fetchのthenを待てないため、可能な限りsendBeaconで送る（削除はしない）。
@@ -715,17 +435,18 @@
         classifyResponseStatus: classifyResponseStatus, backoffForAttempts: backoffForAttempts,
         attemptTrialResend: attemptTrialResend, flushOutboxViaFetch: flushOutboxViaFetch,
         flushOutboxViaBeacon: flushOutboxViaBeacon,
-        loadStopState: loadStopState, beginStop: beginStop,
+        loadStopState: loadStopState, isFinalStopped: isFinalStopped, beginStop: beginStop,
         rescheduleTrialAfterFailedAttempt: rescheduleTrialAfterFailedAttempt, rescheduleTrialWait: rescheduleTrialWait,
         scheduleTrialTimer_: scheduleTrialTimer_, clearTrialTimer_: clearTrialTimer_,
-        getTrialTimerHandle_: function() { return trialTimerHandle; },
+        getTrialTimerHandle_: engine.getTrialTimerHandle_,
         getPageOriginEventIds_: function() { return pageOriginEventIds; },
         getBeaconSentEventIds_: function() { return beaconSentEventIds; },
         WRITER_GENERATION: WRITER_GENERATION, VISIT_TIMEOUT_MS: VISIT_TIMEOUT_MS,
-        OUTBOX_MAX_ITEMS: OUTBOX_MAX_ITEMS, OUTBOX_MAX_AGE_MS: OUTBOX_MAX_AGE_MS,
-        STOP_TRIAL_MAX_ATTEMPTS: STOP_TRIAL_MAX_ATTEMPTS, STOP_TOTAL_ATTEMPT_LIMIT: STOP_TOTAL_ATTEMPT_LIMIT, RETRY_BACKOFF_MS: RETRY_BACKOFF_MS,
+        OUTBOX_MAX_ITEMS: engine.OUTBOX_MAX_ITEMS, OUTBOX_MAX_AGE_MS: engine.OUTBOX_MAX_AGE_MS,
+        STOP_TRIAL_MAX_ATTEMPTS: engine.STOP_TRIAL_MAX_ATTEMPTS, STOP_TOTAL_ATTEMPT_LIMIT: engine.STOP_TOTAL_ATTEMPT_LIMIT, RETRY_BACKOFF_MS: engine.RETRY_BACKOFF_MS,
         VISIT_STATE_FUTURE_TOLERANCE_MS: VISIT_STATE_FUTURE_TOLERANCE_MS,
-        ENDPOINT: ENDPOINT
+        ENDPOINT: ENDPOINT,
+        engine_: engine
       }
     };
   } catch (err) {}

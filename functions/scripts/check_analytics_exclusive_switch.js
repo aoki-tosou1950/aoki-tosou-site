@@ -20,6 +20,14 @@
  *    （analytics-v2.js）と同一ページに同時に存在する場合はBLOCKする
  *    （drain-onlyはV1稼働中ページ専用。V2稼働中ページに追加で載せる
  *    意味がない＝設計上の取り違え・二重ロードを検出する）。
+ * 4. R9再監査対応・項目2で新設：analytics-v2.js／analytics-v2-drain-only.jsは
+ *    js/analytics-v2-outbox-engine.js（outbox＋PROD 401サーキットブレーカーの
+ *    共有エンジン）に実行時依存する（window.__aokiAnalyticsV2OutboxEngineFactory_が
+ *    未定義だと即座に例外→フェイルソフトで機能が丸ごと動かない）。V2フル
+ *    トラッカーまたはdrain-onlyローダーを読み込むページでは、
+ *    analytics-v2-outbox-engine.jsの<script>タグが必ず存在し、かつそれより
+ *    「前」に置かれていることを検査する（後ろだと未定義のままV2/drain-only
+ *    本体が実行されてしまう）。
  *
  * 【使い方】
  *   node functions/scripts/check_analytics_exclusive_switch.js [siteRoot]
@@ -37,6 +45,7 @@ const path = require('path');
 const V1_PATTERN = /src=["'](?:\.\.\/)*js\/analytics\.js["']/;
 const V2_PATTERN = /src=["'](?:\.\.\/)*js\/analytics-v2\.js["']/;
 const DRAIN_ONLY_PATTERN = /src=["'](?:\.\.\/)*js\/analytics-v2-drain-only\.js["']/;
+const ENGINE_PATTERN = /src=["'](?:\.\.\/)*js\/analytics-v2-outbox-engine\.js["']/;
 
 const EXCLUDE_DIRS = new Set(['node_modules', '.git', 'functions', 'gas_v2', '.firebase']);
 
@@ -63,16 +72,25 @@ function listHtmlFiles_(dir, out) {
 }
 
 /**
- * 1ファイル分の解析結果を返す。
- * @returns {{file:string, hasV1:boolean, hasV2:boolean, hasDrainOnly:boolean}}
+ * 1ファイル分の解析結果を返す。engineIndex／v2Index／drainOnlyIndexは、
+ * 対応する<script>タグがファイル内で最初に出現する文字位置（無ければ-1）。
+ * 「engineがv2/drain-onlyより前にあるか」の順序検査に使う。
+ * @returns {{file:string, hasV1:boolean, hasV2:boolean, hasDrainOnly:boolean, hasEngine:boolean, engineIndex:number, v2Index:number, drainOnlyIndex:number}}
  */
 function analyzeFile_(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
+  const v2Match = content.match(V2_PATTERN);
+  const drainOnlyMatch = content.match(DRAIN_ONLY_PATTERN);
+  const engineMatch = content.match(ENGINE_PATTERN);
   return {
     file: filePath,
     hasV1: V1_PATTERN.test(content),
-    hasV2: V2_PATTERN.test(content),
-    hasDrainOnly: DRAIN_ONLY_PATTERN.test(content)
+    hasV2: !!v2Match,
+    hasDrainOnly: !!drainOnlyMatch,
+    hasEngine: !!engineMatch,
+    engineIndex: engineMatch ? engineMatch.index : -1,
+    v2Index: v2Match ? v2Match.index : -1,
+    drainOnlyIndex: drainOnlyMatch ? drainOnlyMatch.index : -1
   };
 }
 
@@ -92,6 +110,19 @@ function checkExclusiveSwitch(records) {
     }
     if (r.hasV2 && r.hasDrainOnly) {
       violations.push({ file: r.file, reason: 'V2フルトラッカーとdrain-onlyローダーを同一ページで同時ロードしている（drain-onlyはV1稼働中ページ専用）' });
+    }
+    // R9再監査対応・項目2：V2フルトラッカー／drain-onlyローダーはengineへ実行時依存する。
+    if (r.hasV2 && !r.hasEngine) {
+      violations.push({ file: r.file, reason: 'js/analytics-v2.jsを読み込んでいるが、実行時依存先のjs/analytics-v2-outbox-engine.jsの<script>タグが無い（未定義のまま実行され機能が丸ごと動かない）' });
+    }
+    if (r.hasDrainOnly && !r.hasEngine) {
+      violations.push({ file: r.file, reason: 'js/analytics-v2-drain-only.jsを読み込んでいるが、実行時依存先のjs/analytics-v2-outbox-engine.jsの<script>タグが無い（未定義のまま実行され機能が丸ごと動かない）' });
+    }
+    if (r.hasV2 && r.hasEngine && r.engineIndex > r.v2Index) {
+      violations.push({ file: r.file, reason: 'js/analytics-v2-outbox-engine.jsの<script>タグがjs/analytics-v2.jsより後に置かれている（engineが未定義の状態でv2本体が実行される）' });
+    }
+    if (r.hasDrainOnly && r.hasEngine && r.engineIndex > r.drainOnlyIndex) {
+      violations.push({ file: r.file, reason: 'js/analytics-v2-outbox-engine.jsの<script>タグがjs/analytics-v2-drain-only.jsより後に置かれている（engineが未定義の状態でdrain-only本体が実行される）' });
     }
   }
 

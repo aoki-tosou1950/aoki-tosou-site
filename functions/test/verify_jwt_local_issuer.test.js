@@ -137,6 +137,13 @@ test('R9#3：このモジュールをrequire()するだけでは（CLIとして�
   assert.equal(capture.logs.length, 0);
   assert.equal(capture.errors.length, 0);
 });
+test('R9再監査#3：defaultDeps_が公開されている（getActiveAccount／getSecretを持つオブジェクトを返す関数）。実gcloud呼び出しはここでは行わず、構造だけを確認する（実gcloud呼び出し自体はnode scripts/verify_jwt_local_issuer.jsのCLI実行で別途確認済み。別ターン実施済み・READMEおよび完了報告に記録）', () => {
+  const mod = require('../scripts/verify_jwt_local_issuer');
+  assert.equal(typeof mod.defaultDeps_, 'function');
+  const deps = mod.defaultDeps_();
+  assert.equal(typeof deps.getActiveAccount, 'function');
+  assert.equal(typeof deps.getSecret, 'function');
+});
 test('R9#3：現在の.secret.local依存Emulator harnessとは役割が分離されている（このモジュールはgcloud/Secret Managerだけを参照し、functions/.secret.localの読み込みコードを一切持たない）', () => {
   const src = require('fs').readFileSync(require.resolve('../scripts/verify_jwt_local_issuer'), 'utf8');
   // ドキュメントコメント内で説明目的に「.secret.local」という語自体へ言及するのは
