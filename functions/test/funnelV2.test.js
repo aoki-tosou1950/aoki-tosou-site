@@ -23,9 +23,11 @@ const {
   computeSessionLeadScoreV1Compat_,
   buildLegacyPseudoSessions_,
   deriveLegacyMediaAndSource_,
+  recoverLegacySourceLabel_,
   extractHostnameFromReferrer_,
   signVerifyJwt,
-  verifyVerifyJwt
+  verifyVerifyJwt,
+  VERIFY_JWT_ISSUER
 } = require('../lib/funnelV2');
 
 // funnel.test.jsのfakeFirestoreをベースに、実Firestoreの制約（transaction内は全readが
@@ -244,6 +246,49 @@ test('visitorIdPersisted=true かつ不正形式ID は hashReliable=false', () =
   const r = evaluateVisitorIdentity('short', true);
   assert.equal(r.hashReliable, false);
 });
+
+/* ===================================================================
+ * 独立監査再提出R8・項目10：visitorIdStatus='inconsistent'（persisted=trueなのに
+ * visitorId自体が欠損・不正、というクライアントの主張と実際の値の矛盾）。
+ * 単純な型・形式不正（persisted自体が欠損/型不正、またはpersisted=falseで
+ * visitorIdも不正）を表す'invalid'とは区別する。どちらもhashReliable=false・
+ * visitor_hash=''・イベント受理は維持されることも合わせて確認する。
+ * =================================================================== */
+test('R8#10：persisted=trueなのにvisitorIdが欠損（空文字）→visitorIdStatus="inconsistent"（"invalid"ではない）', () => {
+  const r = evaluateVisitorIdentity('', true);
+  assert.equal(r.visitorIdStatus, 'inconsistent');
+  assert.equal(r.hashReliable, false);
+  assert.equal(r.visitorHash, '');
+});
+test('R8#10：persisted=trueなのにvisitorIdが不正形式（短すぎる）→visitorIdStatus="inconsistent"', () => {
+  const r = evaluateVisitorIdentity('short', true);
+  assert.equal(r.visitorIdStatus, 'inconsistent');
+  assert.equal(r.hashReliable, false);
+  assert.equal(r.visitorHash, '');
+});
+test('R8#10：persisted=falseでvisitorIdが不正形式（または欠損）は、単純な"invalid"のまま（"inconsistent"にはならない。クライアントは元々persistedできなかったと正直に申告しているだけで矛盾ではない）', () => {
+  const r1 = evaluateVisitorIdentity('short', false);
+  assert.equal(r1.visitorIdStatus, 'invalid');
+  const r2 = evaluateVisitorIdentity('', false);
+  assert.equal(r2.visitorIdStatus, 'invalid');
+});
+test('R8#10：persisted自体が欠損/型不正（visitorIdの正当性に関わらず）は、引き続き"invalid"のまま（"inconsistent"の対象外。persistedの主張自体が無いため矛盾のしようがない）', () => {
+  const r1 = evaluateVisitorIdentity(VALID_VISITOR_ID, undefined);
+  assert.equal(r1.visitorIdStatus, 'invalid');
+  const r2 = evaluateVisitorIdentity(VALID_VISITOR_ID, 'true');
+  assert.equal(r2.visitorIdStatus, 'invalid');
+});
+test('R8#10：persisted=trueかつvisitorIdが有効な場合は引き続き"ok"のまま（"inconsistent"の誤検知が無いことの回帰確認）', () => {
+  const r = evaluateVisitorIdentity(VALID_VISITOR_ID, true);
+  assert.equal(r.visitorIdStatus, 'ok');
+  assert.equal(r.hashReliable, true);
+});
+test('R8#10：型不正（数値・真偽値・オブジェクト・配列）のvisitorIdでpersisted=trueの場合も"inconsistent"になる（型不正＝欠損・不正の一種として扱う）', () => {
+  assert.equal(evaluateVisitorIdentity(1234567890123456, true).visitorIdStatus, 'inconsistent');
+  assert.equal(evaluateVisitorIdentity(true, true).visitorIdStatus, 'inconsistent');
+  assert.equal(evaluateVisitorIdentity({ id: VALID_VISITOR_ID }, true).visitorIdStatus, 'inconsistent');
+  assert.equal(evaluateVisitorIdentity([VALID_VISITOR_ID], true).visitorIdStatus, 'inconsistent');
+});
 test('visitorIdPersisted=false かつ有効ID でも hashReliable=false（persisted優先）', () => {
   const r = evaluateVisitorIdentity(VALID_VISITOR_ID, false);
   assert.equal(r.hashReliable, false);
@@ -268,7 +313,14 @@ test('回帰（監査差し戻しR2 #1）：数値のvisitorId（例：123456789
   // visitorIdPersisted:trueと組み合わさると、修正前は誤ってhashReliable=trueになっていた。
   const r = evaluateVisitorIdentity(1234567890123456, true);
   assert.equal(r.hashReliable, false, '型不正（string以外）のvisitorIdは、桁数が偶然パターンに一致してもhashReliable=trueへ昇格させない');
-  assert.equal(r.visitorIdStatus, 'invalid');
+  // 訂正（独立監査再提出R8・項目10）：以前はここで'invalid'を期待していたが、
+  // persisted=true（クライアントが「永続化できた」と主張している）にもかかわらず
+  // visitorId自体が型不正（欠損・不正の一種）であるこの組合せは、単純な形式不正
+  // （'invalid'）ではなく、クライアントの主張と実際の値が矛盾する'inconsistent'へ
+  // 分類するのが正しい（R8で新設された区分。「型不正だからinvalidのまま」という
+  // 以前の期待値は、区分自体が存在しなかった時点のものであり、これは弱体化ではなく
+  // 新しい区分への追従）。
+  assert.equal(r.visitorIdStatus, 'inconsistent');
   assert.equal(r.visitorHash, '');
 });
 test('真偽値・オブジェクト等の型不正なvisitorIdもhashReliable=falseへ縮退する', () => {
@@ -718,7 +770,13 @@ test('期限切れJWTは拒否される', () => {
   const { token } = signVerifyJwt(SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify', ttlSeconds: -10 });
   const r = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' });
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'exp');
+  // 訂正（独立監査再提出R8・項目9）：ttlSeconds=-10で発行するとexp<iatになる。
+  // R8で追加した「exp > iat」検証（reason='exp_before_iat'）の方がこのケースの実態
+  // （期限切れというより、そもそも発行時点で既にexp<iatという不整合なトークン）を
+  // より正確に言い当てるため、この新しく細分化された理由コードへ検証を訂正する
+  // （汎用的な'exp'のままでは「期限が過ぎた」のか「そもそも順序が壊れていた」のか
+  // 区別できなかった）。
+  assert.equal(r.reason, 'exp_before_iat');
 });
 test('回帰（監査差し戻しR2 #3）：exp===now（境界値ちょうど）も期限切れとして拒否される（exp<=nowの検証、exp<nowだけでは境界値を見逃す）', () => {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -755,6 +813,141 @@ test('回帰（監査差し戻しR2 #3）：expectedSubを渡し忘れるとfail
   const r3 = verifyVerifyJwt(token, SECRET, { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 123 });
   assert.equal(r3.ok, false);
   assert.equal(r3.reason, 'missing_expected_sub');
+});
+
+/* ===================================================================
+ * 独立監査再提出R8・項目9：VERIFY JWTクレーム検証（iat・jti・15分TTL上限）。
+ * 署名後もiat・jti・15分TTL上限を検証していなかった（expが期限切れでないことだけを
+ * 見ていた）という指摘への対応。signVerifyJwt()は任意のiat/jti/exp組合せを直接
+ * 生成できない（常にiat=now・exp=now+ttlSeconds・jti=ランダムを発行する）ため、
+ * 意図的に壊れたクレームを持つトークンは、正しいSECRETで手動署名して構築する
+ * （既存テスト「issが一致しない」「exp===now」と同じ手法）。
+ * =================================================================== */
+const VERIFY_JWT_CRYPTO = require('crypto');
+function b64VerifyTest_(o) { return Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+/** 任意のpayloadをSECRETで正しく署名したJWT文字列を組み立てる（テスト専用。
+ * signVerifyJwt()自体は使わない＝iat/jti/expを個別に自由指定するため）。 */
+function signRawVerifyTestToken_(payload) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const signingInput = b64VerifyTest_(header) + '.' + b64VerifyTest_(payload);
+  const sig = VERIFY_JWT_CRYPTO.createHmac('sha256', SECRET).update(signingInput).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return signingInput + '.' + sig;
+}
+const VERIFY_TEST_VERIFY_OPTS = { expectedAud: 'logInteractionV2Verify', expectedScope: 'write:interaction_logs_v2_verify', expectedSub: 'info@aoki-tosou.net' };
+function validVerifyPayload_(overrides) {
+  const now = Math.floor(Date.now() / 1000);
+  return Object.assign({
+    iss: VERIFY_JWT_ISSUER, sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify',
+    iat: now, exp: now + 900, jti: VERIFY_JWT_CRYPTO.randomBytes(16).toString('hex')
+  }, overrides || {});
+}
+
+test('R8#9：前提確認：validVerifyPayload_（訂正無し）はverifyVerifyJwtを通る（負テストの基準点）', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_());
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+test('R8#9：iatが欠損しているJWTは拒否される', () => {
+  const payload = validVerifyPayload_();
+  delete payload.iat;
+  const token = signRawVerifyTestToken_(payload);
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'iat');
+});
+test('R8#9：iatが型不正（文字列）のJWTは拒否される', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: 'not-a-number' }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'iat');
+});
+test('R8#9：iatが整数でない（小数）JWTは拒否される', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now + 0.5 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'iat');
+});
+test('R8#9：expが欠損しているJWTは拒否される', () => {
+  const payload = validVerifyPayload_();
+  delete payload.exp;
+  const token = signRawVerifyTestToken_(payload);
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'exp');
+});
+test('R8#9：expが型不正（文字列）のJWTは拒否される', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ exp: '9999999999' }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'exp');
+});
+test('R8#9：未来すぎるiat（クロックスキュー許容を超える）のJWTは拒否される', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now + 3600, exp: now + 3600 + 900 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'iat_future');
+});
+test('R8#9：クロックスキュー許容の範囲内（数秒程度の未来iat）は拒否されない', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now + 5, exp: now + 5 + 900 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+test('R8#9：exp <= iat（順序が逆転・同一）のJWTは拒否される', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now, exp: now - 100 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'exp_before_iat');
+});
+test('R8#9：発行有効期間（exp-iat）が確定値15分を超えるJWTは拒否される（発行側の実装ミス・誤指定を検証側で独立に防ぐ）', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now, exp: now + 16 * 60 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'ttl_too_long');
+});
+test('R8#9：発行有効期間がちょうど15分（境界値）は拒否されない', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ iat: now, exp: now + 15 * 60 }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, true, JSON.stringify(r));
+});
+test('R8#9：jtiが欠損しているJWTは拒否される', () => {
+  const payload = validVerifyPayload_();
+  delete payload.jti;
+  const token = signRawVerifyTestToken_(payload);
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'jti');
+});
+test('R8#9：jtiが不正な形式（安全な16進数形式でない）のJWTは拒否される', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ jti: '<script>not-hex-and-has-symbols</script>' }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'jti');
+});
+test('R8#9：jtiが短すぎる（32文字未満）JWTは拒否される', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ jti: 'abc123' }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'jti');
+});
+test('R8#9：jtiが大文字を含む（signVerifyJwt()が実際に生成する小文字16進数形式と一致しない）JWTは拒否される', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_({ jti: 'A'.repeat(32) }));
+  const r = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'jti');
+});
+test('R8#9：jtiのワンタイム使用強制は未決事項のため実装しない（同一jtiでの複数回検証は、他のクレームが有効なら毎回okになることの確認。将来jti再利用防止を実装する場合はこのテストごと置き換えること）', () => {
+  const token = signRawVerifyTestToken_(validVerifyPayload_());
+  const r1 = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  const r2 = verifyVerifyJwt(token, SECRET, VERIFY_TEST_VERIFY_OPTS);
+  assert.equal(r1.ok, true);
+  assert.equal(r2.ok, true);
+  assert.equal(r1.jti, r2.jti);
 });
 
 /* ===================================================================
@@ -1012,6 +1205,88 @@ test('deriveLegacyMediaAndSource_: 不正な形式のfromはmediaValidity=invali
   const result = deriveLegacyMediaAndSource_({ from: '<script>bad', referrer: '' });
   assert.equal(result.mediaValidity, 'invalid');
   assert.equal(result.mediaCode, '');
+});
+
+/* ===================================================================
+ * 独立監査再提出R8・項目6：legacy source情報の欠落。
+ * from保存開始（2026-08-31）より前のraw logはfromが空のままだが、V1クライアント
+ * （js/analytics.js:currentAttribution()）が計算していたsource列（from／UTM／
+ * referrer統合値）から、既存の検証ロジック（normalizeMediaCode/normalizeWebSource）
+ * だけを使って安全に復元できる場合がある、という指摘への対応。
+ * =================================================================== */
+test('recoverLegacySourceLabel_: "direct"は非外部シグナルとして扱い、媒体・参照元どちらへも変換しない', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('direct'), { kind: 'none' });
+});
+test('recoverLegacySourceLabel_: "internal"（同一サイト内遷移）も非外部シグナルとして扱う', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('internal'), { kind: 'none' });
+});
+test('recoverLegacySourceLabel_: "不明"（referrerパース失敗）も非外部シグナルとして扱う', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('不明'), { kind: 'none' });
+});
+test('recoverLegacySourceLabel_: 空文字は非外部シグナルとして扱う', () => {
+  assert.deepEqual(recoverLegacySourceLabel_(''), { kind: 'none' });
+});
+test('recoverLegacySourceLabel_: "google / cpc"（V1のUTM結合表記" / "）はopaque値として媒体・参照元どちらへも変換しない', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('google / cpc'), { kind: 'none' });
+});
+test('recoverLegacySourceLabel_: "meishi"（ドット無し・媒体コード形式）は媒体コードとして復元する', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('meishi'), { kind: 'media', mediaCode: 'meishi' });
+});
+test('recoverLegacySourceLabel_: "google.com"（ドット有り・ホスト名形式）はWeb参照元として復元する（媒体コードにはならない。ドットはMEDIA_CODE_PATTERN不一致）', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('google.com'), { kind: 'source', webSource: 'google.com' });
+});
+test('recoverLegacySourceLabel_: 媒体コードにもホスト名にも一致しない値（記号を含む等）はどちらへも変換しない', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('!!!invalid???'), { kind: 'none' });
+});
+
+test('deriveLegacyMediaAndSource_（R8#6・ケース1）：from欠損＋source="meishi"→mediaCodeとして復元される', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'meishi' });
+  assert.equal(result.mediaValidity, 'valid');
+  assert.equal(result.mediaCode, 'meishi');
+});
+test('deriveLegacyMediaAndSource_（R8#6・ケース2）：from欠損＋source="google.com"→webSourceとして復元される（媒体コードにはならない）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'google.com' });
+  assert.equal(result.mediaValidity, 'none', '"google.com"は媒体コードとして復元しない（ドットを含むためMEDIA_CODE_PATTERN不一致）');
+  assert.equal(result.mediaCode, '');
+  assert.equal(result.webSourceStatus, 'referrer');
+  assert.equal(result.webSource, 'google.com');
+});
+test('deriveLegacyMediaAndSource_（R8#6・ケース3）：from欠損＋source="direct"→そのまま直接アクセス（偽の媒体・参照元を作らない）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'direct' });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'direct');
+  assert.equal(result.webSource, 'direct');
+});
+test('deriveLegacyMediaAndSource_（R8#6・ケース4）：from欠損＋source="internal"→同一サイト内遷移を外部シグナルへ偽装しない（directのまま）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'internal' });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'direct', '"internal"は外部Web参照元でも媒体でもないため、真の直接アクセスと同じdirect扱いのまま（"internal"という生値をwebSourceへ流用しない）');
+});
+test('deriveLegacyMediaAndSource_（R8#6・ケース5）：fromあり＋sourceが別値→fromが優先されsourceは無視される（V1のcurrentAttribution()と同じfrom優先規則）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: 'chirashi01', referrer: '', source: 'google.com' });
+  assert.equal(result.mediaValidity, 'valid');
+  assert.equal(result.mediaCode, 'chirashi01', 'fromが存在する場合、sourceの値（google.com）を一切参照しない');
+  assert.equal(result.webSourceStatus, 'none', 'referrerも空なので、sourceから参照元を推測復元したりしない');
+});
+test('deriveLegacyMediaAndSource_（R8#6）：referrerフィールド自体が既に外部参照元を示している場合は、そちらを優先する（sourceからの復元より一次情報を信頼する）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: 'https://www.yahoo.co.jp/', source: 'meishi' });
+  // referrerが実際に存在する（=より信頼できる一次情報）ため、sourceが仮に別の値
+  // （"meishi"＝媒体コード相当）を示していても、referrer由来のWeb参照元が優先される。
+  assert.equal(result.webSourceStatus, 'referrer');
+  assert.equal(result.webSource, 'www.yahoo.co.jp');
+  // sourceの"meishi"はreferrerが存在する時点でrecoverLegacySourceLabel_のkind==='media'
+  // 分岐が独立して評価され媒体コードとして復元される（referrer優先はwebSource側だけの
+  // 話であり、媒体コード復元はreferrerの有無と無関係に働く。実データでは通常
+  // fromが空でsourceが媒体コード相当の値を持つケース自体が稀＝from保存開始前は
+  // 媒体コードがあればfrom相当としてsourceへ格納されていたはずのため、この組合せは
+  // 理論上のfixtureであることを明示する）。
+  assert.equal(result.mediaValidity, 'valid');
+  assert.equal(result.mediaCode, 'meishi');
+});
+test('deriveLegacyMediaAndSource_（R8#6）：sourceフィールド自体が無い（未指定）行は、従来どおりfrom/referrerだけで判定される（後方互換・回帰なし）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '' });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'direct');
 });
 
 test('buildLegacyPseudoSessions_: hash有り・同一visitor_hash同一日の3行は1visitへ集約される（V1のgroupVisits_と同じ単位）', () => {

@@ -135,6 +135,66 @@ test('logInteractionV2Verify: audが異なるJWTは401（正式名logInteraction
   assert.equal(result.statusCode, 401);
 });
 
+/* ===================================================================
+ * 独立監査再提出R8・項目2：logInteractionV2VerifyのCORSヘッダー。
+ * 以前はOPTIONS・POSTのどちらの応答にもCORSヘッダーを一切設定しておらず、実ブラウザ
+ * からのpreflight・実リクエストの双方が失敗していた（Node fetchベースのE2Eはブラウザ
+ * CORSを再現しないため検知できていなかった）。VERIFYはJWT Bearerを唯一の認可正本と
+ * するため、PRODのようなOrigin allowlist（403拒否）は行わず、任意のOrigin
+ * （ローカル検証ページ含む）からのCORSを許可しつつ、Access-Control-Allow-Credentials
+ * は一切送らない（cookie認証を使わない設計）ことを確認する。
+ * =================================================================== */
+test('logInteractionV2Verify: OPTIONS（preflight）応答にCORSヘッダーが付与される（任意のOrigin。ローカル検証ページを想定）', async () => {
+  const result = await invoke(functions.logInteractionV2Verify, {
+    method: 'OPTIONS', headers: { origin: 'http://localhost:8080', 'access-control-request-headers': 'authorization,content-type' }
+  });
+  assert.equal(result.statusCode, 204);
+  assert.equal(result.headers['Access-Control-Allow-Origin'], 'http://localhost:8080');
+  assert.equal(result.headers['Access-Control-Allow-Methods'], 'POST, OPTIONS');
+  assert.equal(result.headers['Access-Control-Allow-Headers'], 'Content-Type, Authorization');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.headers, 'Access-Control-Allow-Credentials'), false, 'cookie認証を使わない設計のためAllow-Credentialsは一切送らない');
+});
+test('logInteractionV2Verify: 認可なしPOST（401）にもCORSヘッダーが付与される（PRODのOrigin allowlistとは異なり403にならない）', async () => {
+  const result = await invoke(functions.logInteractionV2Verify, {
+    method: 'POST', headers: { origin: 'http://localhost:8080', 'content-type': 'application/json' },
+    body: { schemaVersion: 2, event_id: 'e'.repeat(12), visit_id: 'v'.repeat(16), occurredAt: Date.now(), eventType: 'page_view' }
+  });
+  assert.equal(result.statusCode, 401, 'VERIFYはOriginではなくJWT Bearerだけで認可判定するため、未許可Originでも403にはならず401（認可なし）になる');
+  assert.equal(result.headers['Access-Control-Allow-Origin'], 'http://localhost:8080');
+  assert.equal(result.headers['Access-Control-Allow-Headers'], 'Content-Type, Authorization');
+});
+test('logInteractionV2Verify: 有効なJWTを持つ認証済みPOSTにもCORSヘッダーが付与される', async () => {
+  const secret = 'unit-verify-secret-not-real-0123456789abcdef';
+  process.env.VERIFY_JWT_SECRET = secret;
+  const { signVerifyJwt } = require('../lib/funnelV2');
+  const { token } = signVerifyJwt(secret, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
+  // Firestoreへの実書き込みに到達させず（本ファイルは実DBを持たないunit test）、
+  // JWT検証（401ゲート）を通過した後で意図的に不正な本文（content-typeとbodyの
+  // 不一致でJSONパース失敗）により400で止める＝「認可を通過したリクエスト」の
+  // CORSヘッダーを確認する目的に限定する。
+  const result = await invoke(functions.logInteractionV2Verify, {
+    method: 'POST',
+    headers: { origin: 'http://localhost:8080', 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    rawBody: Buffer.from('{not valid json')
+  });
+  assert.equal(result.statusCode, 400, 'JWT検証自体は通過し、その先のボディパースで400になること（＝401ではないことがJWT認可通過の証拠）');
+  assert.equal(result.headers['Access-Control-Allow-Origin'], 'http://localhost:8080');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.headers, 'Access-Control-Allow-Credentials'), false);
+});
+test('logInteractionV2Verify: Originヘッダーが無いリクエストでもCORSヘッダー自体は設定される（ワイルドカードへfallback。Origin allowlistで403にはしない）', async () => {
+  const result = await invoke(functions.logInteractionV2Verify, {
+    method: 'OPTIONS', headers: {}
+  });
+  assert.equal(result.statusCode, 204);
+  assert.equal(result.headers['Access-Control-Allow-Origin'], '*');
+});
+test('logInteractionV2（PROD writer）: 既存のOrigin allowlist挙動（403）はR8で無変更のまま維持される（回帰確認）', async () => {
+  const result = await invoke(functions.logInteractionV2, {
+    method: 'OPTIONS', headers: { origin: 'http://localhost:8080' }
+  });
+  assert.equal(result.statusCode, 403, 'PROD writerは引き続きOrigin allowlist方式のまま（VERIFY用の変更はlogInteractionV2Verify専用であり、PRODへは波及しない）');
+});
+
 test('getFunnelInsightsV2: トークンなしは401（既存getFunnelDashboard等と同じ認可契約）', async () => {
   process.env.FUNNEL_DASHBOARD_TOKEN = 'unit-dashboard-token';
   const result = await invoke(functions.getFunnelInsightsV2, { method: 'GET' });

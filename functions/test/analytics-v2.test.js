@@ -54,7 +54,14 @@ function browser(opts) {
     location,
     localStorage: {
       getItem(key) { return localStore.has(key) ? localStore.get(key) : null; },
-      setItem(key, value) { localStore.set(key, String(value)); },
+      // 独立監査再提出R8・項目5：opts.brokenLocalStorageWriteが真の場合、setItem()自体は
+      // 例外を投げず「成功したかのように」振る舞うが、実際に保存される値は要求された
+      // 値とは異なる（＝一部のブラウザ・プライバシーモード等で実際に起こり得る
+      // 「書込みは成功するが読戻しが不一致になる」ケースを再現するテスト専用フック）。
+      setItem(key, value) {
+        if (opts.brokenLocalStorageWrite) { localStore.set(key, String(value) + '_SILENTLY_CORRUPTED'); return; }
+        localStore.set(key, String(value));
+      },
       removeItem(key) { localStore.delete(key); }
     },
     sessionStorage: {
@@ -282,6 +289,46 @@ test('localStorage書込みができない環境ではvisitorIdPersisted=false�
   brokenStore.set = () => { throw new Error('quota exceeded'); };
   const b = browser({ url: 'https://aoki-tosou.net/', localStore: brokenStore });
   assert.equal(b.fetchCalls[0].body.visitorIdPersisted, false);
+});
+
+/* =====================================================================
+ * 独立監査再提出R8・項目5：visitorIdPersistedの読戻し確認。
+ * 以前はsafeLocalSetが例外を投げなかっただけでpersisted=trueにしていたため、
+ * setItem()自体は「成功したように振る舞う」が実際には書き込まれない・別の値に
+ * 化ける、という一部のブラウザ実装（プライバシーモード・サードパーティストレージ
+ * 分割等）で実際に起こり得るケースを、誤ってpersisted=true（＝サーバー側で
+ * hashReliable=trueの根拠になる）として送ってしまっていた。setItem後にgetItemで
+ * 読み戻し、書いた値と完全一致した場合だけtrueとする修正を検証する。
+ * ===================================================================== */
+test('R8#5：setItemは例外を投げないが読戻しが書いた値と不一致（サイレント破損）だと、visitorIdPersisted=falseを正直に送る', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', brokenLocalStorageWrite: true });
+  await tick();
+  assert.equal(b.fetchCalls.length, 1);
+  assert.equal(b.fetchCalls[0].body.visitorIdPersisted, false, 'setItem自体は例外を投げていないが、読戻しが一致しないためpersisted=falseとして正直に報告するはず');
+});
+test('R8#5：読戻し不一致（サイレント破損）でvisitorIdPersisted=falseになったイベントは、サーバー側評価でもhashReliable=falseになる（実際のevaluateVisitorIdentityで確認）', async () => {
+  const { evaluateVisitorIdentity } = require('../lib/funnelV2');
+  const b = browser({ url: 'https://aoki-tosou.net/', brokenLocalStorageWrite: true });
+  await tick();
+  const sentBody = b.fetchCalls[0].body;
+  assert.equal(sentBody.visitorIdPersisted, false);
+  const identity = evaluateVisitorIdentity(sentBody.visitorId, sentBody.visitorIdPersisted);
+  assert.equal(identity.hashReliable, false, 'persisted=falseで送られたvisitorIdは、visitorId自体の形式が正しくてもhashReliable=falseになる契約（サーバー側の既存ロジック）');
+  assert.equal(identity.visitorHash, '');
+});
+test('R8#5：setItem後の読戻しが要求どおり一致する健全な場合は、引き続きvisitorIdPersisted=trueを送る（過剰検知しないことの確認）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/' });
+  await tick();
+  assert.equal(b.fetchCalls[0].body.visitorIdPersisted, true);
+});
+test('R8#5：localStorageに保存済みの既存visitorIdが形式不正（自形式"vid2_..."と一致しない）だと、そのまま信用せず新しいvisitorIdを再発行する', async () => {
+  const localStore = new Map([['aoki_analytics_v2_visitor_id', 'not-a-valid-visitor-id-format']]);
+  const b = browser({ url: 'https://aoki-tosou.net/', localStore });
+  await tick();
+  const sentId = b.fetchCalls[0].body.visitorId;
+  assert.notEqual(sentId, 'not-a-valid-visitor-id-format', '形式不正な既存値をそのまま使い回していないこと');
+  assert.match(sentId, /^vid2_[a-zA-Z0-9]+$/, '新しく発行されたvisitorIdは正しい自形式であること');
+  assert.equal(b.fetchCalls[0].body.visitorIdPersisted, true, '再発行した新しいIDは、正常なstorageへ正しく書込み・読戻し確認できているのでpersisted=trueであるはず');
 });
 test('storageが全滅していても、同一ページ内の複数イベントは同じvisitorId・同じvisit_idをメモリ経由で使い回す', () => {
   const brokenStore = new Map();
@@ -546,6 +593,109 @@ test('R6#9訂正：ページを新規に開いても（何度リロードして�
   assert.equal(secondReload.api.isStopped(), true, '2回目のリロードでもまだ試験されない（何度リロードしても回数制限をバイパスできない）');
   assert.equal(secondReload.fetchCalls.length, 0);
 });
+
+/* ===================================================================
+ * 独立監査再提出R8・項目10：401の待機エスカレーション回数（trialCount）とは独立した
+ * 総試行回数上限（totalAttempts・STOP_TOTAL_ATTEMPT_LIMIT）。401以外の失敗が続く限り
+ * trialCountが進まず、無制限ポーリング・ページ再読込による回数上限の迂回が可能に
+ * なっていた欠陥への対応。
+ * =================================================================== */
+test('R8#10：401以外の失敗（一時的な5xx）だけが続く場合でも、実試行総数が上限（STOP_TOTAL_ATTEMPT_LIMIT）に達したらfinalStoppedになり以後は自動試験しない（trialCountは0のまま）', async () => {
+  const b = browser({
+    url: 'https://aoki-tosou.net/',
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 503 })
+  });
+  await tick();
+  assert.equal(b.api.isStopped(), true);
+  const limit = b.api._internal.STOP_TOTAL_ATTEMPT_LIMIT;
+  assert.ok(limit > 4, '総試行数上限は401専用のtrialCount上限（4）より大きい独立した値のはず');
+  for (let i = 0; i < limit; i++) {
+    b.advance(15 * 60 * 1000 + 1000); // rescheduleTrialWaitは常に15分固定（エスカレートしない）
+    b.api._internal.attemptTrialResend();
+    await tick();
+  }
+  let state = b.api._internal.loadStopState();
+  assert.equal(state.trialCount, 0, '401以外の失敗が続いたのでtrialCountは0のまま（401専用カウンタは無関係の失敗で進まない）');
+  assert.equal(state.totalAttempts, limit, `ちょうど上限（${limit}）回まで実際に試行しているはず`);
+  assert.equal(state.finalStopped, false, '上限ちょうどの回数までは、まだ許容される最後の試行として実行される');
+
+  // 上限を超える（limit+1回目の）試行は、実際にはfetchを試みず、その場でfinalStopped化する。
+  const fetchCallsBeforeOverLimit = b.fetchCalls.length;
+  b.advance(120 * 60 * 1000);
+  b.api._internal.attemptTrialResend();
+  await tick();
+  state = b.api._internal.loadStopState();
+  assert.equal(state.finalStopped, true, '401とは無関係の失敗が続いても、総試行数の上限を超えようとした時点でfinalStoppedになる（無制限リトライの防止）');
+  assert.equal(b.fetchCalls.length, fetchCallsBeforeOverLimit, '上限超過時はfetchそのものを試みない（試行済み回数を1つも超えて消費しない）');
+
+  // finalStopped後は、待機時間が経過していても追加の試行が一切発生しない。
+  const fetchCallsAfterFinalStopped = b.fetchCalls.length;
+  b.advance(120 * 60 * 1000);
+  b.api._internal.attemptTrialResend();
+  await tick();
+  assert.equal(b.fetchCalls.length, fetchCallsAfterFinalStopped, 'finalStopped後はいつ呼んでも追加のfetchが一切発生しない');
+});
+test('R8#10：totalAttemptsは401か否かに関わらずすべての実試行を数える一方、trialCountは401再発時だけ進む（2つのカウンタの独立性）', async () => {
+  const b = browser({
+    url: 'https://aoki-tosou.net/',
+    // callIndex: 0=初回401（停止開始）。以後の試験再送はcallIndexの偶奇で401/503を交互に返す。
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex % 2 === 0 ? 401 : 503 })
+  });
+  await tick();
+  assert.equal(b.api.isStopped(), true);
+  for (let i = 0; i < 5; i++) {
+    b.advance(120 * 60 * 1000 + 1000); // どのエスカレート段階でも足りる長さ（上限120分）だけ進める
+    b.api._internal.attemptTrialResend();
+    await tick();
+  }
+  const state = b.api._internal.loadStopState();
+  assert.equal(state.totalAttempts, 5, '401・503のどちらの結果でも、実際に試行した回数はすべてtotalAttemptsへ数えられる');
+  assert.ok(state.trialCount > 0 && state.trialCount < state.totalAttempts,
+    `trialCount（${state.trialCount}）は401だった回数分だけ進み、503の回では進まないため、必ずtotalAttempts（${state.totalAttempts}）より少ない`);
+});
+test('R8#10：ページ再読込（同じlocalStorageを引き継ぐ新しいbrowser()インスタンス）を挟んでも、累積の総試行数上限を迂回できない（無制限ポーリング／リロードバイパスの防止）', async () => {
+  // 実ブラウザではリロードしても壁時計は止まらない（JSヒープ・クロージャだけが
+  // リセットされる）。browser()harnessの各インスタンスは自前のcurrentNowを
+  // opts.now起点で個別に持つため、この壁時計の連続性をテスト側で明示的に模擬する
+  // （simulatedNowを共有し、advance()のたびに両方へ加算する）。
+  const shared = new Map();
+  let simulatedNow = RealDate.parse('2026-09-07T00:00:00+09:00');
+  let b = browser({
+    url: 'https://aoki-tosou.net/', localStore: shared, now: simulatedNow,
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 503 })
+  });
+  await tick();
+  const limit = b.api._internal.STOP_TOTAL_ATTEMPT_LIMIT;
+  const half = Math.floor(limit / 2);
+  for (let i = 0; i < half; i++) {
+    const step = 15 * 60 * 1000 + 1000;
+    b.advance(step); simulatedNow += step;
+    b.api._internal.attemptTrialResend();
+    await tick();
+  }
+  let state = b.api._internal.loadStopState();
+  assert.equal(state.totalAttempts, half, '前半分の試行がlocalStorageへ記録されている');
+  assert.equal(state.finalStopped, false);
+
+  // 「ページ再読込」を、同じlocalStorage（Map）を共有し、壁時計も引き継いだ新しい
+  // browser()インスタンスの生成で模擬する。init()が再度走るが、nextTrialAtがまだ
+  // 先なので何も起きないはず（即時試験しない＝R6#9訂正の契約を維持したまま）。
+  b = browser({ url: 'https://aoki-tosou.net/', localStore: shared, now: simulatedNow, fetchResponder: () => ({ status: 503 }) });
+  await tick();
+  state = b.api._internal.loadStopState();
+  assert.equal(state.totalAttempts, half, 'リロード直後・nextTrialAt未到来の時点ではtotalAttemptsは増えない（即時試験しない）');
+
+  // リロード後の新しいインスタンスでも、残り試行を繰り返せば同じ累積上限へ到達する
+  // （state自体はlocalStorage経由で正しく引き継がれている）。
+  for (let i = 0; i < limit - half + 1; i++) {
+    const step = 15 * 60 * 1000 + 1000;
+    b.advance(step); simulatedNow += step;
+    b.api._internal.attemptTrialResend();
+    await tick();
+  }
+  state = b.api._internal.loadStopState();
+  assert.equal(state.finalStopped, true, 'リロードを挟んでも、累積の総試行数が上限を超えればfinalStoppedになる（リロードによる回数上限の迂回はできない）');
+});
 test('resumeAfterStop()でQA目的に即時再開できる（trialCount・finalStoppedを含む状態を完全に破棄する）', async () => {
   const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) });
   await tick();
@@ -615,4 +765,104 @@ test('R7#6：sendBeaconのBlobはtext/plain（CORS safelisted）を使う（appl
   assert.equal(b.beacons.length, 1);
   assert.equal(b.beacons[0].contentType, 'text/plain', 'application/jsonはCORS safelistedではなく、preflightできないsendBeaconでは不安定になり得るためtext/plainを使う');
   assert.equal(b.beacons[0].body.eventType, 'page_view', '送信内容自体（JSON文字列）はContent-Type変更の影響を受けず無変更のまま');
+});
+
+/* =====================================================================
+ * 独立監査再提出R8・項目4：壊れたsessionStorage状態によるイベント消失の防止。
+ * 以前のloadVisitState()は「JSON objectか」しか確認しておらず、visitId欠損・
+ * 形式不正な保存状態でもlastActivityAtが新しければそのまま「現在の訪問」として
+ * 使い続け、V2 writerが400（恒久4xx）で拒否 → sendViaFetchの契約で永久削除、
+ * を繰り返す＝タイムアウト（30分）が来るまでイベントがサイレントに失われ続ける
+ * バグだった。isValidVisitState()による厳格検証（R8で新設）が、この種の破損
+ * 状態を検知して無効化し、新しいvisitIdを発行することを確認する。
+ * ===================================================================== */
+const { VISIT_ID_PATTERN } = require('../lib/funnelV2');
+
+/** 対象のsessionStorageキー（"visit状態"用）を、実際に正常動作した1回のbrowser()
+ * インスタンスから動的に特定する（キー名をこのテストファイルへハードコードしない＝
+ * analytics-v2.js側でキー名が変わっても追従する）。 */
+function visitStateSessionKey() {
+  const probe = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 200 }) });
+  const keys = Array.from(probe.sessionStore.keys());
+  assert.equal(keys.length, 1, 'visit状態のsessionStorageキーは1つだけのはず（想定外のキーが増えている可能性）');
+  return keys[0];
+}
+const VISIT_STATE_SESSION_KEY = visitStateSessionKey();
+
+function assertFreshValidVisitGenerated(fetchCalls, detail) {
+  assert.equal(fetchCalls.length, 1, detail);
+  const body = fetchCalls[0].body;
+  assert.ok(VISIT_ID_PATTERN.test(body.visit_id), `新しく発行されたvisit_idがV2 writerの中核検証（VISIT_ID_PATTERN）を満たすこと。実値=${body.visit_id}`);
+  assert.equal(body.schemaVersion, 2);
+  assert.ok(typeof body.event_id === 'string' && body.event_id.length > 0);
+}
+
+test('R8#4：sessionStorageの保存済みvisit状態が空オブジェクト{}だと、無効化されて新しいvisitIdが発行される', async () => {
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify({})]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assertFreshValidVisitGenerated(b.fetchCalls, '空オブジェクトの保存状態は無効として扱われ、新しい訪問が1件生成されるはず');
+});
+
+test('R8#4：保存済みvisitIdの形式が不正（V2 writerのVISIT_ID_PATTERNを満たさない）だと、その状態は無効化され新しいvisitIdが発行される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    visitId: 'not-a-valid-visit-id!!', // VISIT_ID_PATTERN（[A-Za-z0-9_-]{16,100}）を満たさない（!!を含む）
+    startedAt: now, lastActivityAt: now, boundaryKey: null,
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assertFreshValidVisitGenerated(b.fetchCalls, '不正な形式のvisitIdを持つ保存状態は無効として扱われるはず');
+  assert.notEqual(b.fetchCalls[0].body.visit_id, brokenState.visitId, '壊れたvisitIdをそのまま使い回していないこと');
+});
+
+test('R8#4：保存済みlastActivityAtが型不正（数値でない）だと、その状態は無効化され新しいvisitIdが発行される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    visitId: 'vst2_looksvalidbutlastactivityatisbroken',
+    startedAt: now, lastActivityAt: 'not-a-number', boundaryKey: null, // ここが型不正
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assertFreshValidVisitGenerated(b.fetchCalls, 'lastActivityAtが型不正な保存状態は無効として扱われるはず');
+  assert.notEqual(b.fetchCalls[0].body.visit_id, brokenState.visitId);
+});
+
+test('R8#4：保存済みvisit状態が破損JSON（パース不能な文字列）だと、無効化されて新しいvisitIdが発行される（従来からのtry/catchで例外は既に吸収されるが、その後null相当として正しく扱われることまで確認）', async () => {
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, '{this is not valid json']]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assertFreshValidVisitGenerated(b.fetchCalls, '破損JSONの保存状態は無効として扱われ、新しい訪問が1件生成されるはず');
+});
+
+test('R8#4：visitIdが欠損（フィールド自体が無い）保存状態も無効化される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    startedAt: now, lastActivityAt: now, boundaryKey: null,
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+    // visitId自体が無い
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assertFreshValidVisitGenerated(b.fetchCalls, 'visitId欠損の保存状態は無効として扱われるはず');
+});
+
+test('R8#4：正常な保存済みvisit状態（有効な形式）は引き続きそのまま再利用される（過剰検知しないことの確認）', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const healthyState = {
+    visitId: 'vst2_healthystatereusedcorrectly0001',
+    startedAt: now - 60000, lastActivityAt: now - 60000, boundaryKey: null,
+    mediaCode: 'meishi', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  assert.ok(VISIT_ID_PATTERN.test(healthyState.visitId), 'このテスト自体のfixtureが正しいVISIT_ID_PATTERN形式であること（前提条件）');
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(healthyState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.equal(b.fetchCalls.length, 1);
+  assert.equal(b.fetchCalls[0].body.visit_id, healthyState.visitId, '正常な保存状態は無効化されず、そのまま再利用されるはず（誤検知でイベントを無駄に新規visit化しない）');
 });

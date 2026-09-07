@@ -201,6 +201,12 @@ exports.logInteractionV2Verify = onRequest(
     serviceAccount: VERIFY_RUNTIME_SERVICE_ACCOUNT
   },
   async (req, res) => {
+    // 独立監査再提出R8・項目2：以前はOPTIONSへ204を返すだけでCORSヘッダーを
+    // 一切設定しておらず（POST応答にも同様に無かった）、実ブラウザからのCORS
+    // preflight・実リクエストの双方が失敗していた（Node fetchベースのE2Eは
+    // ブラウザCORSを再現しないため、この欠陥をこれまで検知できていなかった）。
+    // OPTIONS・POSTのどちらの応答経路でも必ずCORSヘッダーを設定する。
+    setVerifyCorsHeaders(req, res);
     if (req.method === 'OPTIONS') return res.status(204).send('');
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
     const verdict = verifyVerifyRequest_(req);
@@ -273,7 +279,15 @@ function v2PeriodBoundsMs_(bounds) {
  * は従来どおりeventType/dayKey/visitorHashValueだけを見るため無影響のまま、
  * funnelV2.jsのbuildLegacyPseudoSessions_（legacyをV2のvisit_sessionsと同じ形状へ
  * 変換し、真にV2の集計パイプラインへ合流させる。「除外してlegacyAttributionScopeへ
- * 書くだけ」では後方互換契約を満たさないという指摘への対応）が、この追加フィールドを使う。 */
+ * 書くだけ」では後方互換契約を満たさないという指摘への対応）が、この追加フィールドを使う。
+ * 監査差し戻し（独立監査再提出R8）#6：sourceフィールドも追加した。from保存開始
+ * （2026-08-31）より前に記録されたraw logはfromが空のままだが、source列には
+ * V1クライアント（js/analytics.js）が計算していたfrom／UTM／referrer統合値が
+ * 残っている可能性がある。以前はこの情報を一切読まずに捨てており、from保存開始前の
+ * 旧ログは実際には媒体・参照元情報を持っていても常にmediaValidity='none'へ縮退して
+ * いた（有効な旧情報の損失）。funnelV2.jsのderiveLegacyMediaAndSource_が、fromが
+ * 空の行に限りこのsourceから安全な復元を試みる（fromが存在する行はfrom優先・
+ * sourceは無視。詳細はrecoverLegacySourceLabel_のコメント参照）。 */
 async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
   const snapshot = await db.collection(collections.interactionLogs)
     .where('created_at', '>=', new Date(startAt)).where('created_at', '<', new Date(endAt)).get();
@@ -288,7 +302,8 @@ async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
     if (!createdAt) return;
     const row = {
       eventType: String(data.event_type || ''), dayKey: jstDateKey(createdAt), visitorHashValue: String(data.visitor_hash || ''),
-      at: createdAt.getTime(), from: String(data.from || ''), referrer: String(data.referrer || ''), docId: doc.id
+      at: createdAt.getTime(), from: String(data.from || ''), referrer: String(data.referrer || ''),
+      source: String(data.source || ''), docId: doc.id
     };
     (category === 'legacy_unknown' ? hashPresentRows : hashMissingRows).push(row);
   });
@@ -675,6 +690,44 @@ function setCorsHeaders(req, res) {
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Vary', 'Origin');
   return true;
+}
+
+/**
+ * VERIFY writer（logInteractionV2Verify）専用のCORSヘッダー設定（独立監査再提出R8・
+ * 項目2への対応）。
+ *
+ * PROD writer（logInteractionV2）のsetCorsHeaders()は、本番サイトの既知オリジン
+ * （ALLOWED_ORIGINS）だけを許可するallowlist方式であり、それ以外のOriginは403で
+ * 拒否する。これはPRODが「本番サイトからのみ呼ばれる」という前提に立つ設計であり、
+ * 正しい。
+ *
+ * 一方VERIFYは、JWT Bearerを唯一の認可正本とする設計であり（cookie認証・
+ * Access-Control-Allow-Credentialsは一切使わない）、そもそも「ローカル検証ページ
+ * （localhost・file://・その他任意のOrigin）から呼べる」ことが要件になっている。
+ * PRODと同じOrigin allowlistを適用すると、この要件を構造的に満たせない
+ * （ローカル検証ページのOriginは絶対にALLOWED_ORIGINSへ含められない＝含めると
+ * 本番サイトの既知オリジン一覧という意味が壊れる）。
+ *
+ * Credentialsを一切送らない（Access-Control-Allow-Credentialsを設定しない）設計で
+ * あれば、リクエストのOriginをそのまま反射する（無ければワイルドカード）ことに
+ * 秘匿情報漏洩のリスクは無い：ブラウザはAccess-Control-Allow-Credentials:trueが
+ * 無い限りCookie等の資格情報を一切送らないため、CORSの「Originを許可した」ことが
+ * 意味する範囲は「レスポンス本文をそのOriginのJSから読めるようにする」ことだけであり、
+ * 実際の認可はJWT Bearer（Authorizationヘッダー。CORS preflightの対象であり、
+ * ブラウザは許可されたOriginへしかAuthorizationヘッダー付きの実リクエストを
+ * 進めない）が担う。
+ *
+ * OPTIONS（preflight）・POST（実リクエスト。401/400/200等どの応答でも）の両方に
+ * 必ず呼ぶこと（呼び出し漏れがあると、そのレスポンスだけブラウザ側でCORSエラーに
+ * なり、実際にはサーバー側の処理が成功していてもクライアントからは失敗に見える）。
+ */
+function setVerifyCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  res.set('Access-Control-Allow-Origin', origin || '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Vary', 'Origin');
+  // Access-Control-Allow-Credentialsは意図的に設定しない（cookie認証を使わない設計）。
 }
 
 function optionalString(value, maxLength) {

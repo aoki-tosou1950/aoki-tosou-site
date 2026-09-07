@@ -133,7 +133,19 @@ function hashDiagnostic_(value) {
  * VISITOR_ID_PATTERNへ一致し、`visitorIdPersisted:true`と組み合わさって
  * `hashReliable=true`（信頼できる訪問）へ誤って昇格してしまう。rawVisitorIdが
  * 文字列型そのものであることを先に確認し、型不正は常に`invalid`／`hashReliable=false`
- * へ縮退させる。 */
+ * へ縮退させる。
+ *
+ * 独立監査再提出R8・項目10：`visitorIdPersisted=true`（クライアントが「読戻し確認まで
+ * 行い、確かに永続化できた」と主張している）にもかかわらずvisitorId自体が欠損・不正な
+ * 場合は、単純な型・形式不正（'invalid'。persisted自体が欠損/型不正、またはpersisted=
+ * falseでvisitorIdも不正、という「素直に壊れている」ケース）とは性質が異なる：
+ * クライアントの主張（persisted=true）と実際の値（不正なvisitorId）が矛盾している
+ * 状態であり、`visitorIdStatus='inconsistent'`として区別する（クライアント実装の
+ * バグ・改ざん・別スキーマの混入等を示唆する、より警戒すべき異常として運用上
+ * 見分けられるようにする）。hashReliable=false・visitor_hash=''・イベント受理は
+ * 'invalid'の場合と全く同じ扱いのまま維持する（visitorIdStatusは診断用ラベルに
+ * すぎず、これを理由にイベントを拒否する分岐はどこにも無い＝既存の受理契約を
+ * 変えない）。 */
 const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{16,100}$/;
 function evaluateVisitorIdentity(rawVisitorId, rawVisitorIdPersisted) {
   const visitorIdPersisted = rawVisitorIdPersisted === true ? true : (rawVisitorIdPersisted === false ? false : null); // null=欠損/型不正
@@ -142,9 +154,15 @@ function evaluateVisitorIdentity(rawVisitorId, rawVisitorIdPersisted) {
   const visitorIdValid = visitorIdIsString && VISITOR_ID_PATTERN.test(visitorId);
 
   let visitorIdStatus;
-  if (visitorIdPersisted === null) visitorIdStatus = 'invalid'; // persisted自体が欠損/型不正
-  else if (!visitorIdValid) visitorIdStatus = 'invalid'; // visitorId欠損・型不正・形式不正のいずれも含む
-  else visitorIdStatus = 'ok';
+  if (visitorIdPersisted === null) {
+    visitorIdStatus = 'invalid'; // persisted自体が欠損/型不正
+  } else if (!visitorIdValid) {
+    // persisted=trueなのにvisitorIdが欠損・不正＝クライアントの主張と実際の値の矛盾。
+    // persisted=falseでvisitorIdが不正なのは単なる不正値（invalidのまま）。
+    visitorIdStatus = visitorIdPersisted === true ? 'inconsistent' : 'invalid';
+  } else {
+    visitorIdStatus = 'ok';
+  }
 
   const hashReliable = visitorIdPersisted === true && visitorIdValid;
   const visitorHash = hashReliable ? computeVisitorHash(visitorId) : '';
@@ -554,10 +572,74 @@ function deriveLegacyWebSource_(referrer, mediaValidity) {
   return normalizeWebSource(hostname);
 }
 
+/**
+ * 独立監査再提出R8・項目6：V1クライアント（js/analytics.js・currentAttribution()）の
+ * 実装をREAD ONLYで直接確認した結果に基づく、legacy行のsource統合値からの安全な復元。
+ *
+ * V1のsource計算規則（js/analytics.js:currentAttribution()）：
+ *   1. fromパラメータが有れば source=from
+ *   2. 無ければutm_sourceが有れば source="utm_source / utm_medium"（' / '結合。
+ *      utm_medium省略時はutm_sourceのみ）
+ *   3. どちらも無ければ source=referrerSource()（document.referrer無し→'direct'、
+ *      同一ホスト→'internal'、外部ホスト→www.を除いたホスト名、パース失敗→'不明'）
+ *   4. 最終的に空ならsource='不明'
+ * サーバー側（functions/lib/funnel.js:normalizeEvent）がfromフィールドを個別に
+ * 保存し始めたのは2026-08-31以降であり、それより前に記録されたraw logは
+ * from=''のままでも、source列には上記1〜3のいずれかの値（媒体コード相当・
+ * UTM結合文字列・referrer由来ラベル）が入っている可能性がある。
+ *
+ * 'direct'/'internal'/'不明'/空文字は、真の直接アクセス・同一サイト内遷移・
+ * 判定不能を表すV1固有のラベルであり、外部の媒体コード・Web参照元のいずれへも
+ * 変換しない（存在しない外部シグナルを捏造しない）。' / 'を含む値はUTM結合表記
+ * （2. の形）の可能性が高く、媒体コード・Web参照元のどちらとも意味が異なる
+ * ため、判別不能なopaque値として扱い、どちらへも変換しない（安全な非推測表現）。
+ * それ以外の値は、既存の検証ロジック（normalizeMediaCode/normalizeWebSource。
+ * V2書き込み時の検証と同一・新しい検証ロジックを増やさない）へ順に通し、媒体コード
+ * 形式（英数字・アンダースコア・ハイフンのみ、ドット不可）に一致すれば媒体コード
+ * として、それ以外でホスト名形式に一致すればWeb参照元として復元する
+ * （例：'meishi'→媒体コード、'google.com'→Web参照元）。
+ * 【既知の限界・明示】ドットを含まない単語（例：'localhost'）は媒体コードと
+ * ホスト名のどちらの可能性もあり、この順序では媒体コード側を優先する。実PRODの
+ * 旧ログにおけるsource値の実分布をREAD ONLYで確認できていない（この環境からは
+ * 実PRODのFirestoreへ接続できない）ため、これ以上の精緻化は行わない
+ * （安全側＝断定しすぎない設計として許容し、確認不能である旨を明示する）。
+ */
+function recoverLegacySourceLabel_(source) {
+  const s = String(source || '').trim();
+  if (!s || s === 'direct' || s === 'internal' || s === '不明') return { kind: 'none' };
+  if (s.indexOf(' / ') >= 0) return { kind: 'none' }; // UTM結合表記の可能性が高いopaque値
+  const asMedia = normalizeMediaCode(s);
+  if (asMedia.mediaValidity === 'valid') return { kind: 'media', mediaCode: asMedia.mediaCode };
+  const asSource = normalizeWebSource(s);
+  if (asSource.webSourceStatus === 'referrer') return { kind: 'source', webSource: asSource.webSource };
+  return { kind: 'none' };
+}
+
 /** 1件のlegacy raw log行から、V2のvisit_sessionsと同じ媒体・Web参照元フィールドを導出する。 */
 function deriveLegacyMediaAndSource_(row) {
   const media = normalizeMediaCode(row.from);
   const webSource = deriveLegacyWebSource_(row.referrer, media.mediaValidity);
+
+  // 独立監査再提出R8・項目6：fromが存在する行（有効・不正いずれの形式でも）は、
+  // V1のcurrentAttribution()と同じ「fromが最優先」規則により、sourceを一切参照しない
+  // （「fromあり＋sourceが別値」でfromを上書きしない）。fromが空の行（=from保存開始前の
+  // 旧ログ、またはfromパラメータ自体が無かった訪問）でのみ、sourceからの復元を試みる。
+  if (media.mediaValidity !== 'none') {
+    return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: webSource.webSource, webSourceStatus: webSource.webSourceStatus };
+  }
+  const recovered = recoverLegacySourceLabel_(row.source);
+  if (recovered.kind === 'media') {
+    const recoveredMedia = normalizeMediaCode(recovered.mediaCode);
+    const recoveredWebSource = deriveLegacyWebSource_(row.referrer, recoveredMedia.mediaValidity);
+    return { mediaCode: recoveredMedia.mediaCode, mediaValidity: recoveredMedia.mediaValidity, webSource: recoveredWebSource.webSource, webSourceStatus: recoveredWebSource.webSourceStatus };
+  }
+  if (recovered.kind === 'source' && webSource.webSourceStatus !== 'referrer') {
+    // referrerフィールド自体が既に外部参照元を示している場合はそちらを優先する
+    // （実際にブラウザが記録したdocument.referrerの方が、V1が別途計算していた
+    // sourceラベルより一次情報として信頼できる）。referrerが無い/direct相当の
+    // 場合のみ、sourceから復元したWeb参照元を採用する。
+    return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: recovered.webSource, webSourceStatus: 'referrer' };
+  }
   return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: webSource.webSource, webSourceStatus: webSource.webSourceStatus };
 }
 
@@ -783,6 +865,18 @@ function base64urlToBuffer(input) {
 }
 
 const VERIFY_JWT_ISSUER = 'aoki-tosou-funnel-verify-issuer';
+/** 独立監査再提出R8・項目9：VERIFY JWTの発行有効期間の確定上限（15分）。
+ * signVerifyJwt()のttlSeconds既定値と同じ値だが、ここでは「検証側が強制する上限」
+ * として独立に定義する（発行側のデフォルト値を検証側が無条件に信用しない＝
+ * 発行側の実装ミス・ttlSeconds引数の誤指定で長寿命トークンが生成されても、
+ * 検証側でfail-closedに拒否できるようにする）。 */
+const VERIFY_JWT_MAX_TTL_SECONDS = 15 * 60;
+/** iat（発行時刻）の未来方向の許容ずれ（クロックスキュー）。サーバー間の時刻の
+ * わずかなずれを吸収しつつ、明らかに未来のiat（不正な発行・時刻偽装の可能性）は拒否する。 */
+const VERIFY_JWT_CLOCK_SKEW_SECONDS = 60;
+/** jtiの安全な形式：signVerifyJwt()が実際に生成する形式（crypto.randomBytes(16).toString('hex')
+ * ＝32文字の小文字16進数）と一致することを要求する。 */
+const VERIFY_JWT_JTI_PATTERN = /^[0-9a-f]{32}$/;
 
 /** VERIFY書込み用の短命JWTを発行する（ローカル発行スクリプト専用。本番Cloud Functionsは
  * 発行せず検証のみ行う）。 */
@@ -802,14 +896,29 @@ function signVerifyJwt(secret, { sub, aud, scope, ttlSeconds = 15 * 60 }) {
 }
 
 /**
- * VERIFY書込みJWTを検証する（監査差し戻し#6で修正、R2 #3でさらに修正）。
+ * VERIFY書込みJWTを検証する（監査差し戻し#6で修正、R2 #3でさらに修正、独立監査
+ * 再提出R8・項目9でさらに修正）。
  * - 署名確認が完了するまでpayloadのいかなるクレーム（jti含む）も戻り値へ含めない
  *   （署名不正payload由来のjtiを返さない・監査ログへ残さない）。
- * - 署名確認後にのみ iss/sub/aud/scope/exp を全て検証する。
+ * - 署名確認後にのみ iss/sub/aud/scope/exp/iat/jti を全て検証する。
  * - 監査差し戻し（R2 #3）：`expectedSub`は呼出側が渡し忘れると（`if (expectedSub && ...)`の
  *   ままだと）sub検証そのものが無効化されてしまい、確定契約「iss/sub/aud/scope/expを
  *   すべて検証する」が呼出側の実装漏れ次第で崩れる。expectedSub自体の欠損をfail-closedで
  *   拒否する（トークンの中身を一切見る前に、呼出側の設定不備として即座に拒否する）。
+ * - 独立監査再提出R8・項目9：署名後もiat・jti・15分TTL上限を検証していなかった
+ *   （expが期限切れでないことだけを見ており、iat自体が有効な数値かも、
+ *   exp-iatの発行有効期間が確定値15分を超えていないかも、jtiが安全な形式かも
+ *   一切検証していなかった）。以下を追加で検証する：
+ *   (a) iat・expがともに整数であること
+ *   (b) iatが未来すぎないこと（クロックスキュー許容±60秒を超える未来は拒否）
+ *   (c) exp > iat であること（順序が逆転した不正なトークンを拒否）
+ *   (d) exp - iat が確定値15分（VERIFY_JWT_MAX_TTL_SECONDS）を超えないこと
+ *       （発行側の実装ミス・ttlSeconds引数の誤指定で長寿命トークンが生成されても、
+ *       検証側で独立にfail-closedに拒否する＝発行側のデフォルト値を無条件に信用しない）
+ *   (e) jtiが必須の安全な形式（signVerifyJwt()が実際に生成する32文字小文字16進数）
+ *       であること
+ *   jtiのワンタイム使用強制（一度検証に使われたjtiの再利用拒否）は未決事項のため、
+ *   ここでは実装しない（形式・存在検証のみ）。
  */
 function verifyVerifyJwt(token, secret, options) {
   const opts = options || {};
@@ -842,11 +951,23 @@ function verifyVerifyJwt(token, secret, options) {
 
   const now = Math.floor(Date.now() / 1000);
   if (payload.iss !== expectedIss) return { ok: false, reason: 'iss', jti: payload.jti };
+
+  // (a) iat・expがともに整数であること
+  if (typeof payload.iat !== 'number' || !Number.isInteger(payload.iat)) return { ok: false, reason: 'iat', jti: payload.jti };
+  if (typeof payload.exp !== 'number' || !Number.isInteger(payload.exp)) return { ok: false, reason: 'exp', jti: payload.jti };
+  // (b) iatが未来すぎないこと（クロックスキュー許容を超える未来のiatは拒否）
+  if (payload.iat > now + VERIFY_JWT_CLOCK_SKEW_SECONDS) return { ok: false, reason: 'iat_future', jti: payload.jti };
+  // (c) exp > iat であること
+  if (payload.exp <= payload.iat) return { ok: false, reason: 'exp_before_iat', jti: payload.jti };
+  // (d) 発行有効期間（exp-iat）が確定値15分を超えないこと
+  if (payload.exp - payload.iat > VERIFY_JWT_MAX_TTL_SECONDS) return { ok: false, reason: 'ttl_too_long', jti: payload.jti };
   // 監査差し戻し（R2 #3）：exp===now（境界値ちょうど）も期限切れとして扱う（<=）。
-  if (typeof payload.exp !== 'number' || payload.exp <= now) return { ok: false, reason: 'exp', jti: payload.jti };
+  if (payload.exp <= now) return { ok: false, reason: 'exp', jti: payload.jti };
   if (payload.aud !== expectedAud) return { ok: false, reason: 'aud', jti: payload.jti };
   if (payload.scope !== expectedScope) return { ok: false, reason: 'scope', jti: payload.jti };
   if (payload.sub !== expectedSub) return { ok: false, reason: 'sub', jti: payload.jti };
+  // (e) jtiが必須の安全な形式であること
+  if (typeof payload.jti !== 'string' || !VERIFY_JWT_JTI_PATTERN.test(payload.jti)) return { ok: false, reason: 'jti' };
   return { ok: true, jti: payload.jti, sub: payload.sub };
 }
 
@@ -856,6 +977,9 @@ module.exports = {
   MEDIA_CODE_PATTERN,
   EVENT_TYPES,
   VERIFY_JWT_ISSUER,
+  VERIFY_JWT_MAX_TTL_SECONDS,
+  VERIFY_JWT_CLOCK_SKEW_SECONDS,
+  VERIFY_JWT_JTI_PATTERN,
   validateCoreFields,
   normalizeMediaCode,
   normalizeWebSource,
@@ -873,6 +997,7 @@ module.exports = {
   // legacy backward compatibility（独立監査再提出R7・項目4）
   buildLegacyPseudoSessions_,
   deriveLegacyMediaAndSource_,
+  recoverLegacySourceLabel_,
   extractHostnameFromReferrer_,
   signVerifyJwt,
   verifyVerifyJwt,
