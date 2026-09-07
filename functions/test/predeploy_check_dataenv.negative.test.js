@@ -78,3 +78,83 @@ test('負テスト（package.json）：汎用"deploy"スクリプトが存在す
   const { blockList } = checkSource(realSource, badPkg);
   assert.ok(findBlock(blockList, 'package.json:deploy', /汎用"deploy"スクリプトが存在する/), JSON.stringify(blockList));
 });
+
+/* ---------------------------------------------------------------------
+ * 負テスト（R7・項目6追加確認）：firestore.indexes.jsonの複合インデックスゲート。
+ * 実ファイルは一切書き換えず、checkSource()の第3引数（firestoreIndexesOverrides）
+ * でindexesDoc／firebaseJsonを注入して欠陥ケースを再現する（実ファイルI/Oなし）。
+ * ------------------------------------------------------------------- */
+
+const REAL_INDEXES_DOC = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', '..', 'firestore.indexes.json'), 'utf8')
+);
+const REAL_FIREBASE_JSON = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', '..', 'firebase.json'), 'utf8')
+);
+
+test('前提条件：健全なfirestore.indexes.json／firebase.jsonの組み合わせはBLOCKなし', () => {
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: REAL_INDEXES_DOC,
+    firebaseJson: REAL_FIREBASE_JSON
+  });
+  assert.equal(blockList.length, 0, JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：firestore.indexes.jsonが存在しないとBLOCKされる', () => {
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesMissing: true,
+    firebaseJson: REAL_FIREBASE_JSON
+  });
+  assert.ok(findBlock(blockList, 'firestore.indexes.json', /存在しない/), JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：interaction_logsの複合インデックス定義を欠くとBLOCKされる', () => {
+  const badIndexesDoc = JSON.parse(JSON.stringify(REAL_INDEXES_DOC));
+  badIndexesDoc.indexes = badIndexesDoc.indexes.filter((idx) => idx.collectionGroup !== 'interaction_logs');
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: badIndexesDoc,
+    firebaseJson: REAL_FIREBASE_JSON
+  });
+  assert.ok(findBlock(blockList, 'firestore.indexes.json:interaction_logs', /複合インデックス定義が見つからない/), JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：interaction_logs_verifyの複合インデックス定義を欠くとBLOCKされる', () => {
+  const badIndexesDoc = JSON.parse(JSON.stringify(REAL_INDEXES_DOC));
+  badIndexesDoc.indexes = badIndexesDoc.indexes.filter((idx) => idx.collectionGroup !== 'interaction_logs_verify');
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: badIndexesDoc,
+    firebaseJson: REAL_FIREBASE_JSON
+  });
+  assert.ok(findBlock(blockList, 'firestore.indexes.json:interaction_logs_verify', /複合インデックス定義が見つからない/), JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：複合インデックスがevent_typeのみ（occurred_at欠落）だとBLOCKされる', () => {
+  const badIndexesDoc = JSON.parse(JSON.stringify(REAL_INDEXES_DOC));
+  badIndexesDoc.indexes = badIndexesDoc.indexes.map((idx) => {
+    if (idx.collectionGroup !== 'interaction_logs') return idx;
+    return { ...idx, fields: idx.fields.filter((f) => f.fieldPath !== 'occurred_at') };
+  });
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: badIndexesDoc,
+    firebaseJson: REAL_FIREBASE_JSON
+  });
+  assert.ok(findBlock(blockList, 'firestore.indexes.json:interaction_logs', /複合インデックス定義が見つからない/), JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：firebase.jsonが存在しないとBLOCKされる', () => {
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: REAL_INDEXES_DOC,
+    firebaseJsonMissing: true
+  });
+  assert.ok(findBlock(blockList, 'firebase.json', /存在しない/), JSON.stringify(blockList));
+});
+
+test('負テスト（R7#6）：firebase.jsonのfirestore.indexesがfirestore.indexes.jsonを参照していないとBLOCKされる', () => {
+  const badFirebaseJson = JSON.parse(JSON.stringify(REAL_FIREBASE_JSON));
+  delete badFirebaseJson.firestore.indexes;
+  const { blockList } = checkSource(realSource, realPkg, {
+    indexesDoc: REAL_INDEXES_DOC,
+    firebaseJson: badFirebaseJson
+  });
+  assert.ok(findBlock(blockList, 'firebase.json:firestore.indexes', /firestore\.indexes\.jsonを参照していない/), JSON.stringify(blockList));
+});

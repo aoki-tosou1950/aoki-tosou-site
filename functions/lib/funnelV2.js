@@ -523,6 +523,108 @@ function buildQualityAxes(visitSessions) {
 }
 
 /* ============================================================================
+ * legacy backward compatibility（独立監査再提出R7・項目4）
+ * 「legacyを除外してlegacyAttributionScopeへ書くだけ」はV2 reader後方互換契約を
+ * 満たさないという指摘を受け、legacyを実際にV2と同じ集計パイプラインへ合流させる。
+ * ============================================================================ */
+
+/** raw referrer（生のURL、または既にホスト名のみの旧値）からホスト名を安全に取り出す。
+ * URLとしてパースできない値は、既にホスト名のみの形式（旧クライアント実装の可能性）と
+ * みなしそのまま小文字化して使う。空文字・パース失敗ともに例外を投げない。 */
+function extractHostnameFromReferrer_(referrer) {
+  const raw = String(referrer || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch (e) {
+    return raw.toLowerCase();
+  }
+}
+
+/** legacy行のreferrerからwebSource/webSourceStatusを導出する。V2の書き込み検証と
+ * 同一のnormalizeWebSource（ホスト名パターン検証）を再利用する＝新しい検証ロジックを
+ * 増やさない「安全な正規化」。媒体（from）の有無で無referrer時の扱いを分ける規則は
+ * V2クライアント（js/analytics-v2.js）のrawAttributionFromSignalと同一にする
+ * （媒体あり・referrerなし→'none'。媒体なし・referrerなし→真の直接アクセス'direct'）。 */
+function deriveLegacyWebSource_(referrer, mediaValidity) {
+  const hostname = extractHostnameFromReferrer_(referrer);
+  if (!hostname) {
+    return mediaValidity === 'none' ? { webSource: 'direct', webSourceStatus: 'direct' } : { webSource: '', webSourceStatus: 'none' };
+  }
+  return normalizeWebSource(hostname);
+}
+
+/** 1件のlegacy raw log行から、V2のvisit_sessionsと同じ媒体・Web参照元フィールドを導出する。 */
+function deriveLegacyMediaAndSource_(row) {
+  const media = normalizeMediaCode(row.from);
+  const webSource = deriveLegacyWebSource_(row.referrer, media.mediaValidity);
+  return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: webSource.webSource, webSourceStatus: webSource.webSourceStatus };
+}
+
+/**
+ * legacy（visit_idを持たない旧方式）のraw log行を、V2のvisit_sessionsと同じ形状の
+ * 疑似セッションオブジェクトへ変換する。buildQualityAxes／buildLeadScoreBreakdownV2
+ * 相当の集計へそのまま合流できるようにするための橋渡し。
+ *
+ * - hash有り（legacyHashPresentRows）：V1のgroupVisits_と同じdayKey+visitor_hash単位で
+ *   1visitへ集約する（正本の訪問単位定義をそのまま踏襲。V1のbuildVisitSummary_と同じ
+ *   規則で、グループ内最初のpage_view行のfrom/referrerをその訪問の媒体・参照元とする）。
+ * - hash無し（legacyHashMissingRows）：同一人物の判定根拠が無いため、page_view行を
+ *   1行＝1visitとして個別に扱う（独立監査再提出R6・項目2と同じ方針を踏襲。groupVisits_
+ *   の共通"(不明)"キーで複数行を1visitへ結合しない）。
+ * - reaction（line_click/phone_click）行：どの訪問に属するか安全に結合できないため
+ *   （legacyの記録にはvisit境界という概念自体が無い）、訪問へは一切紐付けず、
+ *   reactionCount>0のreaction-only疑似セッションとして個別に追加する（推測結合はしない）。
+ *
+ * @param {Array<object>} legacyHashPresentRows {eventType, dayKey, visitorHashValue, at,
+ *   from, referrer, docId}形状の行（page_view／line_click／phone_click混在。isTestは
+ *   呼び出し元のfetchLegacyRowsForGrouping_で既に除外済み）
+ * @param {Array<object>} legacyHashMissingRows 同上の形状（visitorHashValueは常に空文字）
+ * @returns {Array<object>} visit_sessions互換の疑似セッション配列（legacySource・
+ *   legacyVisitIdフィールドを追加で持つ＝drilldown側でat/visitId相当として使う）
+ */
+function buildLegacyPseudoSessions_(legacyHashPresentRows, legacyHashMissingRows) {
+  const sessions = [];
+  const presentRows = legacyHashPresentRows || [];
+  const missingRows = legacyHashMissingRows || [];
+
+  // --- hash有り：dayKey+hash単位でpage_viewを集約（V1のgroupVisits_をそのまま使う） ---
+  const grouped = groupVisits_(presentRows);
+  grouped.forEach((rowsInVisit, key) => {
+    const first = rowsInVisit[0]; // groupVisits_内でat昇順ソート済み
+    const derived = deriveLegacyMediaAndSource_(first);
+    sessions.push(Object.assign({}, derived, {
+      hasPageView: true, reactionCount: 0, isTest: false, pageViewCount: rowsInVisit.length,
+      startedAt: first.at, legacySource: 'legacy_hash_present', legacyVisitId: 'legacy:' + key
+    }));
+  });
+
+  // --- hash無し：page_view行を1行＝1visitとして個別扱い ---
+  missingRows.filter((r) => r.eventType === 'page_view').forEach((row) => {
+    const derived = deriveLegacyMediaAndSource_(row);
+    sessions.push(Object.assign({}, derived, {
+      hasPageView: true, reactionCount: 0, isTest: false, pageViewCount: 1,
+      startedAt: row.at, legacySource: 'legacy_hash_missing', legacyVisitId: 'legacy:row:' + (row.docId || key_(row))
+    }));
+  });
+
+  // --- reaction行（hash有り・無し問わず）：訪問へ結合せず個別のreaction-onlyとして追加 ---
+  presentRows.concat(missingRows)
+    .filter((r) => r.eventType === 'line_click' || r.eventType === 'phone_click')
+    .forEach((row) => {
+      const derived = deriveLegacyMediaAndSource_(row);
+      sessions.push(Object.assign({}, derived, {
+        hasPageView: false, reactionCount: 1, isTest: false, pageViewCount: 0,
+        startedAt: row.at, legacySource: 'legacy_reaction', legacyVisitId: 'legacy:reaction:' + (row.docId || key_(row)),
+        legacyReactionEventType: row.eventType
+      }));
+    });
+
+  function key_(row) { return row.dayKey + ':' + (row.visitorHashValue || '(不明)') + ':' + row.at; }
+  return sessions;
+}
+
+/* ============================================================================
  * 見込み度（単位D、独立監査再提出版：2026-09-07）
  * 監査差し戻し：独自の簡易スコア式（反応あり=高／3PV=中／それ以外=低）は未承認のまま
  * 使用していたため撤回した。V1の判定式（functions/lib/funnel.jsのcomputeLeadScore_）を
@@ -768,6 +870,10 @@ module.exports = {
   buildQualityAxes,
   buildLeadScoreBreakdownV2,
   computeSessionLeadScoreV1Compat_,
+  // legacy backward compatibility（独立監査再提出R7・項目4）
+  buildLegacyPseudoSessions_,
+  deriveLegacyMediaAndSource_,
+  extractHostnameFromReferrer_,
   signVerifyJwt,
   verifyVerifyJwt,
   // V1互換ヘルパー（契約テストで直接比較するためexportする）

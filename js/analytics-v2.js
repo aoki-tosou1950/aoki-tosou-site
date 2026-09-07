@@ -359,7 +359,16 @@
           updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
           if (onSettled) onSettled('network_error');
         });
-      } catch (err) { if (onSettled) onSettled('exception'); }
+      } catch (err) {
+        // 監査差し戻し（独立監査再提出R7）#5：window.fetch(...)の呼び出し自体が同期的に
+        // 例外を投げた場合（.then/.catchへ到達する前の失敗。CSP違反等で稀に発生し得る）も、
+        // 非同期の.catch()分岐と同じくattempts/nextRetryAtを更新する。以前はここが未更新の
+        // ままonSettled('exception')だけを呼んでおり、このitemの通常再送スケジュール
+        // （backoffForAttempts）が一切進まないまま取り残される欠陥だった。
+        var attempts = Number(item.attempts || 0) + 1;
+        updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
+        if (onSettled) onSettled('exception');
+      }
     }
 
     /** 離脱時専用：sendBeaconで送るが、成功してもoutboxからは削除しない
@@ -367,7 +376,18 @@
     function sendViaBeaconBestEffort(event) {
       try {
         if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
-        var blob = new Blob([JSON.stringify(event)], { type: 'application/json' });
+        // 監査差し戻し（独立監査再提出R7）#6：ENDPOINTはサイト（aoki-tosou.net）とは別オリジン
+        // （...cloudfunctions.net）のため、sendBeacon()は必ずcross-originのリクエストになる。
+        // sendBeacon()はpreflight（OPTIONS）を一切行えない設計のため、Blobのtypeを
+        // 'application/json'にすると、ブラウザによってはCORS safelisted値ではない
+        // Content-Typeとして扱われ、cross-origin時に送信内容や到達性が不安定になり得る。
+        // サーバー（parseRequestBody・handleV2Wireのcontent-typeチェック）は元々
+        // 'text/plain'も明示的に許容している（V2_MAX_BODY_BYTES等のcontent-typeチェックが
+        // application/jsonとtext/plainの両方をOKとする設計）ため、CORS safelistedな
+        // 'text/plain'へ変更する（実際の送信内容＝JSON文字列は無変更。Content-Type表示だけ
+        // 変える）。既存の実務手法（Google Analytics等の主要な計測クライアントが
+        // 同じ理由でsendBeaconにtext/plainを使う）と同じ対処。
+        var blob = new Blob([JSON.stringify(event)], { type: 'text/plain' });
         return navigator.sendBeacon(ENDPOINT, blob);
       } catch (err) { return false; }
     }
@@ -408,7 +428,22 @@
       var oldest = list.reduce(function(a, b) { return Number(a.addedAt) <= Number(b.addedAt) ? a : b; });
       sendViaFetch(oldest, function(kind) {
         if (kind === 'success') { clearStop(); flushOutboxViaFetch(); }
-        else { rescheduleTrialAfterFailedAttempt(); } // 401再発・恒久4xx・一時的失敗のいずれも「試験1回」として数える
+        else if (kind === 'stop') {
+          // 監査差し戻し（独立監査再提出R7）#5：401（認可拒否）の再発だけがtrialCountを
+          // 進める（15/30/60/120分・上限4回の対象）。恒久4xx・一時的失敗・通信エラーは
+          // 401の試行回数を消費しない（下のelse節）。
+          rescheduleTrialAfterFailedAttempt();
+        } else {
+          // 監査差し戻し（独立監査再提出R7）#5：恒久4xx（400/403/404/413/422。sendViaFetch
+          // 側で最古エントリ自体は既に削除済み）・一時的失敗（408/429/5xx・network_error・
+          // exception。エントリはsendViaFetch側で保持・per-item再送スケジュール更新済み）は、
+          // 401の認可問題とは無関係のため、trialCountを進めない・エスカレートしない
+          // （rescheduleTrialAfterFailedAttempt()を呼ばない）。停止状態自体は維持し、
+          // 次回はrescheduleTrialWait()と同じ非エスカレートの間隔で、次の最古エントリ
+          // （恒久4xxで削除済みなら別のエントリ、一時的失敗ならそのままのエントリを
+          // 含む現在のoutbox）を試す。
+          rescheduleTrialWait();
+        }
       });
     }
 

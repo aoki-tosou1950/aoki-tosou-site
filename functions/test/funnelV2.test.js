@@ -21,6 +21,9 @@ const {
   buildQualityAxes,
   buildLeadScoreBreakdownV2,
   computeSessionLeadScoreV1Compat_,
+  buildLegacyPseudoSessions_,
+  deriveLegacyMediaAndSource_,
+  extractHostnameFromReferrer_,
   signVerifyJwt,
   verifyVerifyJwt
 } = require('../lib/funnelV2');
@@ -963,4 +966,119 @@ test('buildLeadScoreBreakdownV2: isTest===trueのvisit_sessionは全区分から
   assert.equal(cards[0].visitId, 'v_real');
   const total = counts.高 + counts.中 + counts.低 + counts.判定不能;
   assert.equal(total, 1, 'isTest=trueのsessionはcounts集計にも含まれない');
+});
+
+/* ============================================================================
+ * legacy backward compatibility（独立監査再提出R7・項目4）
+ * ============================================================================ */
+test('extractHostnameFromReferrer_: 完全なURLからホスト名を小文字で取り出す', () => {
+  assert.equal(extractHostnameFromReferrer_('https://WWW.Google.com/search?q=x'), 'www.google.com');
+});
+test('extractHostnameFromReferrer_: 空文字は空文字のまま（例外を投げない）', () => {
+  assert.equal(extractHostnameFromReferrer_(''), '');
+  assert.equal(extractHostnameFromReferrer_(null), '');
+  assert.equal(extractHostnameFromReferrer_(undefined), '');
+});
+test('extractHostnameFromReferrer_: URLとしてパースできない値（既にホスト名のみの旧値）はそのまま小文字化して使う', () => {
+  assert.equal(extractHostnameFromReferrer_('Www.Bing.Com'), 'www.bing.com');
+});
+
+test('deriveLegacyMediaAndSource_: from有り・referrer無し→mediaValidity=valid・webSourceStatus=none（direct化しない）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: 'meishi', referrer: '' });
+  assert.equal(result.mediaValidity, 'valid');
+  assert.equal(result.mediaCode, 'meishi');
+  assert.equal(result.webSourceStatus, 'none');
+  assert.equal(result.webSource, '');
+});
+test('deriveLegacyMediaAndSource_: from無し・referrer無し→真の直接アクセス（webSourceStatus=direct）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '' });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'direct');
+  assert.equal(result.webSource, 'direct');
+});
+test('deriveLegacyMediaAndSource_: from無し・referrer有り→webSourceStatus=referrer・ホスト名を保持', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: 'https://www.google.com/search?q=x' });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'referrer');
+  assert.equal(result.webSource, 'www.google.com');
+});
+test('deriveLegacyMediaAndSource_: from・referrer両方有り→両方保持する（V2のrawAttributionFromSignalと同じ契約）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: 'meishi', referrer: 'https://www.google.com/' });
+  assert.equal(result.mediaCode, 'meishi');
+  assert.equal(result.webSource, 'www.google.com');
+  assert.equal(result.webSourceStatus, 'referrer');
+});
+test('deriveLegacyMediaAndSource_: 不正な形式のfromはmediaValidity=invalid・mediaCode=""（生値を保持しない）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '<script>bad', referrer: '' });
+  assert.equal(result.mediaValidity, 'invalid');
+  assert.equal(result.mediaCode, '');
+});
+
+test('buildLegacyPseudoSessions_: hash有り・同一visitor_hash同一日の3行は1visitへ集約される（V1のgroupVisits_と同じ単位）', () => {
+  const rows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 1000, from: 'meishi', referrer: '' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 2000, from: '', referrer: '' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 3000, from: '', referrer: '' }
+  ];
+  const sessions = buildLegacyPseudoSessions_(rows, []);
+  assert.equal(sessions.length, 1, '3行は1つの疑似セッションへ集約される');
+  assert.equal(sessions[0].hasPageView, true);
+  assert.equal(sessions[0].pageViewCount, 3);
+  assert.equal(sessions[0].mediaCode, 'meishi', '訪問の媒体はグループ内最初のpage_view行（at最小）のfromを採用する（V1のbuildVisitSummary_と同じ規則）');
+  assert.equal(sessions[0].startedAt, 1000);
+  assert.equal(sessions[0].legacySource, 'legacy_hash_present');
+});
+test('buildLegacyPseudoSessions_: hash無しのpage_view行は1行＝1visitとして個別に扱う（(不明)キーで結合しない。独立監査再提出R6・項目2と同じ方針）', () => {
+  const rows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: '', at: 1000, from: 'meishi', referrer: '', docId: 'doc1' },
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: '', at: 2000, from: 'meishi', referrer: '', docId: 'doc2' }
+  ];
+  const sessions = buildLegacyPseudoSessions_([], rows);
+  assert.equal(sessions.length, 2, '同一日・hash空の2行は2つの独立した疑似セッションになる（1つに潰れない）');
+  assert.notEqual(sessions[0].legacyVisitId, sessions[1].legacyVisitId, '各行が別々の疑似visitIdを持つ');
+  assert.equal(sessions.every((s) => s.legacySource === 'legacy_hash_missing'), true);
+});
+test('buildLegacyPseudoSessions_: line_click/phone_click行は訪問へ結合せず、reaction-onlyの疑似セッションとして個別に追加される', () => {
+  const hashPresentRows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 1000, from: 'meishi', referrer: '' },
+    { eventType: 'line_click', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 1500, from: 'meishi', referrer: '', docId: 'reactDoc1' }
+  ];
+  const sessions = buildLegacyPseudoSessions_(hashPresentRows, []);
+  assert.equal(sessions.length, 2, '訪問1件＋reaction-only 1件の計2つの疑似セッションになる（reactionが訪問へ吸収されない）');
+  const visitSession = sessions.find((s) => s.legacySource === 'legacy_hash_present');
+  const reactionSession = sessions.find((s) => s.legacySource === 'legacy_reaction');
+  assert.ok(visitSession && reactionSession);
+  assert.equal(visitSession.hasPageView, true);
+  assert.equal(visitSession.reactionCount, 0, '訪問側はreactionを推測結合しない（0のまま）');
+  assert.equal(reactionSession.hasPageView, false);
+  assert.equal(reactionSession.reactionCount, 1);
+  assert.equal(reactionSession.legacyReactionEventType, 'line_click');
+  assert.notEqual(reactionSession.legacyVisitId, visitSession.legacyVisitId, 'reaction-onlyは訪問とは別の疑似ID（推測結合していないことの確認）');
+});
+
+test('件数包含関係：buildQualityAxes(V2セッション+legacy疑似セッション)のvisits/lineOrPhoneReactionsは、V2単独・legacy単独それぞれの合計以上になる（legacyが実際に合流していることの確認）', () => {
+  const v2Sessions = [
+    { visitId: 'v2_1', hashReliable: true, hasPageView: true, mediaCode: 'meishi', mediaValidity: 'valid', webSource: '', webSourceStatus: 'none', reactionCount: 0, isTest: false }
+  ];
+  const legacyHashPresentRows = [
+    { eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'hashA', at: 1000, from: 'meishi', referrer: '' },
+    { eventType: 'page_view', dayKey: '2026-09-02', visitorHashValue: 'hashB', at: 2000, from: 'meishi', referrer: '' }
+  ];
+  const legacySessions = buildLegacyPseudoSessions_(legacyHashPresentRows, []);
+  const v2Only = buildQualityAxes(v2Sessions);
+  const legacyOnly = buildQualityAxes(legacySessions);
+  const merged = buildQualityAxes(v2Sessions.concat(legacySessions));
+
+  const v2OnlyVisits = v2Only.mediaQuality.find((m) => m.key === 'media:meishi').visits;
+  const legacyOnlyVisits = legacyOnly.mediaQuality.find((m) => m.key === 'media:meishi').visits;
+  const mergedVisits = merged.mediaQuality.find((m) => m.key === 'media:meishi').visits;
+
+  assert.equal(v2OnlyVisits, 1);
+  assert.equal(legacyOnlyVisits, 2);
+  assert.equal(mergedVisits, v2OnlyVisits + legacyOnlyVisits, '同一媒体キーの下でV2とlegacyが合算される（3件）＝実際に合流していることの確認（件数包含関係）');
+  assert.ok(mergedVisits >= v2OnlyVisits && mergedVisits >= legacyOnlyVisits, '合流後の件数は、どちらか一方だけの件数を下回らない（包含関係）');
+});
+test('件数包含関係：legacy疑似セッションはisTestフィルタを迂回しない（isTest:falseを明示的に持つ）', () => {
+  const legacySessions = buildLegacyPseudoSessions_([{ eventType: 'page_view', dayKey: '2026-09-01', visitorHashValue: 'h', at: 1, from: '', referrer: '' }], []);
+  assert.equal(legacySessions[0].isTest, false);
 });

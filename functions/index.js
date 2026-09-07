@@ -33,6 +33,7 @@ const {
   classifyLogCategory,
   buildQualityAxes,
   buildLeadScoreBreakdownV2,
+  buildLegacyPseudoSessions_,
   verifyVerifyJwt
 } = require('./lib/funnelV2');
 
@@ -266,7 +267,13 @@ function v2PeriodBoundsMs_(bounds) {
  * created_atで行う。legacy判定そのものはclassifyLogCategory内でvisit_idの
  * 有無だけを見ており（occurred_atには一切依存しない）、V2行（occurred_at・
  * visit_idともに保持）もこのcreated_atクエリには混ざって返るが、classifyLogCategoryが
- * new_reliable/new_unreliableへ分類し以下のフィルタで除外されるため問題ない。 */
+ * new_reliable/new_unreliableへ分類し以下のフィルタで除外されるため問題ない。
+ * 監査差し戻し（独立監査再提出R7）#4：行の形状へat（created_atのepoch ms）・
+ * from・referrer・docId（Firestoreドキュメントid）を追加した。buildLeadScoreBreakdownV2
+ * は従来どおりeventType/dayKey/visitorHashValueだけを見るため無影響のまま、
+ * funnelV2.jsのbuildLegacyPseudoSessions_（legacyをV2のvisit_sessionsと同じ形状へ
+ * 変換し、真にV2の集計パイプラインへ合流させる。「除外してlegacyAttributionScopeへ
+ * 書くだけ」では後方互換契約を満たさないという指摘への対応）が、この追加フィールドを使う。 */
 async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
   const snapshot = await db.collection(collections.interactionLogs)
     .where('created_at', '>=', new Date(startAt)).where('created_at', '<', new Date(endAt)).get();
@@ -279,7 +286,10 @@ async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
     if (category !== 'legacy_unknown' && category !== 'legacy_hash_missing') return;
     const createdAt = data.created_at && typeof data.created_at.toDate === 'function' ? data.created_at.toDate() : null;
     if (!createdAt) return;
-    const row = { eventType: String(data.event_type || ''), dayKey: jstDateKey(createdAt), visitorHashValue: String(data.visitor_hash || '') };
+    const row = {
+      eventType: String(data.event_type || ''), dayKey: jstDateKey(createdAt), visitorHashValue: String(data.visitor_hash || ''),
+      at: createdAt.getTime(), from: String(data.from || ''), referrer: String(data.referrer || ''), docId: doc.id
+    };
     (category === 'legacy_unknown' ? hashPresentRows : hashMissingRows).push(row);
   });
   return { hashPresentRows, hashMissingRows };
@@ -294,36 +304,33 @@ async function fetchPriorVisitSessions_(collections, beforeMs) {
 }
 
 /**
- * 監査差し戻し（独立監査再提出R6）#8：legacy（visit_idを持たない旧方式のraw log）は
- * V1のfetchLegacyRowsForGrouping_経由でleadScoreBreakdownの旧ログ／判定不能の件数には
- * 含まれる（findings#1・#2で修正済み）が、mediaQuality／webSourceQuality（独立2軸）と
- * 個別訪問・反応のdrilldown一覧（getFunnelDrilldownV2のmetric=visitors/lineClicks/
- * phoneClicks）には含まれない。legacy行はvisit_sessionsドキュメントを持たない
- * （visit_idという概念自体が存在しない旧方式のため）ため、mediaQuality／
- * webSourceQuality（visit_sessions由来）・drilldown（visit_sessions結合または
- * occurred_atクエリ由来。occurred_atもlegacy行には存在しない）のいずれの構築経路にも
- * 現れようがない。
- * legacy・新方式を真に統合したmedia/webSource軸・drilldownを実装するには、V1の
- * groupVisits_出力（日付＋visitor_hash単位の擬似visit）をvisit_sessionsと同じ形へ変換し、
- * 両者をマージする設計が必要になるが、今回はそこまでは実装していない（監査の代替方針：
- * 「実装できないなら期間をpost-cutoverのみへ明示的に限定し、UI/応答へその境界を明示する」
- * を採用した。ここでは固定の1本のcutover日付を持たない設計＝legacy／新方式はrow単位で
- * visit_idの有無により判定されるため、「post-cutoverのみに限定する」とは実務上
- * 「media/webSource軸・drilldownは新方式行のみを対象とする」という恒常的なスコープ限定
- * を意味する。旧ログ・判定不能に含まれる件数と、mediaQuality/webSourceQualityの合計件数
- * が一致しないのは、この設計上の限定によるものであり、バグではない）。
- * この限定をAPI応答へ機械可読な形で明示するのがlegacyAttributionScopeフィールド。
+ * 独立監査再提出R7・項目4：legacy（visit_idを持たない旧方式のraw log）を、V2の
+ * mediaQuality／webSourceQuality・drilldown（visitors/lineClicks/phoneClicks）へも
+ * 実際に合流させる。訂正：R6時点の実装は「legacyを除外してlegacyAttributionScopeへ
+ * 書くだけ」であり、これはV2 reader後方互換契約を満たさないという指摘を受けた。
+ * funnelV2.jsのbuildLegacyPseudoSessions_が、legacy raw log行をV2のvisit_sessionsと
+ * 同じ形状の疑似セッションへ変換する（hash有りはV1のgroupVisits_と同じdayKey+
+ * visitor_hash単位でvisit化、hash無しはpage_view単位の個別未識別訪問、reactionは
+ * 訪問へ推測結合せず個別のreaction-onlyとして扱う）。この疑似セッションをV2の
+ * 実visit_sessionsへ連結してからbuildQualityAxes等の既存集計ロジックへそのまま渡す
+ * ため、集計ロジック自体（buildQualityAxes・buildLeadScoreBreakdownV2）は無変更。
+ * legacy由来の項目は、visitId/legacyVisitIdが"legacy:"で始まることで判別できる。
  */
 const V2_LEGACY_ATTRIBUTION_SCOPE = {
-  includedIn: ['leadScoreBreakdown.旧ログ', 'leadScoreBreakdown.判定不能'],
-  excludedFrom: ['mediaQuality', 'webSourceQuality', 'drilldown(metric=visitors)', 'drilldown(metric=lineClicks)', 'drilldown(metric=phoneClicks)'],
-  note: 'legacy（visit_idを持たない旧方式のraw log）は旧ログ／判定不能の件数には含まれるが、media/webSource独立2軸および個別訪問・反応のdrilldown一覧には含まれない（visit_sessionsドキュメントを持たないため）。バックワード互換は「完了」ではなくこのスコープに限定されている（独立監査再提出R6・項目8）。'
+  legacyIncludedIn: ['leadScoreBreakdown.旧ログ', 'leadScoreBreakdown.判定不能', 'mediaQuality', 'webSourceQuality', 'drilldown(metric=visitors)', 'drilldown(metric=lineClicks)', 'drilldown(metric=phoneClicks)'],
+  rules: {
+    hashPresent: 'visitor_hashが非空のlegacy page_view行は、V1のgroupVisits_と同じ日付＋visitor_hash単位で1visitへ集約する。訪問の媒体・Web参照元は、グループ内で最も早いpage_view行のfrom/referrerを採用する（V1のbuildVisitSummary_と同じ規則）。',
+    hashMissing: 'visitor_hashが空のlegacy page_view行は、同一人物の判定根拠が無いため1行＝1visitとして個別に扱う（複数行を"(不明)"キーで1visitへ結合しない）。',
+    reactions: 'legacyのline_click/phone_click行は、どの訪問に属するか安全に結合できないため、訪問へは一切紐付けずreaction-only（visitId相当が"legacy:reaction:<docId>"）として個別に扱う。存在しない訪問文脈を推測して結合しない。',
+    mediaWebSourceNormalization: '媒体コード（from）・Web参照元（referrer）の正規化は、V2書き込み時の検証と同一のnormalizeMediaCode/normalizeWebSourceを再利用する（新しい検証ロジックを増やさない「安全な正規化」）。'
+  },
+  note: '独立監査再提出R7・項目4でlegacyを実際にV2と同じ集計パイプラインへ合流させた（除外ではない）。leadScoreBreakdownの5区分すべて・mediaQuality・webSourceQuality・drilldown（visitors/lineClicks/phoneClicks）のいずれにもlegacyが反映される。'
 };
 
 /**
  * media/webSource独立2軸、見込み度5区分（高・中・低・判定不能・旧ログ）、
  * legacy＋新方式4分類の集計を返す読み取り専用の中核処理（PROD/VERIFY共通）。
- * legacy行のmediaQuality/webSourceQualityへの扱いはV2_LEGACY_ATTRIBUTION_SCOPE参照。
+ * legacyの反映内容はV2_LEGACY_ATTRIBUTION_SCOPE参照（R7・項目4で実際に合流させた）。
  */
 async function runV2InsightsQuery_(collections, period, levelFilter) {
   const bounds = periodBounds(period, new Date());
@@ -335,8 +342,14 @@ async function runV2InsightsQuery_(collections, period, levelFilter) {
 
   const priorVisitSessions = await fetchPriorVisitSessions_(collections, startAt);
   const { hashPresentRows, hashMissingRows } = await fetchLegacyRowsForGrouping_(collections, startAt, endAt);
+  const legacySessions = buildLegacyPseudoSessions_(hashPresentRows, hashMissingRows);
 
-  const { mediaQuality, webSourceQuality } = buildQualityAxes(visitSessions);
+  // mediaQuality/webSourceQualityはV2実セッション＋legacy疑似セッションを合流させた
+  // 集合から集計する（同じ媒体コード・Web参照元キーであれば、世代を問わず合算される）。
+  const { mediaQuality, webSourceQuality } = buildQualityAxes(visitSessions.concat(legacySessions));
+  // leadScoreBreakdown（見込み度5区分）は従来どおりV2実セッション＋legacy生行（V1互換の
+  // 別集計ロジック）で計算する（見込み度自体はlegacy行から安全に判定できないため、
+  // 旧ログ／判定不能という区分自体がlegacyの受け皿になっている。R6・項目1/2で修正済み）。
   const { counts, cards } = buildLeadScoreBreakdownV2(visitSessions, priorVisitSessions, hashPresentRows, hashMissingRows);
   const filteredCards = levelFilter ? cards.filter((c) => c.level === levelFilter) : cards;
 
@@ -418,13 +431,18 @@ async function runV2DrilldownQuery_(collections, period, metric) {
   const bounds = periodBounds(period, new Date());
   const { startAt, endAt } = v2PeriodBoundsMs_(bounds);
 
+  // 独立監査再提出R7・項目4：drilldown（visitors/lineClicks/phoneClicks）もlegacyを
+  // 実際に合流させる。legacy行の取得・疑似セッション化はmetricによらず共通（後段で
+  // metricごとに必要な形へ絞り込む）。
+  const { hashPresentRows, hashMissingRows } = await fetchLegacyRowsForGrouping_(collections, startAt, endAt);
+  const legacySessions = buildLegacyPseudoSessions_(hashPresentRows, hashMissingRows);
+
   if (metric === 'visitors') {
     const snapshot = await db.collection(collections.visitSessions)
       .where('startedAt', '>=', startAt).where('startedAt', '<', endAt).get();
-    const items = snapshot.docs
+    const v2Items = snapshot.docs
       .map((doc) => Object.assign({ visitId: doc.id }, doc.data()))
       .filter((v) => v.isTest !== true && v.hasPageView === true)
-      .sort((a, b) => b.startedAt - a.startedAt)
       .map((v) => ({
         at: new Date(v.startedAt).toISOString(),
         visitId: v.visitId,
@@ -435,9 +453,23 @@ async function runV2DrilldownQuery_(collections, period, metric) {
         pageViewCount: Number(v.pageViewCount || 0),
         reactionCount: Number(v.reactionCount || 0)
       }));
-    // 監査差し戻し（独立監査再提出R6）#8：visit_sessionsだけを読むため、legacy
-    // （visit_id無しの旧方式raw log）はこの一覧に一切含まれない（V2_LEGACY_ATTRIBUTION_
-    // SCOPE参照）。今回はここまでの実装とし、legacy行の混入は行っていない。
+    // legacyの訪問（hasPageView===trueの疑似セッションのみ。reaction-onlyはmetric=
+    // visitorsには含めない）をV2訪問一覧と同じ形へ変換して合流させる。visitIdは
+    // "legacy:"で始まる合成値（legacyVisitId）＝visit_sessionsドキュメントを持たない
+    // legacy由来であることが呼び出し元でも判別できる。
+    const legacyItems = legacySessions
+      .filter((s) => s.hasPageView === true)
+      .map((s) => ({
+        at: new Date(s.startedAt).toISOString(),
+        visitId: s.legacyVisitId,
+        mediaCode: s.mediaValidity === 'valid' ? s.mediaCode : '',
+        mediaValidity: s.mediaValidity,
+        webSource: s.webSource,
+        webSourceStatus: s.webSourceStatus,
+        pageViewCount: Number(s.pageViewCount || 0),
+        reactionCount: Number(s.reactionCount || 0)
+      }));
+    const items = v2Items.concat(legacyItems).sort((a, b) => new Date(b.at) - new Date(a.at));
     return { kind: 'visit', metric, items, total: items.length, legacyAttributionScope: V2_LEGACY_ATTRIBUTION_SCOPE };
   }
 
@@ -447,7 +479,7 @@ async function runV2DrilldownQuery_(collections, period, metric) {
 
   const logSnapshot = await db.collection(collections.interactionLogs)
     .where('event_type', '==', eventType).where('occurred_at', '>=', startAt).where('occurred_at', '<', endAt).get();
-  const rows = logSnapshot.docs.map((doc) => doc.data()).filter((r) => r.is_test !== true).sort((a, b) => b.occurred_at - a.occurred_at);
+  const rows = logSnapshot.docs.map((doc) => doc.data()).filter((r) => r.is_test !== true);
 
   // raw eventの帰属ではなくvisit_sessions正本へjoinする（正本仕様）。
   const visitIds = Array.from(new Set(rows.map((r) => r.visit_id).filter(Boolean)));
@@ -455,7 +487,7 @@ async function runV2DrilldownQuery_(collections, period, metric) {
   const sessionById = new Map();
   sessionDocs.forEach((snap) => { if (snap.exists) sessionById.set(snap.id, snap.data()); });
 
-  const items = rows.map((r) => {
+  const v2Items = rows.map((r) => {
     const session = sessionById.get(r.visit_id) || null;
     return {
       at: new Date(r.occurred_at).toISOString(),
@@ -467,8 +499,22 @@ async function runV2DrilldownQuery_(collections, period, metric) {
       visitPageViewCount: session ? Number(session.pageViewCount || 0) : null
     };
   });
-  // 監査差し戻し（独立監査再提出R6）#8：occurred_atはlegacy行に存在しないため、この
-  // クエリ自体がlegacy行を一切拾わない（新方式行のみ。V2_LEGACY_ATTRIBUTION_SCOPE参照）。
+  // legacyのreaction（line_click/phone_click）は、どの訪問に属するか安全に結合できない
+  // ため、visitPageViewCount=null（不明。V2のようにvisit_sessions正本へjoinできる
+  // visit_idが無い）のまま、訪問へ推測結合せず個別のitemとして合流させる
+  // （legacyVisitIdが"legacy:reaction:<docId>"＝結合していないことが判別できる）。
+  const legacyItems = legacySessions
+    .filter((s) => s.legacySource === 'legacy_reaction' && s.legacyReactionEventType === eventType)
+    .map((s) => ({
+      at: new Date(s.startedAt).toISOString(),
+      visitId: s.legacyVisitId,
+      mediaCode: s.mediaValidity === 'valid' ? s.mediaCode : '',
+      mediaValidity: s.mediaValidity,
+      webSource: s.webSource,
+      webSourceStatus: s.webSourceStatus,
+      visitPageViewCount: null
+    }));
+  const items = v2Items.concat(legacyItems).sort((a, b) => new Date(b.at) - new Date(a.at));
   return { kind: 'event', metric, items, total: items.length, legacyAttributionScope: V2_LEGACY_ATTRIBUTION_SCOPE };
 }
 

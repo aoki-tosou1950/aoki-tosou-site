@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "interaction_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "event_type", "order": "ASCENDING" },
+        { "fieldPath": "occurred_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "interaction_logs_verify",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "event_type", "order": "ASCENDING" },
+        { "fieldPath": "occurred_at", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

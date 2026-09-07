@@ -11,6 +11,7 @@
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { signVerifyJwt } = require('../lib/funnelV2');
@@ -348,10 +349,11 @@ async function main() {
       `before=${before.leadScoreBreakdown.判定不能} after=${after.leadScoreBreakdown.判定不能}`);
   }
 
-  // --- 13. 監査差し戻し（独立監査再提出R6）#8：同一期間へV1実形状（legacy）とV2実形状
-  // （新方式）を両方投入し、reader（getFunnelInsightsV2・getFunnelDrilldownV2）の実際の
-  // 挙動を確認する。今回の設計選択＝「media/webSource独立2軸・drilldownはlegacyを含めず、
-  // 明示的にlegacyAttributionScopeフィールドで境界を示す」ことを、実データで裏付ける。 ---
+  // --- 13. 訂正（独立監査再提出R7・項目4）：R6時点は「legacyを除外してlegacyAttribution
+  // Scopeへ書くだけ」の設計だったが、これはV2 reader後方互換契約を満たさないという
+  // 指摘を受け、legacyを実際にV2と同じ集計パイプラインへ合流させた。同一期間へV1実形状
+  // （legacy）とV2実形状（新方式）を両方投入し、mediaQuality・drilldownの両方で
+  // legacyが実際に反映される（除外されない）ことを実データで確認する。 ---
   {
     const beforeInsights = await (await request('getFunnelInsightsV2', {
       method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
@@ -360,13 +362,13 @@ async function main() {
     const beforeMeishiVisits = beforeMeishi ? Number(beforeMeishi.visits || 0) : 0;
 
     // V1実形状（legacy）：mediaCode='meishi'相当のfromを持つが、visit_idもoccurred_atも
-    // 持たない（手順12と同じ実形状）。これがmediaQualityの'meishi'集計へ紛れ込まないことを
-    // 確認する（紛れ込んだ場合はvisits件数が意図せず増える）。
-    const legacyMarkerId = 'e2e_v8legacy_' + randomSuffix();
+    // 持たない（手順12と同じ実形状）。R7・項目4：これが実際にmediaQualityの'meishi'
+    // 集計へ合流する（visits件数が増える）ことを確認する。
+    const legacyMarkerId = 'e2e_r7legacy_' + randomSuffix();
     await db.collection('interaction_logs').doc(legacyMarkerId).set({
       event_type: 'page_view', contact_channel: '', source: 'other', from: 'meishi',
       landing_page: '/', current_page: '/', referrer: '', is_test: false,
-      visitor_hash: 'e2e_v8_legacyhash_' + randomSuffix(),
+      visitor_hash: 'e2e_r7_legacyhash_' + randomSuffix(),
       created_at: new Date()
     });
 
@@ -375,53 +377,177 @@ async function main() {
     })).json();
     const afterLegacyMeishi = (afterLegacyOnly.mediaQuality || []).find((m) => m.mediaCode === 'meishi');
     const afterLegacyMeishiVisits = afterLegacyMeishi ? Number(afterLegacyMeishi.visits || 0) : 0;
-    ok('getFunnelInsightsV2（finding#8）: legacy（V1実形状・from=meishi）を追加してもmediaQualityの"meishi"visits件数は変化しない（legacyはmedia/webSource軸に混入しない設計）',
-      afterLegacyMeishiVisits === beforeMeishiVisits,
+    ok('getFunnelInsightsV2（R7#4）: legacy（V1実形状・from=meishi）を追加するとmediaQualityの"meishi"visits件数が+1される（真に合流している。R6時点は「変化しない」ことを期待していたが、これは指摘どおり誤りだった仕様）',
+      afterLegacyMeishiVisits === beforeMeishiVisits + 1,
       `before=${beforeMeishiVisits} afterLegacyOnly=${afterLegacyMeishiVisits}`);
 
     // V2実形状（新方式）：同じmediaCode='meishi'の実visitを実エンドポイント経由で追加する。
-    // こちらはmediaQualityへ確実に反映されることを確認する（legacy除外が「全部除外」の
-    // バグではなく「legacyだけ除外」の意図した設計であることの対照実験）。
-    const v2VisitId = 'v2e2e_v8marker_' + randomSuffix() + '0000000000';
-    const v2EventId = 'e2e_v8marker_' + randomSuffix();
+    // legacyとV2が同じ媒体キーの下で合算されることを確認する（対照実験）。
+    const v2VisitId = 'v2e2e_r7marker_' + randomSuffix() + '0000000000';
+    const v2EventId = 'e2e_r7marker_' + randomSuffix();
     const v2Res = await request('logInteractionV2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'https://aoki-tosou.net' },
       body: JSON.stringify({
         schemaVersion: 2, event_id: v2EventId, visit_id: v2VisitId, occurredAt: Date.now(), eventType: 'page_view',
-        visitMediaCode: 'meishi', visitWebSource: '', visitorId: 'vid2e2e_v8marker_' + randomSuffix() + '0000000000', visitorIdPersisted: true,
+        visitMediaCode: 'meishi', visitWebSource: '', visitorId: 'vid2e2e_r7marker_' + randomSuffix() + '0000000000', visitorIdPersisted: true,
         currentPage: 'https://aoki-tosou.net/', landingPage: 'https://aoki-tosou.net/'
       })
     });
     const v2Body = await v2Res.json();
-    ok('logInteractionV2（finding#8用マーカー訪問）: 正常page_viewは200', v2Res.status === 200 && v2Body.success === true, JSON.stringify(v2Body));
+    ok('logInteractionV2（R7#4用マーカー訪問）: 正常page_viewは200', v2Res.status === 200 && v2Body.success === true, JSON.stringify(v2Body));
 
     const afterBoth = await (await request('getFunnelInsightsV2', {
       method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
     })).json();
     const afterBothMeishi = (afterBoth.mediaQuality || []).find((m) => m.mediaCode === 'meishi');
     const afterBothMeishiVisits = afterBothMeishi ? Number(afterBothMeishi.visits || 0) : 0;
-    ok('getFunnelInsightsV2（finding#8）: V2実形状（新方式）の同一mediaCode訪問を追加するとmediaQualityの"meishi"visitsが+1される（legacyは0件寄与・V2は正しく反映という対照結果）',
-      afterBothMeishiVisits === beforeMeishiVisits + 1,
-      `before=${beforeMeishiVisits} afterBoth=${afterBothMeishiVisits}`);
+    ok('getFunnelInsightsV2（R7#4）: V2実形状（新方式）の同一mediaCode訪問を追加すると、legacyの分と合わせてmediaQualityの"meishi"visitsがさらに+1される（件数包含関係：legacy分+V2分が両方合算される）',
+      afterBothMeishiVisits === beforeMeishiVisits + 2,
+      `before=${beforeMeishiVisits} afterLegacyOnly=${afterLegacyMeishiVisits} afterBoth=${afterBothMeishiVisits}`);
 
-    ok('getFunnelInsightsV2（finding#8）: 応答にlegacyAttributionScope（機械可読なスコープ境界の明示）が含まれる',
+    ok('getFunnelInsightsV2（R7#4）: 応答のlegacyAttributionScopeが「除外」ではなく「実際にどう合流しているか」を説明する新shape（legacyIncludedInにmediaQualityを含む）になっている',
       !!afterBoth.legacyAttributionScope &&
-      Array.isArray(afterBoth.legacyAttributionScope.excludedFrom) && afterBoth.legacyAttributionScope.excludedFrom.includes('mediaQuality') &&
-      Array.isArray(afterBoth.legacyAttributionScope.includedIn) && afterBoth.legacyAttributionScope.includedIn.some((s) => s.indexOf('旧ログ') >= 0),
+      Array.isArray(afterBoth.legacyAttributionScope.legacyIncludedIn) && afterBoth.legacyAttributionScope.legacyIncludedIn.includes('mediaQuality') &&
+      afterBoth.legacyAttributionScope.excludedFrom === undefined,
       JSON.stringify(afterBoth.legacyAttributionScope));
 
-    // getFunnelDrilldownV2（metric=visitors）も同じスコープ明示・同じ除外設計であることを確認する。
+    // getFunnelDrilldownV2（metric=visitors）でも、legacy疑似訪問（visitIdが"legacy:"で
+    // 始まる）とV2実訪問の両方が一覧に含まれることを確認する（R7・項目4）。
     const drilldownRes = await request('getFunnelDrilldownV2?period=thisMonth&metric=visitors', {
       method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
     });
     const drilldownBody = await drilldownRes.json();
-    ok('getFunnelDrilldownV2（finding#8）: 応答にlegacyAttributionScopeが含まれる',
-      !!drilldownBody.legacyAttributionScope && Array.isArray(drilldownBody.legacyAttributionScope.excludedFrom) && drilldownBody.legacyAttributionScope.excludedFrom.some((s) => s.indexOf('visitors') >= 0),
+    ok('getFunnelDrilldownV2（R7#4）: 応答のlegacyAttributionScopeも新shape（legacyIncludedInにdrilldown(metric=visitors)を含む）',
+      !!drilldownBody.legacyAttributionScope && Array.isArray(drilldownBody.legacyAttributionScope.legacyIncludedIn) && drilldownBody.legacyAttributionScope.legacyIncludedIn.some((s) => s.indexOf('visitors') >= 0),
       JSON.stringify(drilldownBody.legacyAttributionScope));
     const v2MarkerInDrilldown = (drilldownBody.items || []).find((v) => v.visitId === v2VisitId);
-    ok('getFunnelDrilldownV2（finding#8）: V2実形状のマーカー訪問はvisitors一覧に含まれる（legacyは元々visit_idを持たないため、この一覧に紛れ込みようがないことの確認を兼ねる）',
+    ok('getFunnelDrilldownV2（R7#4）: V2実形状のマーカー訪問はvisitors一覧に含まれる',
       !!v2MarkerInDrilldown, JSON.stringify((drilldownBody.items || []).slice(0, 3)));
+    const legacyItemsInDrilldown = (drilldownBody.items || []).filter((v) => String(v.visitId || '').indexOf('legacy:') === 0 && v.mediaCode === 'meishi');
+    ok('getFunnelDrilldownV2（R7#4）: legacy疑似訪問（visitIdが"legacy:"で始まる）もvisitors一覧に含まれる（合流していることの直接確認）',
+      legacyItemsInDrilldown.length >= 1, JSON.stringify(legacyItemsInDrilldown.slice(0, 3)));
+
+    // Web反応一覧（metric=lineClicks）でもlegacyのreaction-onlyアイテムが個別に（訪問へ
+    // 推測結合せず）含まれることを確認する。
+    const legacyReactionMarkerId = 'e2e_r7legacy_reaction_' + randomSuffix();
+    await db.collection('interaction_logs').doc(legacyReactionMarkerId).set({
+      event_type: 'line_click', contact_channel: 'LINE', source: 'other', from: 'meishi',
+      landing_page: '/', current_page: '/', referrer: '', is_test: false,
+      visitor_hash: 'e2e_r7_legacyreactionhash_' + randomSuffix(),
+      created_at: new Date()
+    });
+    const lineClicksDrilldownRes = await request('getFunnelDrilldownV2?period=thisMonth&metric=lineClicks', {
+      method: 'GET', headers: { Authorization: `Bearer ${process.env.FUNNEL_DASHBOARD_TOKEN}` }
+    });
+    const lineClicksDrilldownBody = await lineClicksDrilldownRes.json();
+    const legacyReactionItems = (lineClicksDrilldownBody.items || []).filter((v) => String(v.visitId || '').indexOf('legacy:reaction:') === 0 && v.mediaCode === 'meishi');
+    ok('getFunnelDrilldownV2（R7#4・metric=lineClicks）: legacyのreaction行は訪問へ推測結合されず、visitIdが"legacy:reaction:"で始まる個別itemとして含まれる（visitPageViewCountはnull＝不明のまま捏造しない）',
+      legacyReactionItems.length >= 1 && legacyReactionItems.every((it) => it.visitPageViewCount === null), JSON.stringify(legacyReactionItems.slice(0, 3)));
+  }
+
+  // --- 14. 独立監査再提出（R7）・項目6：「検証用analytics → logInteractionV2Verify →
+  // VERIFY隔離collection → V2 Verify readers」の一気通貫を、手作りpayloadではなく
+  // 実際のjs/analytics-v2.js（PROD向け・完全無改変の実クライアント本体）が生成した
+  // payloadで確認する。
+  //
+  // 設計判断（重要・明記）：js/analytics-v2.jsはPROD専用エンドポイント（ENDPOINT定数）へ
+  // 無認可・CORS前提のfetch/sendBeaconで送る単一の本番スクリプトであり、VERIFY専用の
+  // Authorization: Bearer JWT認可はこのスクリプトの責務外（JWTという概念を一切知らない）。
+  // 「検証用analytics」を実現するために訪問境界・payload生成ロジック（getOrUpdateVisit／
+  // buildEvent等）を別ファイルへ複製・再実装すると、指摘が禁止する「同じロジックの
+  // 再実装によるspec drift」を新たに生んでしまう。そのため本テストでは、vm上で
+  // js/analytics-v2.jsを一切書き換えず実行し、スクリプトが実際に呼び出す
+  // window.fetch(ENDPOINT, init)の「init（実クライアントが生成した実payload・
+  // Content-Type・keepalive:true）」だけを横取りし、送信先URLとAuthorizationヘッダーだけを
+  // VERIFY用に差し替えて実Emulatorへ実際にHTTP POSTする。訪問境界・payload生成コードは
+  // 1行も複製・変更していない。JWTはこのテスト内でのみ動的署名・メモリ保持し、
+  // capturedRequestsやok()のdetailへは一切含めない（commits/logs/URLへ漏れない設計）。
+  // sendBeaconはこの経路で一切呼ばれないことも確認する（VERIFY用にはfetch+Bearer+
+  // keepaliveのみを使う、という確定契約どおり）。
+  {
+    const analyticsScript = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'analytics-v2.js'), 'utf8');
+    const { token: clientVerifyToken } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionV2Verify', scope: 'write:interaction_logs_v2_verify' });
+
+    const capturedRequests = [];
+    let beaconCallCount = 0;
+    let settleResolve;
+    const settled = new Promise((resolve) => { settleResolve = resolve; });
+
+    const localStore = new Map();
+    const sessionStore = new Map();
+    const pageUrl = 'https://aoki-tosou.net/?from=' + ('area_check_verify_v1_' + randomSuffix());
+    const mediaCodeExpected = new URL(pageUrl).searchParams.get('from');
+    const location = new URL(pageUrl);
+    const document = {
+      referrer: 'https://www.google.com/search?q=aoki',
+      visibilityState: 'visible',
+      addEventListener() {},
+      createElement() { return { textContent: '', get innerHTML() { return this.textContent; } }; }
+    };
+    const windowObj = {
+      location,
+      localStorage: {
+        getItem(key) { return localStore.has(key) ? localStore.get(key) : null; },
+        setItem(key, value) { localStore.set(key, String(value)); },
+        removeItem(key) { localStore.delete(key); }
+      },
+      sessionStorage: {
+        getItem(key) { return sessionStore.has(key) ? sessionStore.get(key) : null; },
+        setItem(key, value) { sessionStore.set(key, String(value)); },
+        removeItem(key) { sessionStore.delete(key); }
+      },
+      crypto: { randomUUID: () => 'e2everifyclient' + randomSuffix() + randomSuffix() },
+      // ここがこのテストの核心：endpoint／initはanalytics-v2.js自身が生成した実引数のまま。
+      // 送信先とAuthorizationヘッダーだけをVERIFY向けへ実際に差し替えて実Emulatorへ送る
+      // （payload本体＝init.bodyは一切書き換えない・複製しない）。
+      fetch(endpoint, init) {
+        const verifyUrl = `${base}/logInteractionV2Verify`;
+        const req = fetch(verifyUrl, {
+          method: init.method,
+          headers: Object.assign({}, init.headers, { Authorization: `Bearer ${clientVerifyToken}` }),
+          body: init.body,
+          keepalive: init.keepalive
+        });
+        req.then((res) => { capturedRequests.push({ endpoint, verifyUrl, init, status: res.status }); settleResolve(); })
+          .catch((err) => { capturedRequests.push({ endpoint, verifyUrl, init, error: String(err && err.message || err) }); settleResolve(); });
+        return req;
+      },
+      addEventListener() {},
+      document
+    };
+    const context = {
+      URL, URLSearchParams,
+      Blob: class { constructor(parts, options) { this.text = parts.join(''); this.type = (options && options.type) || ''; } },
+      Date, Math, JSON, Promise, console,
+      window: windowObj, document,
+      navigator: { sendBeacon() { beaconCallCount++; return true; } }
+    };
+    windowObj.document = document;
+    windowObj.navigator = context.navigator;
+    vm.runInNewContext(analyticsScript, context);
+
+    await settled;
+    await new Promise((resolve) => setImmediate(resolve)); // analytics-v2.js自身の.then()（removeFromOutbox等）にもう1tick譲る
+
+    ok('R7#6 検証用analytics: 実クライアント（js/analytics-v2.js・無改変）のinit()が自動的にtrack("page_view")で1回だけfetchを呼ぶ', capturedRequests.length === 1, JSON.stringify(capturedRequests.map((r) => ({ status: r.status, error: r.error }))));
+    const captured = capturedRequests[0] || {};
+    ok('R7#6 検証用analytics: そのfetch呼び出しをVERIFY writer（logInteractionV2Verify）へ実際にHTTP転送し200が返る', captured.status === 200, JSON.stringify({ status: captured.status, error: captured.error }));
+    ok('R7#6 検証用analytics: init.keepalive===trueが維持される（PROD同様の確定契約・別実装を作っていない証拠）', !!(captured.init && captured.init.keepalive === true));
+    ok('R7#6 検証用analytics: sendBeaconはVERIFY経路で一度も呼ばれない（fetch+Bearer+keepaliveのみを使う確定契約）', beaconCallCount === 0, 'beaconCallCount=' + beaconCallCount);
+
+    const sentBody = captured.init ? JSON.parse(captured.init.body) : {};
+    ok('R7#6 検証用analytics: 実クライアントが生成したpayloadはschemaVersion:2（ハンドクラフトしていない実クライアント出力）', sentBody.schemaVersion === 2);
+    ok('R7#6 検証用analytics: 実クライアントの訪問境界ロジック（rawAttributionFromSignal）がURLのfromパラメータをvisitMediaCodeへそのまま反映', sentBody.visitMediaCode === mediaCodeExpected, `expected=${mediaCodeExpected} actual=${sentBody.visitMediaCode}`);
+    ok('R7#6 検証用analytics: 外部referrer（google.com）が実クライアントのロジックでvisitWebSourceへ反映される（PRODと同一コード）', sentBody.visitWebSource === 'www.google.com', 'actual=' + sentBody.visitWebSource);
+
+    const verifySession = sentBody.visit_id ? (await db.collection('visit_sessions_verify').doc(sentBody.visit_id).get()).data() : null;
+    ok('R7#6 検証用analytics: 実クライアント生成のvisit_idでvisit_sessions_verify（VERIFY隔離collection）へ実際に書き込まれる', !!verifySession && verifySession.mediaCode === mediaCodeExpected, JSON.stringify(verifySession));
+
+    const verifyReaderRes = await request('getFunnelInsightsV2Verify', { method: 'GET', headers: { Authorization: `Bearer ${VERIFY_READ_TOKEN}` } });
+    const verifyReaderBody = await verifyReaderRes.json();
+    const verifyCard = (verifyReaderBody.leadScoreCards || []).find((c) => c.mediaCode === mediaCodeExpected);
+    ok('R7#6 検証用analytics: V2 Verify reader（getFunnelInsightsV2Verify）が実クライアント生成の訪問を反映する（一気通貫の最終確認）', !!verifyCard, JSON.stringify((verifyReaderBody.leadScoreCards || []).slice(0, 5)));
   }
 
   const failed = results.filter((r) => !r.ok);

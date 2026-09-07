@@ -38,7 +38,7 @@ function browser(opts) {
 
   const fetchResponder = opts.fetchResponder || (() => ({ status: 200 }));
 
-  class FakeBlob { constructor(parts) { this.text = parts.join(''); } }
+  class FakeBlob { constructor(parts, options) { this.text = parts.join(''); this.type = (options && options.type) || ''; } }
 
   const location = new URL(url);
   const document = {
@@ -67,6 +67,12 @@ function browser(opts) {
       const callIndex = fetchCalls.length;
       const body = JSON.parse(init.body);
       fetchCalls.push({ endpoint, body });
+      // 監査差し戻し（独立監査再提出R7）#5：window.fetch(...)の呼び出し自体が
+      // Promiseを返す前に同期的に例外を投げるケース（CSP違反等で稀に発生し得る）を
+      // 検証するためのオプション。opts.syncThrowFetchが真なら、ここで実際に同期throwする
+      // （sendViaFetch側の外側try/catchが正しくattempts/nextRetryAtを更新することを
+      // 確認するテスト専用の経路。通常のfetchResponder経由の失敗はPromise.rejectのまま）。
+      if (opts.syncThrowFetch) { throw new Error('synchronous fetch failure (test)'); }
       let result;
       try {
         result = fetchResponder(endpoint, init, callIndex, body);
@@ -86,7 +92,7 @@ function browser(opts) {
     URL, URLSearchParams, Blob: FakeBlob, Date: FakeDate, Math, JSON, Promise, console,
     window: windowObj,
     document,
-    navigator: { sendBeacon(endpoint, blob) { beacons.push({ endpoint, body: JSON.parse(blob.text) }); return true; } }
+    navigator: { sendBeacon(endpoint, blob) { beacons.push({ endpoint, body: JSON.parse(blob.text), contentType: blob.type }); return true; } }
   };
   windowObj.document = document;
   windowObj.navigator = context.navigator;
@@ -336,6 +342,17 @@ test('通信失敗（fetch reject）もoutboxに保持され、再送対象に�
   assert.equal(outbox.length, 1);
   assert.equal(outbox[0].attempts, 1);
 });
+test('R7#5：window.fetch(...)呼び出し自体が同期的に例外を投げた場合も、.catch()分岐と同じくattempts/nextRetryAtを更新する', async () => {
+  // 訂正：以前はsendViaFetchの外側try/catch（window.fetch(...)自体の同期throwを捕まえる方）が
+  // onSettled('exception')を呼ぶだけでattempts/nextRetryAtを一切更新しておらず、このitemの
+  // 通常再送スケジュールが進まないまま取り残される欠陥だった。
+  const b = browser({ url: 'https://aoki-tosou.net/', syncThrowFetch: true });
+  await tick();
+  const outbox = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outbox.length, 1, '同期例外でもitem自体はoutboxに残る（削除しない）');
+  assert.equal(outbox[0].attempts, 1, '同期例外でも.catch()分岐と同じくattemptsが更新される');
+  assert.ok(outbox[0].nextRetryAt > 0, '同期例外でも.catch()分岐と同じくnextRetryAtが設定される（通常の再送スケジュールに乗る）');
+});
 test('再送バックオフ表：1→15分・2→30分・3→60分・4回目以降→120分（上限）', () => {
   const b = browser({ url: 'https://aoki-tosou.net/' });
   const backoff = b.api._internal.backoffForAttempts;
@@ -410,32 +427,75 @@ test('R6#9：試験再送が再び401なら停止を継続し、trialCountを1�
   assert.equal(stopAfter.finalStopped, false, '1回目の失敗だけではfinalStoppedにならない');
   assert.equal(stopAfter.nextTrialAt, stopBefore.nextTrialAt + 1000 + 30 * 60 * 1000, '次回試験時刻は15分固定ではなく30分後へエスカレートする（15→30→60→120分）');
 });
-test('R6#9：試験再送が恒久的4xx（例：400）を返しても、trialCountを1つ進めて停止状態を継続する（successでなければ全て「試験失敗」として数える）', async () => {
+test('R7#5訂正：試験再送が恒久的4xx（例：400）を返した場合、401のtrialCountは進めない（401とは無関係の失敗のため）。停止状態は維持し、対象エントリだけ削除する', async () => {
+  // 訂正：R6版のこのテストは「恒久4xxもtrialCountを1つ進める」ことを期待していたが、
+  // これは監査差し戻しR7・項目5が指摘した誤りそのものだった（401の試行回数を、401とは
+  // 無関係の恒久4xxが消費してしまう）。trialCountが進まない（0のまま）ことを正しい
+  // 期待値へ訂正する（弱体化ではなく、指摘された誤りの是正）。
   const b = browser({
     url: 'https://aoki-tosou.net/',
     fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 400 })
   });
   await tick();
   assert.equal(b.api.isStopped(), true);
+  const before = b.api._internal.loadStopState();
+  const outboxBefore = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxBefore.length, 1, '試験対象は最古の1件のみ');
   b.advance(15 * 60 * 1000 + 1000);
   b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true, '恒久4xxでも停止状態は継続する（successでなければクリアしない）');
   const state = b.api._internal.loadStopState();
-  assert.equal(state.trialCount, 1, '恒久4xxの試験失敗もtrialCountを1つ進める');
+  assert.equal(state.trialCount, 0, '恒久4xx（401とは無関係の失敗）はtrialCountを進めない');
+  assert.equal(state.finalStopped, false);
+  assert.equal(state.nextTrialAt, before.nextTrialAt + 1000 + 15 * 60 * 1000, '次回試験時刻はエスカレートせず同じ15分間隔で再設定される（rescheduleTrialWait）');
+  const outboxAfter = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxAfter.length, 0, '恒久4xxを返した最古エントリ自体は削除される（sendViaFetchのpermanent分岐）');
 });
-test('R6#9：試験再送が一時的失敗（例：503）でも、trialCountを1つ進めて停止状態を継続する', async () => {
+test('R7#5訂正：試験再送が一時的失敗（例：503）を返した場合も、401のtrialCountは進めない。対象エントリは削除されず保持される', async () => {
   const b = browser({
     url: 'https://aoki-tosou.net/',
     fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 503 })
   });
   await tick();
+  const before = b.api._internal.loadStopState();
   b.advance(15 * 60 * 1000 + 1000);
   b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true);
   const state = b.api._internal.loadStopState();
-  assert.equal(state.trialCount, 1, '一時的失敗（5xx）の試験失敗もtrialCountを1つ進める');
+  assert.equal(state.trialCount, 0, '一時的失敗（5xx。401とは無関係）はtrialCountを進めない');
+  assert.equal(state.nextTrialAt, before.nextTrialAt + 1000 + 15 * 60 * 1000, '次回試験時刻はエスカレートせず同じ15分間隔で再設定される');
+  const outboxAfter = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxAfter.length, 1, '一時的失敗のエントリは削除されず保持される（次回同じエントリを再試行）');
+});
+test('R7#5：永久エラー（恒久4xx）が4件連続しても、401の試行回数を一切消費しないためfinalStoppedにはならない（401とは無関係のエラーで上限に達しない）', async () => {
+  const b = browser({
+    url: 'https://aoki-tosou.net/',
+    // 初回401で停止開始、以後の試験再送は常に400（恒久4xx）を返す。
+    fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 400 })
+  });
+  await tick();
+  assert.equal(b.api.isStopped(), true);
+  // 試験対象を4件確保する（1件だと1回目の試験でpermanent削除されてしまい、2回目以降は
+  // 「送るものが無い」経路になって「4回とも実際に400を受け取った」ことの検証にならない）。
+  b.api.track('phone_click');
+  b.api.track('phone_click');
+  b.api.track('phone_click');
+  await tick();
+  const outboxSeeded = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxSeeded.length, 4, '停止中でも試験対象4件がoutboxに積まれている（page_view 1件＋phone_click 3件）');
+  for (let i = 0; i < 4; i++) {
+    b.advance(15 * 60 * 1000 + 1000); // rescheduleTrialWaitは常に15分固定（エスカレートしない）なので毎回同じ待機で足りる
+    b.api._internal.attemptTrialResend();
+    await tick();
+  }
+  const state = b.api._internal.loadStopState();
+  assert.equal(state.trialCount, 0, '4回とも恒久4xx（401とは無関係）だったためtrialCountは0のまま');
+  assert.equal(state.finalStopped, false, '401の試行回数を消費していないためfinalStoppedにならない（上限4回に達しない）');
+  assert.equal(b.api.isStopped(), true, '停止状態自体は維持される（成功していないため）');
+  const outboxAfter = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxAfter.length, 0, '4件とも恒久4xxで個別に削除された（4回とも実際に別々のエントリへ試行したことの確認）');
 });
 test('R6#9：試験再送は15→30→60→120分とエスカレートし、4回連続失敗するとfinalStopped=trueになり以後は時間が経っても自動試験しない（上限4回・確定契約）', async () => {
   const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) }); // 常に401（初回＋4回とも失敗）
@@ -547,4 +607,12 @@ test('離脱時（pagehide）でもsendBeaconでフラッシュする', async ()
   await tick();
   b.firePagehide();
   assert.equal(b.beacons.length, 1);
+});
+test('R7#6：sendBeaconのBlobはtext/plain（CORS safelisted）を使う（application/jsonではない。ENDPOINTは別オリジンのためcross-origin送信になる）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 500 }) });
+  await tick();
+  b.setVisibilityHidden();
+  assert.equal(b.beacons.length, 1);
+  assert.equal(b.beacons[0].contentType, 'text/plain', 'application/jsonはCORS safelistedではなく、preflightできないsendBeaconでは不安定になり得るためtext/plainを使う');
+  assert.equal(b.beacons[0].body.eventType, 'page_view', '送信内容自体（JSON文字列）はContent-Type変更の影響を受けず無変更のまま');
 });

@@ -26,6 +26,13 @@
  *     （命名規約と実装の乖離を検知する）。
  *  4. logInteractionV2VerifyのJWT audが自分自身の関数名と同一であること
  *     （正本仕様：正式名と同名のaud）。
+ *  5. firestore.indexes.json（Firebase repoルート）に、getFunnelDrilldownV2／
+ *     getFunnelDrilldownV2Verifyのmetric=lineClicks/phoneClicks分岐が要求する
+ *     event_type等価＋occurred_at範囲の複合インデックスが、interaction_logs／
+ *     interaction_logs_verifyの両方について実在すること。firebase.jsonの
+ *     firestore.indexesがそのfirestore.indexes.jsonを実際に参照していること
+ *     （独立監査再提出R7・項目6：Emulator PASSだけでは本番index存在の証拠にならない
+ *     ため、静的なindex定義の存在を機械的にBLOCKゲートへ組み込む）。
  *
  * 実際のFirestoreへは一切接続しない、純粋なテキスト静的解析。
  * 使い方: node scripts/predeploy_check_dataenv.js
@@ -40,6 +47,90 @@ const path = require('path');
 
 const INDEX_PATH = path.join(__dirname, '..', 'index.js');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
+const FIRESTORE_INDEXES_PATH = path.join(__dirname, '..', '..', 'firestore.indexes.json');
+
+/**
+ * 独立監査再提出R7・項目6の追加確認：getFunnelDrilldownV2／getFunnelDrilldownV2Verifyの
+ * metric=lineClicks/phoneClicks分岐は、interaction_logs（／_verify）コレクションへ
+ * event_type（等価）＋occurred_at（範囲）の複合クエリを投げる。Firestoreは等価＋範囲の
+ * 複合クエリを単一フィールドインデックスだけでは処理できず、複合インデックスの明示的な
+ * 事前定義が必須（未定義のままPRODUCTIONへ投げると"The query requires an index"で
+ * 実行時エラーになる）。Firestore Emulatorはこの制約を実運用ほど厳密に強制しないため、
+ * 「Emulator PASSだけでは本番index存在の証拠にならない」（指摘どおり）。ここでは
+ * firestore.indexes.json（gas_v2側の話ではなくFirebase repoルート）に、
+ * interaction_logs／interaction_logs_verify両方についてevent_type+occurred_atの
+ * 複合インデックス定義が実在することを静的に確認する（実Firestoreへは接続しない）。
+ */
+/**
+ * @param {Array} blockList
+ * @param {object} [overrides] テスト用の注入フック（省略時は実ファイルを読む・CLI本番動作は無変更）。
+ *   - overrides.indexesDoc: firestore.indexes.jsonの内容の代わりに使うオブジェクト（undefinedなら実ファイルを読む）
+ *   - overrides.indexesMissing: trueならindexesファイルが存在しないケースを模擬する
+ *   - overrides.firebaseJson: firebase.jsonの内容の代わりに使うオブジェクト（undefinedなら実ファイルを読む）
+ *   - overrides.firebaseJsonMissing: trueならfirebase.jsonが存在しないケースを模擬する
+ */
+function checkFirestoreIndexes(blockList, overrides) {
+  const ov = overrides || {};
+  let indexesDoc;
+  if (Object.prototype.hasOwnProperty.call(ov, 'indexesDoc')) {
+    indexesDoc = ov.indexesDoc;
+  } else if (ov.indexesMissing) {
+    indexesDoc = undefined;
+  } else {
+    if (!fs.existsSync(FIRESTORE_INDEXES_PATH)) {
+      blockList.push({ severity: 'BLOCK', item: 'firestore.indexes.json', detail: 'firestore.indexes.jsonが存在しない。getFunnelDrilldownV2/getFunnelDrilldownV2Verifyのmetric=lineClicks/phoneClicksクエリ（event_type等価＋occurred_at範囲の複合クエリ）に必要な複合インデックスが本番へ一切デプロイされない。' });
+      return;
+    }
+    try {
+      indexesDoc = JSON.parse(fs.readFileSync(FIRESTORE_INDEXES_PATH, 'utf8'));
+    } catch (e) {
+      blockList.push({ severity: 'BLOCK', item: 'firestore.indexes.json', detail: 'JSONパースに失敗: ' + e.message });
+      return;
+    }
+  }
+  if (indexesDoc === undefined) {
+    blockList.push({ severity: 'BLOCK', item: 'firestore.indexes.json', detail: 'firestore.indexes.jsonが存在しない。getFunnelDrilldownV2/getFunnelDrilldownV2Verifyのmetric=lineClicks/phoneClicksクエリ（event_type等価＋occurred_at範囲の複合クエリ）に必要な複合インデックスが本番へ一切デプロイされない。' });
+    return;
+  }
+  const indexes = Array.isArray(indexesDoc.indexes) ? indexesDoc.indexes : [];
+  ['interaction_logs', 'interaction_logs_verify'].forEach((collectionGroup) => {
+    const hasRequiredIndex = indexes.some((idx) => {
+      if (idx.collectionGroup !== collectionGroup) return false;
+      const fields = Array.isArray(idx.fields) ? idx.fields.map((f) => f.fieldPath) : [];
+      return fields.includes('event_type') && fields.includes('occurred_at');
+    });
+    if (!hasRequiredIndex) {
+      blockList.push({ severity: 'BLOCK', item: 'firestore.indexes.json:' + collectionGroup, detail: `collectionGroup=${collectionGroup}に対する event_type+occurred_at の複合インデックス定義が見つからない。` });
+    }
+  });
+  // firebase.jsonがindexesファイルを実際に参照していなければ、firestore.indexes.jsonが
+  // 存在してもdeploy時に読み込まれない（黙って無視される）。
+  let firebaseJson;
+  if (Object.prototype.hasOwnProperty.call(ov, 'firebaseJson')) {
+    firebaseJson = ov.firebaseJson;
+  } else if (ov.firebaseJsonMissing) {
+    firebaseJson = undefined;
+  } else {
+    const firebaseJsonPath = path.join(__dirname, '..', '..', 'firebase.json');
+    if (!fs.existsSync(firebaseJsonPath)) {
+      blockList.push({ severity: 'BLOCK', item: 'firebase.json', detail: 'firebase.jsonが存在しない。' });
+      return;
+    }
+    try {
+      firebaseJson = JSON.parse(fs.readFileSync(firebaseJsonPath, 'utf8'));
+    } catch (e) {
+      blockList.push({ severity: 'BLOCK', item: 'firebase.json', detail: 'JSONパースに失敗: ' + e.message });
+      return;
+    }
+  }
+  if (firebaseJson === undefined) {
+    blockList.push({ severity: 'BLOCK', item: 'firebase.json', detail: 'firebase.jsonが存在しない。' });
+    return;
+  }
+  if (!firebaseJson.firestore || !firebaseJson.firestore.indexes) {
+    blockList.push({ severity: 'BLOCK', item: 'firebase.json:firestore.indexes', detail: 'firebase.jsonのfirestore.indexesがfirestore.indexes.jsonを参照していない（deploy時にindex定義が読み込まれない）。' });
+  }
+}
 
 /**
  * package.jsonのdeployスクリプトを検査する（独立監査再提出・項目8）。
@@ -91,11 +182,13 @@ function checkDeployScripts(blockList, pkg) {
  * 行わない純粋な検査関数として分離した（main()はCLI用の薄いラッパーとしてこれを呼ぶ）。
  * @param {string} source functions/index.jsのソーステキスト
  * @param {object} pkg functions/package.jsonをJSON.parseしたオブジェクト（省略時は実ファイル）
+ * @param {object} [firestoreIndexesOverrides] checkFirestoreIndexes()向けのテスト用注入フック（省略時は実ファイルを読む）
  * @returns {Array<{severity:string,item:string,detail:string}>} blockList
  */
-function checkSource(source, pkg) {
+function checkSource(source, pkg, firestoreIndexesOverrides) {
   const blockList = [];
   checkDeployScripts(blockList, pkg);
+  checkFirestoreIndexes(blockList, firestoreIndexesOverrides);
 
   // exports.NAME = onRequest( ... ) の出現位置ごとに、次のexports.出現（または末尾）
   // までをそのエンドポイントの完全なソース片とみなす（ネストした{}を厳密にパースせず、
@@ -207,4 +300,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkSource, checkDeployScripts };
+module.exports = { checkSource, checkDeployScripts, checkFirestoreIndexes };
