@@ -1220,23 +1220,45 @@ test('recoverLegacySourceLabel_: "direct"は非外部シグナルとして扱い
 test('recoverLegacySourceLabel_: "internal"（同一サイト内遷移）も非外部シグナルとして扱う', () => {
   assert.deepEqual(recoverLegacySourceLabel_('internal'), { kind: 'none' });
 });
-test('recoverLegacySourceLabel_: "不明"（referrerパース失敗）も非外部シグナルとして扱う', () => {
-  assert.deepEqual(recoverLegacySourceLabel_('不明'), { kind: 'none' });
-});
 test('recoverLegacySourceLabel_: 空文字は非外部シグナルとして扱う', () => {
   assert.deepEqual(recoverLegacySourceLabel_(''), { kind: 'none' });
 });
-test('recoverLegacySourceLabel_: "google / cpc"（V1のUTM結合表記" / "）はopaque値として媒体・参照元どちらへも変換しない', () => {
-  assert.deepEqual(recoverLegacySourceLabel_('google / cpc'), { kind: 'none' });
-});
-test('recoverLegacySourceLabel_: "meishi"（ドット無し・媒体コード形式）は媒体コードとして復元する', () => {
+test('recoverLegacySourceLabel_: "meishi"（明示allowlistに載っている既知の媒体コード）は媒体コードとして復元する', () => {
   assert.deepEqual(recoverLegacySourceLabel_('meishi'), { kind: 'media', mediaCode: 'meishi' });
 });
 test('recoverLegacySourceLabel_: "google.com"（ドット有り・ホスト名形式）はWeb参照元として復元する（媒体コードにはならない。ドットはMEDIA_CODE_PATTERN不一致）', () => {
   assert.deepEqual(recoverLegacySourceLabel_('google.com'), { kind: 'source', webSource: 'google.com' });
 });
-test('recoverLegacySourceLabel_: 媒体コードにもホスト名にも一致しない値（記号を含む等）はどちらへも変換しない', () => {
-  assert.deepEqual(recoverLegacySourceLabel_('!!!invalid???'), { kind: 'none' });
+
+/* ---- 独立監査再提出R9・項目5：「ドットなしなら媒体」という推測を撤回。曖昧な
+ * 値はopaqueとして保持し、media/direct/webのいずれへも推測分類しない。 ---- */
+test('R9#5：recoverLegacySourceLabel_: "不明"（referrerはあったがパース失敗＝情報はあるが判別不能）はopaqueとして保持する（直接アクセスへ推測分類しない）', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('不明'), { kind: 'opaque' });
+});
+test('R9#5：recoverLegacySourceLabel_: "google / cpc"（V1のUTM結合表記" / "）はopaque値として媒体・参照元どちらへも変換しない', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('google / cpc'), { kind: 'opaque' });
+});
+test('R9#5：recoverLegacySourceLabel_: 媒体コードにもホスト名にも一致しない値（記号を含む等）はopaqueとして保持する', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('!!!invalid???'), { kind: 'opaque' });
+});
+test('R9#5：recoverLegacySourceLabel_: UTM utm_source単独値（例："google"。ドットを含まず、明示allowlistにも無い）は媒体として復元しない（「ドットなしなら媒体」という推測の撤回）', () => {
+  // V1のcurrentAttribution()は utm_medium が省略された場合、
+  // [utmSource, utmMedium].filter(Boolean).join(' / ') が1要素配列になり、
+  // ' / 'セパレータを含まないutm_sourceの生値単独（例："google"）がそのまま
+  // source列へ入る。これは媒体コードではなくUTM値であり、media扱いしてはならない。
+  assert.deepEqual(recoverLegacySourceLabel_('google'), { kind: 'opaque' }, 'ドットを含まず、allowlistにも無い"google"は媒体コードとして復元してはならない');
+});
+test('R9#5：recoverLegacySourceLabel_: 非文字列（数値・真偽値・オブジェクト等）はString()で媒体化せず、「情報無し」として扱う', () => {
+  assert.deepEqual(recoverLegacySourceLabel_(12345), { kind: 'none' }, '数値をString()変換すると"12345"という一見ありそうな媒体コード形式の文字列になり得るため、型チェックで弾く');
+  assert.deepEqual(recoverLegacySourceLabel_(true), { kind: 'none' });
+  assert.deepEqual(recoverLegacySourceLabel_({ foo: 'bar' }), { kind: 'none' });
+  assert.deepEqual(recoverLegacySourceLabel_(['meishi']), { kind: 'none' }, '配列も文字列ではないため媒体化しない（["meishi"]がString()で"meishi"になり得る経路を塞ぐ）');
+  assert.deepEqual(recoverLegacySourceLabel_(null), { kind: 'none' });
+  assert.deepEqual(recoverLegacySourceLabel_(undefined), { kind: 'none' });
+});
+test('R9#5：recoverLegacySourceLabel_: "direct"・"internal"は引き続き非外部シグナルとして扱う（確定的なラベルであり曖昧値ではないため回帰なし）', () => {
+  assert.deepEqual(recoverLegacySourceLabel_('direct'), { kind: 'none' });
+  assert.deepEqual(recoverLegacySourceLabel_('internal'), { kind: 'none' });
 });
 
 test('deriveLegacyMediaAndSource_（R8#6・ケース1）：from欠損＋source="meishi"→mediaCodeとして復元される', () => {
@@ -1287,6 +1309,49 @@ test('deriveLegacyMediaAndSource_（R8#6）：sourceフィールド自体が無�
   const result = deriveLegacyMediaAndSource_({ from: '', referrer: '' });
   assert.equal(result.mediaValidity, 'none');
   assert.equal(result.webSourceStatus, 'direct');
+});
+
+/* ---- 独立監査再提出R9・項目5：opaque legacy attribution（media/direct/webの
+ * いずれへも推測分類しない曖昧値）。 ---- */
+test('R9#5：deriveLegacyMediaAndSource_: from欠損＋source="google"（UTM utm_source単独値。ドット無し・allowlist外）→media/direct/webのいずれにも分類せずlegacy_opaqueとして保持する', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'google' });
+  assert.equal(result.mediaValidity, 'none', '"google"は媒体コードとして復元しない（UTM utm_source単独値の可能性を排除できないため）');
+  assert.equal(result.mediaCode, '');
+  assert.equal(result.webSourceStatus, 'legacy_opaque', '真の直接アクセス（direct）へも推測分類しない');
+  assert.notEqual(result.webSourceStatus, 'direct');
+  assert.equal(result.webSource, '', '生のsource値（"google"）をwebSourceへ入れない');
+  assert.ok(result.legacyOpaqueSourceHash, '診断用ハッシュは残す（生値は保持しない）');
+});
+test('R9#5：deriveLegacyMediaAndSource_: from欠損＋source="不明"（referrerパース失敗）→legacy_opaqueとして保持する（directへ推測分類しない）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: '不明' });
+  assert.equal(result.webSourceStatus, 'legacy_opaque');
+  assert.equal(result.mediaValidity, 'none');
+});
+test('R9#5：deriveLegacyMediaAndSource_: from欠損＋source="google / cpc"（UTM結合表記）→legacy_opaqueとして保持する', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 'google / cpc' });
+  assert.equal(result.webSourceStatus, 'legacy_opaque');
+});
+test('R9#5：deriveLegacyMediaAndSource_: 非文字列source（例：数値）はString()で媒体化されず、from/referrerだけの通常判定にfall backする', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: '', source: 12345 });
+  assert.equal(result.mediaValidity, 'none');
+  assert.equal(result.webSourceStatus, 'direct', '非文字列sourceは「情報無し」として扱われ、from/referrerとも無いので真の直接アクセスのまま');
+  assert.notEqual(result.mediaCode, '12345');
+});
+test('R9#5：deriveLegacyMediaAndSource_: referrerフィールド自体が既に外部参照元を示している場合は、opaque判定よりそちらを優先する（一次情報を信頼する）', () => {
+  const result = deriveLegacyMediaAndSource_({ from: '', referrer: 'https://www.yahoo.co.jp/', source: 'google' });
+  assert.equal(result.webSourceStatus, 'referrer', 'referrerが実在するため、opaque（legacy_opaque）にはならない');
+  assert.equal(result.webSource, 'www.yahoo.co.jp');
+});
+test('R9#5：buildQualityAxes: legacy_opaqueなセッションは"source:legacy_opaque"という独立したwebSourceQualityキーへ集計され、"source:direct"へは混入しない', () => {
+  const opaqueSession = { hasPageView: true, reactionCount: 0, isTest: false, mediaCode: '', mediaValidity: 'none', webSource: '', webSourceStatus: 'legacy_opaque' };
+  const directSession = { hasPageView: true, reactionCount: 0, isTest: false, mediaCode: '', mediaValidity: 'none', webSource: 'direct', webSourceStatus: 'direct' };
+  const { webSourceQuality } = buildQualityAxes([opaqueSession, directSession]);
+  const opaqueRow = webSourceQuality.find((s) => s.key === 'source:legacy_opaque');
+  const directRow = webSourceQuality.find((s) => s.key === 'source:direct');
+  assert.ok(opaqueRow, 'source:legacy_opaqueという独立したキーの行が存在する');
+  assert.equal(opaqueRow.visits, 1);
+  assert.ok(directRow, 'source:directの行も別途存在する');
+  assert.equal(directRow.visits, 1, 'legacy_opaqueなセッションがsource:directへ混入していない（1のまま）');
 });
 
 test('buildLegacyPseudoSessions_: hash有り・同一visitor_hash同一日の3行は1visitへ集約される（V1のgroupVisits_と同じ単位）', () => {

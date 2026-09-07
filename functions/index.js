@@ -48,6 +48,39 @@ const V2_REVISIT_LOOKBACK_DAYS = 90;
 // 存在しない状態でdeployすると失敗する＝人間の事前作業が必須であることが自然に強制される。
 const VERIFY_RUNTIME_SERVICE_ACCOUNT = 'funnel-verify-runtime@aokitosou-miniapp.iam.gserviceaccount.com';
 
+/**
+ * 独立監査再提出R9・項目6：VERIFY関連の2つのSecret／トークンは役割が全く異なるため、
+ * 混同しないよう明示的に分離して説明する（このファイル冒頭でのSecretの説明として、
+ * writer JWT用とreader token用を正確に分離する、という指摘への対応）。
+ *
+ * 1. VERIFY_JWT_SECRET（署名鍵。writer専用）
+ *    - 唯一の使用者：exports.logInteractionV2Verify（書き込み専用エンドポイント）。
+ *    - 用途：クライアントが提示するHS256 JWTの署名検証（verifyVerifyJwt）。
+ *    - このSecretを知っている者は、正しいクレーム（sub=info@aoki-tosou.net・
+ *      aud=logInteractionV2Verify・scope・exp≦15分）を満たすJWTを新規に「発行」
+ *      できる（VERIFY writerへの書き込み権限そのもの）。
+ *    - ローカルでの発行機構：functions/scripts/verify_jwt_local_issuer.js
+ *      （gcloudのactive accountをfail-closedで確認した上でGoogle Secret Manager
+ *      から取得する。functions/.secret.local依存のEmulator専用経路とは別物）。
+ *    - 読み取り系4関数（getFunnelInsightsV2Verify等）は、このSecretを一切
+ *      持たない・参照しない（secrets配列にVERIFY_JWT_SECRETを含めない）。
+ *
+ * 2. VERIFY_READ_TOKEN（固定トークン。reader専用）
+ *    - 使用者：getFunnelInsightsV2Verify・getFunnelDrilldownV2Verify・
+ *      getFunnelRecentActivityV2Verify（読み取り専用3関数）と、COPY_TEST GAS側の
+ *      テスト専用アダプタ（v2webFunnelVerifyReaderCheckV2_等）。
+ *    - 用途：Authorization: Bearerヘッダーの単純な文字列一致（requireVerifyReadToken）。
+ *      JWT署名検証は一切行わない（VERIFY_JWT_SECRETとは独立した、別の認可経路）。
+ *    - 書き込み専用のlogInteractionV2Verifyは、このトークンを一切持たない・
+ *      参照しない（secrets配列にVERIFY_READ_TOKENを含めない）。
+ *
+ * 両者を取り違えると（例：writer用SecretをGAS側readerトークンとして設定する等）、
+ * 認可が意図せず失敗する、または意図せず過大な権限を持つSecretが誤った場所へ
+ * 配置される事故につながるため、常にこの2区分を明示的に意識すること。
+ * predeploy_check_dataenv.js（checkSource内の1a/1b）が、この分離が実コードで
+ * 破られていないかを静的に検証する（両者混同時はBLOCK）。
+ */
+
 initializeApp();
 const db = getFirestore();
 const DASHBOARD_HTML = fs.readFileSync(path.join(__dirname, 'dashboard.html'), 'utf8');
@@ -303,7 +336,11 @@ async function fetchLegacyRowsForGrouping_(collections, startAt, endAt) {
     const row = {
       eventType: String(data.event_type || ''), dayKey: jstDateKey(createdAt), visitorHashValue: String(data.visitor_hash || ''),
       at: createdAt.getTime(), from: String(data.from || ''), referrer: String(data.referrer || ''),
-      source: String(data.source || ''), docId: doc.id
+      // 独立監査再提出R9・項目5：data.sourceが文字列でない場合、String()による暗黙
+      // 変換を行わない（数値等が偶然media/hostname形式の文字列に変換され、
+      // recoverLegacySourceLabel_で誤って媒体・参照元として復元され得るため）。
+      // 非文字列は「情報無し」（空文字）として扱う。
+      source: typeof data.source === 'string' ? data.source : '', docId: doc.id
     };
     (category === 'legacy_unknown' ? hashPresentRows : hashMissingRows).push(row);
   });
@@ -337,7 +374,8 @@ const V2_LEGACY_ATTRIBUTION_SCOPE = {
     hashPresent: 'visitor_hashが非空のlegacy page_view行は、V1のgroupVisits_と同じ日付＋visitor_hash単位で1visitへ集約する。訪問の媒体・Web参照元は、グループ内で最も早いpage_view行のfrom/referrerを採用する（V1のbuildVisitSummary_と同じ規則）。',
     hashMissing: 'visitor_hashが空のlegacy page_view行は、同一人物の判定根拠が無いため1行＝1visitとして個別に扱う（複数行を"(不明)"キーで1visitへ結合しない）。',
     reactions: 'legacyのline_click/phone_click行は、どの訪問に属するか安全に結合できないため、訪問へは一切紐付けずreaction-only（visitId相当が"legacy:reaction:<docId>"）として個別に扱う。存在しない訪問文脈を推測して結合しない。',
-    mediaWebSourceNormalization: '媒体コード（from）・Web参照元（referrer）の正規化は、V2書き込み時の検証と同一のnormalizeMediaCode/normalizeWebSourceを再利用する（新しい検証ロジックを増やさない「安全な正規化」）。'
+    mediaWebSourceNormalization: '媒体コード（from）・Web参照元（referrer）の正規化は、V2書き込み時の検証と同一のnormalizeMediaCode/normalizeWebSourceを再利用する（新しい検証ロジックを増やさない「安全な正規化」）。',
+    legacySourceRecovery: '独立監査再提出R9・項目5：from保存開始前の旧ログについては、V1のsource統合値から安全な範囲でのみ復元する。ドットを含む値のみWeb参照元として復元し（実世界のホスト名は必ずドットを含む）、ドットを含まない値は既知の媒体コードマスタ・明示allowlistに載っている場合だけ媒体コードとして復元する（「ドットなしなら媒体」という推測は撤回済み。UTM utm_source単独値のような曖昧な値を媒体として誤復元しない）。実データ分布の確認ができず媒体・参照元のいずれとも確信を持てない値は、真の直接アクセスへも推測分類せず、webSourceQualityの独立した"source:legacy_opaque"区分（webSourceStatus="legacy_opaque"）として保持する。'
   },
   note: '独立監査再提出R7・項目4でlegacyを実際にV2と同じ集計パイプラインへ合流させた（除外ではない）。leadScoreBreakdownの5区分すべて・mediaQuality・webSourceQuality・drilldown（visitors/lineClicks/phoneClicks）のいずれにもlegacyが反映される。'
 };

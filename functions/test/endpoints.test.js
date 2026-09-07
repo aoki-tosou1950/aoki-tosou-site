@@ -71,7 +71,7 @@ test('既存フォームは必須項目不足を従来どおり拒否する', as
 });
 
 /* ===================================================================
- * 単位EF配線（logInteractionV2 / logInteractionVerify / getFunnelInsightsV2）
+ * 単位EF配線（logInteractionV2 / logInteractionV2Verify / getFunnelInsightsV2）
  * 2026-09-07追加：認可・検証まわりだけをここで単体テストする（実Firestore書込みを
  * 伴う経路はfunctions/test/emulator_v2_e2e_20260907.jsで別途確認済み）。
  * =================================================================== */

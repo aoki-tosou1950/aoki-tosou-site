@@ -40,6 +40,36 @@ function browser(opts) {
 
   class FakeBlob { constructor(parts, options) { this.text = parts.join(''); this.type = (options && options.type) || ''; } }
 
+  // 独立監査再提出R9・項目2：window.setTimeout/clearTimeoutのfake実装。実イベント
+  // ループの代わりに、advance()呼び出し時に「currentNowが発火時刻を過ぎたタイマー」
+  // を実際に発火させる。発火したコールバックが新たなタイマーを予約すること
+  // （scheduleTrialTimer_の連鎖）もあるため、期限が来ているものが無くなるまで
+  // ループする。テストからattemptTrialResendを直接呼ばず、advance()による時間経過
+  // だけで単発setTimeoutベースの試験再送が働くことを検証できるようにするための
+  // 仕組み（実際のブラウザのsetTimeoutと同じ「単発・delay経過後に1回だけ発火」
+  // という契約を再現する）。
+  let fakeTimerIdSeq = 1;
+  const pendingTimers = new Map(); // id -> { fireAt, fn }
+  function fakeSetTimeout(fn, delay) {
+    const id = fakeTimerIdSeq++;
+    pendingTimers.set(id, { fireAt: currentNow + (Number(delay) || 0), fn });
+    return id;
+  }
+  function fakeClearTimeout(id) { pendingTimers.delete(id); }
+  function drainDueTimers() {
+    let firedAny = true;
+    while (firedAny) {
+      firedAny = false;
+      for (const [id, t] of Array.from(pendingTimers.entries())) {
+        if (t.fireAt <= currentNow) {
+          pendingTimers.delete(id);
+          firedAny = true;
+          t.fn();
+        }
+      }
+    }
+  }
+
   const location = new URL(url);
   const document = {
     referrer,
@@ -92,6 +122,8 @@ function browser(opts) {
       return Promise.resolve({ ok: status >= 200 && status < 300, status });
     },
     addEventListener(type, handler) { if (type === 'pagehide') pagehideHandler = handler; },
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
     document
   };
 
@@ -108,7 +140,8 @@ function browser(opts) {
   return {
     fetchCalls, beacons, localStore, sessionStore,
     api: context.window.aokiAnalyticsV2,
-    advance(ms) { currentNow += ms; },
+    advance(ms) { currentNow += ms; drainDueTimers(); },
+    pendingTimerCount() { return pendingTimers.size; },
     setVisibilityHidden() { document.visibilityState = 'hidden'; if (visibilityHandler) visibilityHandler(); },
     firePagehide() { if (pagehideHandler) pagehideHandler(); },
     click(href) {
@@ -442,8 +475,9 @@ test('401後15分経過で、outbox最古の1件だけを試験再送する（�
   await tick();
   assert.equal(b.fetchCalls.length, 1);
 
+  // 独立監査再提出R9・項目2：attemptTrialResendを直接呼ばず、advance()が内部で
+  // 駆動するfake timer（nextTrialAtまでの単発setTimeout）の発火だけに任せる。
   b.advance(15 * 60 * 1000 + 1000); // 15分経過
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.fetchCalls.length, 2, '試験再送は1件だけ（全件フラッシュではない）');
 });
@@ -456,7 +490,6 @@ test('試験再送が成功（2xx）すれば停止を解除し、残りのoutbo
   await tick();
   assert.equal(b.api.isStopped(), true);
   b.advance(15 * 60 * 1000 + 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), false, '試験再送が2xxなら停止解除');
 });
@@ -466,7 +499,6 @@ test('R6#9：試験再送が再び401なら停止を継続し、trialCountを1�
   const stopBefore = b.api._internal.loadStopState();
   assert.equal(stopBefore.trialCount, 0, '停止開始直後はtrialCount=0');
   b.advance(15 * 60 * 1000 + 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true);
   const stopAfter = b.api._internal.loadStopState();
@@ -489,7 +521,6 @@ test('R7#5訂正：試験再送が恒久的4xx（例：400）を返した場合�
   const outboxBefore = JSON.parse(b.localStore.get('aoki_analytics_v2_outbox') || '[]');
   assert.equal(outboxBefore.length, 1, '試験対象は最古の1件のみ');
   b.advance(15 * 60 * 1000 + 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true, '恒久4xxでも停止状態は継続する（successでなければクリアしない）');
   const state = b.api._internal.loadStopState();
@@ -507,7 +538,6 @@ test('R7#5訂正：試験再送が一時的失敗（例：503）を返した場�
   await tick();
   const before = b.api._internal.loadStopState();
   b.advance(15 * 60 * 1000 + 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.api.isStopped(), true);
   const state = b.api._internal.loadStopState();
@@ -534,7 +564,6 @@ test('R7#5：永久エラー（恒久4xx）が4件連続しても、401の試行
   assert.equal(outboxSeeded.length, 4, '停止中でも試験対象4件がoutboxに積まれている（page_view 1件＋phone_click 3件）');
   for (let i = 0; i < 4; i++) {
     b.advance(15 * 60 * 1000 + 1000); // rescheduleTrialWaitは常に15分固定（エスカレートしない）なので毎回同じ待機で足りる
-    b.api._internal.attemptTrialResend();
     await tick();
   }
   const state = b.api._internal.loadStopState();
@@ -553,7 +582,6 @@ test('R6#9：試験再送は15→30→60→120分とエスカレートし、4回
   const expectedIntervalsMin = [15, 30, 60, 120]; // 各試験（1〜4回目）を行うまでの待機分
   for (let i = 0; i < 4; i++) {
     b.advance(expectedIntervalsMin[i] * 60 * 1000 + 1000);
-    b.api._internal.attemptTrialResend();
     await tick();
     state = b.api._internal.loadStopState();
     if (i < 3) {
@@ -567,7 +595,6 @@ test('R6#9：試験再送は15→30→60→120分とエスカレートし、4回
   }
   const fetchCountAtFinal = b.fetchCalls.length;
   b.advance(999 * 60 * 60 * 1000); // 999時間経過させても
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.fetchCalls.length, fetchCountAtFinal, 'finalStopped後は時間がいくら経過しても自動試験しない（fetch回数が増えない）');
   assert.equal(b.api.isStopped(), true, 'finalStopped後もisStopped()はtrueのまま（QAのresumeAfterStop()だけが復帰手段）');
@@ -595,6 +622,78 @@ test('R6#9訂正：ページを新規に開いても（何度リロードして�
 });
 
 /* ===================================================================
+ * 独立監査再提出R9・項目2：PROD 401停止後の実タイマー再試行（nextTrialAtまでの
+ * 単発setTimeout）。テストからattemptTrialResendを直接呼ばず、fake timerの経過
+ * だけで最古1件が試験再送されることを確認する。
+ * =================================================================== */
+test('R9#2統合テスト：内部attemptTrialResendを直接呼ばず、fake timerの経過だけで最古1件が試験再送される', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: (url, init, callIndex) => ({ status: callIndex === 0 ? 401 : 200 }) });
+  await tick();
+  assert.equal(b.api.isStopped(), true, '前提：初回401で停止している');
+  assert.equal(b.fetchCalls.length, 1, '前提：まだ試験再送のfetchは発生していない');
+  assert.ok(b.pendingTimerCount() >= 1, 'beginStop()の時点でnextTrialAtまでの単発setTimeoutがスケジュールされているはず');
+
+  // attemptTrialResendを一切直接呼ばず、fake timerの経過（advance）だけに任せる。
+  const delay = b.api._internal.RETRY_BACKOFF_MS[0]; // 初回のbackoffForAttempts(1)と同じ15分
+  b.advance(delay + 1000);
+  await tick();
+
+  assert.equal(b.fetchCalls.length, 2, 'fake timerの経過だけで試験再送のfetchが1回発生しているはず（attemptTrialResendを直接呼んでいない）');
+  assert.equal(b.api.isStopped(), false, '試験再送が200で成功したため停止解除される');
+});
+test('R9#2：reload後も停止状態とnextTrialAtがlocalStorageから復元され、期限が来た時点でfake timerの経過だけで自動的に試験再送される（attemptTrialResendを直接呼ばない）', async () => {
+  const shared = new Map();
+  let simulatedNow = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const first = browser({ url: 'https://aoki-tosou.net/', localStore: shared, now: simulatedNow, fetchResponder: () => ({ status: 401 }) });
+  await tick();
+  assert.equal(first.api.isStopped(), true);
+  const stopStateBeforeReload = first.api._internal.loadStopState();
+  assert.ok(stopStateBeforeReload.nextTrialAt > simulatedNow, '前提：nextTrialAtはまだ先');
+
+  // 「ページ再読込」を、同じlocalStorageを共有し、壁時計も引き継いだ新しいbrowser()
+  // インスタンスの生成で模擬する。reload直後の時点ではnextTrialAtがまだ先のため、
+  // 試験再送は起きない（期限前reloadだけでは試験再送しない）。試験再送自体は
+  // 引き続き401を返す設定にする（成功時のflushOutboxViaFetch()による他エントリの
+  // 連鎖送信で「fetch回数=1」という単純な検証が崩れるのを避け、「timerが正しく
+  // 発火し、復元されたnextTrialAtの最古1件だけを試みた」ことに焦点を絞るため）。
+  const second = browser({ url: 'https://aoki-tosou.net/about.html', localStore: shared, now: simulatedNow, fetchResponder: () => ({ status: 401 }) });
+  await tick();
+  assert.equal(second.api.isStopped(), true, 'reload直後はまだ停止状態のまま（期限前reloadだけでは試験再送しない）');
+  assert.equal(second.fetchCalls.length, 0, 'reload直後はfetchが一切発生しない');
+  const stopStateAfterReload = second.api._internal.loadStopState();
+  assert.equal(stopStateAfterReload.nextTrialAt, stopStateBeforeReload.nextTrialAt, 'nextTrialAtがlocalStorageから正しく復元されている（reload前と同じ値）');
+
+  // reload後のインスタンスでも、attemptTrialResendを直接呼ばず、fake timerの経過
+  // （advance）だけで、復元されたnextTrialAtの期限到来時に自動的に試験再送される。
+  const delay = Math.max(0, stopStateAfterReload.nextTrialAt - simulatedNow);
+  second.advance(delay + 1000); simulatedNow += delay + 1000;
+  await tick();
+  assert.equal(second.fetchCalls.length, 1, 'reload後、fake timerの経過だけで試験再送のfetchが最古1件ぶんだけ発生している（attemptTrialResendを直接呼んでいない）');
+  assert.equal(second.api.isStopped(), true, '401が再発したため停止状態は継続する');
+  const stateAfterTimer = second.api._internal.loadStopState();
+  assert.equal(stateAfterTimer.trialCount, 1, '試験再送が実際に401として処理され、trialCountが進んでいる（timerが本当にattemptTrialResendの処理を経由したことの確認）');
+});
+test('R9#2：結果に応じてtimerがclear/rescheduleされる（成功でclear・失敗でreschedule。finalStopped後は新しいタイマーを予約しない）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) }); // 常に401
+  await tick();
+  const delays = [15, 30, 60, 120].map((min) => min * 60 * 1000);
+  for (let i = 0; i < delays.length; i++) {
+    assert.ok(b.pendingTimerCount() >= 1, `${i + 1}回目の試験前：次のタイマーが予約されているはず`);
+    b.advance(delays[i] + 1000);
+    await tick();
+  }
+  const state = b.api._internal.loadStopState();
+  assert.equal(state.finalStopped, true, '4回失敗でfinalStopped=true');
+  assert.equal(b.pendingTimerCount(), 0, 'finalStopped後は新しいタイマーを予約しない（clearされたまま）');
+
+  // 999時間経過させても、タイマーが無いので何も起きない。
+  const fetchCountAtFinal = b.fetchCalls.length;
+  b.advance(999 * 60 * 60 * 1000);
+  await tick();
+  assert.equal(b.fetchCalls.length, fetchCountAtFinal, 'finalStopped後はfake timerの経過だけでは一切追加のfetchが発生しない');
+});
+
+/* ===================================================================
  * 独立監査再提出R8・項目10：401の待機エスカレーション回数（trialCount）とは独立した
  * 総試行回数上限（totalAttempts・STOP_TOTAL_ATTEMPT_LIMIT）。401以外の失敗が続く限り
  * trialCountが進まず、無制限ポーリング・ページ再読込による回数上限の迂回が可能に
@@ -611,7 +710,6 @@ test('R8#10：401以外の失敗（一時的な5xx）だけが続く場合でも
   assert.ok(limit > 4, '総試行数上限は401専用のtrialCount上限（4）より大きい独立した値のはず');
   for (let i = 0; i < limit; i++) {
     b.advance(15 * 60 * 1000 + 1000); // rescheduleTrialWaitは常に15分固定（エスカレートしない）
-    b.api._internal.attemptTrialResend();
     await tick();
   }
   let state = b.api._internal.loadStopState();
@@ -622,7 +720,6 @@ test('R8#10：401以外の失敗（一時的な5xx）だけが続く場合でも
   // 上限を超える（limit+1回目の）試行は、実際にはfetchを試みず、その場でfinalStopped化する。
   const fetchCallsBeforeOverLimit = b.fetchCalls.length;
   b.advance(120 * 60 * 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   state = b.api._internal.loadStopState();
   assert.equal(state.finalStopped, true, '401とは無関係の失敗が続いても、総試行数の上限を超えようとした時点でfinalStoppedになる（無制限リトライの防止）');
@@ -631,7 +728,6 @@ test('R8#10：401以外の失敗（一時的な5xx）だけが続く場合でも
   // finalStopped後は、待機時間が経過していても追加の試行が一切発生しない。
   const fetchCallsAfterFinalStopped = b.fetchCalls.length;
   b.advance(120 * 60 * 1000);
-  b.api._internal.attemptTrialResend();
   await tick();
   assert.equal(b.fetchCalls.length, fetchCallsAfterFinalStopped, 'finalStopped後はいつ呼んでも追加のfetchが一切発生しない');
 });
@@ -645,7 +741,6 @@ test('R8#10：totalAttemptsは401か否かに関わらずすべての実試行�
   assert.equal(b.api.isStopped(), true);
   for (let i = 0; i < 5; i++) {
     b.advance(120 * 60 * 1000 + 1000); // どのエスカレート段階でも足りる長さ（上限120分）だけ進める
-    b.api._internal.attemptTrialResend();
     await tick();
   }
   const state = b.api._internal.loadStopState();
@@ -670,7 +765,6 @@ test('R8#10：ページ再読込（同じlocalStorageを引き継ぐ新しいbro
   for (let i = 0; i < half; i++) {
     const step = 15 * 60 * 1000 + 1000;
     b.advance(step); simulatedNow += step;
-    b.api._internal.attemptTrialResend();
     await tick();
   }
   let state = b.api._internal.loadStopState();
@@ -690,7 +784,6 @@ test('R8#10：ページ再読込（同じlocalStorageを引き継ぐ新しいbro
   for (let i = 0; i < limit - half + 1; i++) {
     const step = 15 * 60 * 1000 + 1000;
     b.advance(step); simulatedNow += step;
-    b.api._internal.attemptTrialResend();
     await tick();
   }
   state = b.api._internal.loadStopState();
@@ -757,6 +850,71 @@ test('離脱時（pagehide）でもsendBeaconでフラッシュする', async ()
   await tick();
   b.firePagehide();
   assert.equal(b.beacons.length, 1);
+});
+
+/* ===================================================================
+ * 独立監査再提出R9・項目1：離脱時beaconの3制約（401停止中は送らない・現在ページの
+ * 新規イベントだけに限定する・同一event_idの二重beacon送信を防ぐ）。
+ * =================================================================== */
+test('R9#1：PROD 401停止中はsendBeaconを一切送らない（停止中0回）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 401 }) });
+  await tick();
+  assert.equal(b.api.isStopped(), true, '前提：401で停止している');
+  b.setVisibilityHidden();
+  assert.equal(b.beacons.length, 0, 'hiddenでもbeaconを一切送らない');
+  b.firePagehide();
+  assert.equal(b.beacons.length, 0, 'pagehideでもbeaconを一切送らない');
+});
+test('R9#1：visibilitychange(hidden)とpagehideが連続しても、同じevent_idを1ページ内で二重beacon送信しない（連続イベント1回）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 500 }) });
+  await tick();
+  assert.equal(b.api.isStopped(), false);
+  b.setVisibilityHidden();
+  assert.equal(b.beacons.length, 1, 'hiddenで1回送信される');
+  const firstEventId = b.beacons[0].body.event_id;
+  b.firePagehide();
+  assert.equal(b.beacons.length, 1, '直後のpagehideでは同じevent_idを二重送信しない（beacon総数は増えない）');
+  assert.equal(b.beacons[0].body.event_id, firstEventId);
+});
+test('R9#1：一度hiddenになった後に新しく発生したイベントは、後続pagehideで1回だけ送信できる（新規後発イベント1回）', async () => {
+  const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 500 }) });
+  await tick();
+  b.setVisibilityHidden();
+  assert.equal(b.beacons.length, 1, 'hiddenでpage_viewが1回送信される');
+  const firstEventId = b.beacons[0].body.event_id;
+
+  // hidden後に新しいイベントが発生する（例：ユーザーが電話番号リンクをタップした）。
+  b.api.track('phone_click');
+  await tick();
+
+  b.firePagehide();
+  assert.equal(b.beacons.length, 2, '新規後発イベントぶんだけbeaconが1件増える（合計2件）');
+  const eventIds = b.beacons.map((x) => x.body.event_id);
+  assert.equal(eventIds.filter((id) => id === firstEventId).length, 1, '最初のイベントは引き続き1回のまま（再送されない）');
+  const newEventIds = eventIds.filter((id) => id !== firstEventId);
+  assert.equal(newEventIds.length, 1, '新規後発イベントはちょうど1回だけ送信される');
+  assert.equal(b.beacons[1].body.eventType, 'phone_click');
+});
+test('R9#1：nextRetryAt猶予中の古い保持系リトライエントリ（別ページ由来）は、離脱を理由に強制beaconフラッシュされない', async () => {
+  const shared = new Map();
+  // 1ページ目：500応答でoutboxに1件保持されたまま終了する（このページ自体はbeaconを
+  // 送らない＝pagehideを発火しないまま次のページ相当のインスタンスへ移る）。
+  const first = browser({ url: 'https://aoki-tosou.net/', localStore: shared, fetchResponder: () => ({ status: 500 }) });
+  await tick();
+  const outboxAfterFirst = JSON.parse(shared.get('aoki_analytics_v2_outbox') || '[]');
+  assert.equal(outboxAfterFirst.length, 1, '前提：1ページ目のpage_viewがnextRetryAt待ちのままoutboxに残っている');
+
+  // 2ページ目（同じlocalStorageを引き継ぐ＝別ページ由来のoutboxエントリが既にある状態）。
+  const second = browser({ url: 'https://aoki-tosou.net/about.html', localStore: shared, fetchResponder: () => ({ status: 500 }) });
+  await tick();
+  // 2ページ目自身のpage_viewだけがpageOriginEventIdsに入っている。
+  second.setVisibilityHidden();
+  assert.equal(second.beacons.length, 1, '2ページ目で新規発生した自分のpage_viewだけがbeacon送信される');
+  const sentEventId = second.beacons[0].body.event_id;
+  const outboxAfterSecond = JSON.parse(shared.get('aoki_analytics_v2_outbox') || '[]');
+  const firstPageEventId = outboxAfterFirst[0].event.event_id;
+  assert.notEqual(sentEventId, firstPageEventId, '1ページ目由来の古いエントリはbeacon送信対象に含まれない（現在ページで新規発生したイベントだけに限定する）');
+  assert.equal(outboxAfterSecond.length, 2, 'outbox自体には1ページ目・2ページ目の両方のエントリが残っている（beacon送信対象から外れただけで、削除も送信もされていない）');
 });
 test('R7#6：sendBeaconのBlobはtext/plain（CORS safelisted）を使う（application/jsonではない。ENDPOINTは別オリジンのためcross-origin送信になる）', async () => {
   const b = browser({ url: 'https://aoki-tosou.net/', fetchResponder: () => ({ status: 500 }) });
@@ -865,4 +1023,71 @@ test('R8#4：正常な保存済みvisit状態（有効な形式）は引き続�
   await tick();
   assert.equal(b.fetchCalls.length, 1);
   assert.equal(b.fetchCalls[0].body.visit_id, healthyState.visitId, '正常な保存状態は無効化されず、そのまま再利用されるはず（誤検知でイベントを無駄に新規visit化しない）');
+});
+
+/* ===================================================================
+ * 独立監査再提出R9・項目4：visit state時刻検証の強化（startedAt<=lastActivityAt・
+ * 許容未来幅）。破損・未来時刻なら状態を破棄して新visit_idを発行する。
+ * =================================================================== */
+test('R9#4：startedAt > lastActivityAt（開始が最終活動より後という矛盾した時刻）の保存状態は無効化され、新しいvisitIdが発行される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    visitId: 'vst2_startedafterlastactivity00001',
+    startedAt: now, lastActivityAt: now - 60000, boundaryKey: null, // startedAt > lastActivityAt
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.equal(b.fetchCalls.length, 1);
+  assert.notEqual(b.fetchCalls[0].body.visit_id, brokenState.visitId, 'startedAt>lastActivityAtという矛盾した保存状態は無効化され、壊れたvisitIdを使い回さない');
+  assert.match(b.fetchCalls[0].body.visit_id, /^vst2_[a-zA-Z0-9]+$/);
+});
+test('R9#4：許容幅（5分）を大きく超える未来のlastActivityAtを持つ保存状態は無効化され、新しいvisitIdが発行される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    visitId: 'vst2_futurelastactivity000000001',
+    startedAt: now, lastActivityAt: now + 60 * 60 * 1000, boundaryKey: null, // 1時間先の未来
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.notEqual(b.fetchCalls[0].body.visit_id, brokenState.visitId, '許容幅を超える未来のlastActivityAtは無効化される');
+});
+test('R9#4：許容幅（5分）を大きく超える未来のstartedAtを持つ保存状態は無効化され、新しいvisitIdが発行される', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const brokenState = {
+    visitId: 'vst2_futurestartedat0000000000001',
+    startedAt: now + 60 * 60 * 1000, lastActivityAt: now + 60 * 60 * 1000, boundaryKey: null,
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(brokenState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.notEqual(b.fetchCalls[0].body.visit_id, brokenState.visitId, '許容幅を超える未来のstartedAtは無効化される');
+});
+test('R9#4：クロックスキュー許容幅（5分）以内の軽微な未来時刻は、引き続き有効な保存状態として再利用される（過剰検知しないことの確認）', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const healthyState = {
+    visitId: 'vst2_withinclockskewtolerance0001',
+    startedAt: now - 60000, lastActivityAt: now + 60 * 1000, boundaryKey: null, // 1分先（許容5分以内）
+    mediaCode: 'meishi', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(healthyState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.equal(b.fetchCalls[0].body.visit_id, healthyState.visitId, 'クロックスキュー許容幅以内の軽微な未来時刻は無効化しない');
+});
+test('R9#4：startedAtとlastActivityAtが完全一致（同時刻）の保存状態は矛盾ではなく有効なまま扱われる（境界値の回帰確認）', async () => {
+  const now = RealDate.parse('2026-09-07T00:00:00+09:00');
+  const healthyState = {
+    visitId: 'vst2_startedequalslastactivity0001',
+    startedAt: now - 1000, lastActivityAt: now - 1000, boundaryKey: null,
+    mediaCode: '', webSource: 'direct', landingPage: 'https://aoki-tosou.net/'
+  };
+  const sessionStore = new Map([[VISIT_STATE_SESSION_KEY, JSON.stringify(healthyState)]]);
+  const b = browser({ url: 'https://aoki-tosou.net/', sessionStore, now, fetchResponder: () => ({ status: 200 }) });
+  await tick();
+  assert.equal(b.fetchCalls[0].body.visit_id, healthyState.visitId, 'startedAt===lastActivityAtは矛盾ではない（同時刻の初回イベント）ため、そのまま再利用される');
 });

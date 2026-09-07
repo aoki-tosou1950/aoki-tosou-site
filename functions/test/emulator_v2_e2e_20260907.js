@@ -173,14 +173,18 @@ async function main() {
   }
 
   // --- 5b. VERIFY writer：aud不一致（正式名でないaud）は401（正本仕様：正式名logInteractionV2Verify・audも同名） ---
+  // 独立監査再提出R9・項目6：以前はここで意図的な不一致audの例として、廃止済みの
+  // 旧関数名（末尾にV2を含まない版）を使っていたが、その文字列自体が資料中に
+  // 残り続けることを避けるため、無関係な汎用の誤値へ差し替える（負テストの意図＝
+  // 「正式名と完全一致しないaudは拒否される」ことの検証は無変更のまま）。
   {
-    const { token: wrongAud } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'logInteractionVerify', scope: 'write:interaction_logs_v2_verify' });
+    const { token: wrongAud } = signVerifyJwt(VERIFY_SECRET, { sub: 'info@aoki-tosou.net', aud: 'someOtherFunction', scope: 'write:interaction_logs_v2_verify' });
     const res = await request('logInteractionV2Verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${wrongAud}` },
       body: JSON.stringify({ schemaVersion: 2, event_id: 'e2e_verify_wrongaud_' + randomSuffix(), visit_id: visitId, occurredAt: Date.now(), eventType: 'page_view' })
     });
-    ok('logInteractionV2Verify: audが旧名"logInteractionVerify"（正式名でない）だと401', res.status === 401, 'status=' + res.status);
+    ok('logInteractionV2Verify: audが正式名（logInteractionV2Verify）と一致しないと401', res.status === 401, 'status=' + res.status);
   }
 
   // --- 6. VERIFY writer：偽造JWT（別Secretで署名）は401・PROD/VERIFYどちらにも書き込まれない ---

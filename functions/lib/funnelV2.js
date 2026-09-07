@@ -510,6 +510,11 @@ function buildQualityAxes(visitSessions) {
     if (v.webSourceStatus === 'referrer') return 'source:referrer:' + v.webSource;
     if (v.webSourceStatus === 'direct') return 'source:direct';
     if (v.webSourceStatus === 'invalid') return 'source:invalid';
+    // 独立監査再提出R9・項目5：legacy行のsource統合値が曖昧（媒体コードともWeb参照元
+    // とも確信をもって判別できない。例：UTM sourceのみのgoogle等）な場合、真の直接
+    // アクセス（'source:direct'）へ推測分類せず、独立した集計バケットとして保持する
+    // （実データの分布を確認できない状態で、曖昧な値を確定的な区分へ紛れ込ませない）。
+    if (v.webSourceStatus === 'legacy_opaque') return 'source:legacy_opaque';
     return 'source:none';
   }
   function ensureMedia(key, v) {
@@ -573,13 +578,16 @@ function deriveLegacyWebSource_(referrer, mediaValidity) {
 }
 
 /**
- * 独立監査再提出R8・項目6：V1クライアント（js/analytics.js・currentAttribution()）の
- * 実装をREAD ONLYで直接確認した結果に基づく、legacy行のsource統合値からの安全な復元。
+ * 独立監査再提出R8・項目6／R9・項目5：V1クライアント（js/analytics.js・
+ * currentAttribution()）の実装をREAD ONLYで直接確認した結果に基づく、legacy行の
+ * source統合値からの安全な復元。
  *
  * V1のsource計算規則（js/analytics.js:currentAttribution()）：
  *   1. fromパラメータが有れば source=from
  *   2. 無ければutm_sourceが有れば source="utm_source / utm_medium"（' / '結合。
- *      utm_medium省略時はutm_sourceのみ）
+ *      utm_medium**省略時はutm_sourceのみ**＝' / 'を含まない単独値になる。
+ *      `[utmSource, utmMedium].filter(Boolean).join(' / ')`はutm_mediumが
+ *      falsyだと1要素配列になり、joinはセパレータを挿入しない）
  *   3. どちらも無ければ source=referrerSource()（document.referrer無し→'direct'、
  *      同一ホスト→'internal'、外部ホスト→www.を除いたホスト名、パース失敗→'不明'）
  *   4. 最終的に空ならsource='不明'
@@ -588,31 +596,61 @@ function deriveLegacyWebSource_(referrer, mediaValidity) {
  * from=''のままでも、source列には上記1〜3のいずれかの値（媒体コード相当・
  * UTM結合文字列・referrer由来ラベル）が入っている可能性がある。
  *
- * 'direct'/'internal'/'不明'/空文字は、真の直接アクセス・同一サイト内遷移・
- * 判定不能を表すV1固有のラベルであり、外部の媒体コード・Web参照元のいずれへも
- * 変換しない（存在しない外部シグナルを捏造しない）。' / 'を含む値はUTM結合表記
- * （2. の形）の可能性が高く、媒体コード・Web参照元のどちらとも意味が異なる
- * ため、判別不能なopaque値として扱い、どちらへも変換しない（安全な非推測表現）。
- * それ以外の値は、既存の検証ロジック（normalizeMediaCode/normalizeWebSource。
- * V2書き込み時の検証と同一・新しい検証ロジックを増やさない）へ順に通し、媒体コード
- * 形式（英数字・アンダースコア・ハイフンのみ、ドット不可）に一致すれば媒体コード
- * として、それ以外でホスト名形式に一致すればWeb参照元として復元する
- * （例：'meishi'→媒体コード、'google.com'→Web参照元）。
- * 【既知の限界・明示】ドットを含まない単語（例：'localhost'）は媒体コードと
- * ホスト名のどちらの可能性もあり、この順序では媒体コード側を優先する。実PRODの
- * 旧ログにおけるsource値の実分布をREAD ONLYで確認できていない（この環境からは
- * 実PRODのFirestoreへ接続できない）ため、これ以上の精緻化は行わない
- * （安全側＝断定しすぎない設計として許容し、確認不能である旨を明示する）。
+ * 訂正（独立監査再提出R9・項目5）：R8時点の実装は「' / 'を含まない・ドットを
+ * 含まない文字列は媒体コード」と推測していたが、これは誤りだった。上記2.のとおり
+ * utm_medium省略時のsourceは"google"のようにutm_sourceの生値**単独**（' / 'を
+ * 含まない・ドットも含まない）になり得るため、この推測は実際には「UTM sourceの
+ * 生値」と「青木塗装が付与した媒体コード」を区別できず、前者を後者へ誤変換して
+ * いた（例：utm_source=googleのみのアクセスが、媒体"google"として復元されて
+ * しまう）。「ドットなしなら媒体」という推測を撤回し、以下へ改める：
+ *  - 'direct'/'internal'/空文字は、真の直接アクセス・同一サイト内遷移という
+ *    確定的な非外部シグナルであり、推測ではない（既存どおり、外部の媒体コード・
+ *    Web参照元のいずれへも変換しない）。
+ *  - '不明'（referrerはあったがパース失敗）は「情報はあったが判別できない」ため、
+ *    直接アクセスへの推測分類をやめ、opaqueとして保持する。
+ *  - ' / 'を含む値（utm_medium有りのUTM結合表記）はopaqueとして保持する。
+ *  - ドットを含む値は、実世界のホスト名がほぼ必ずドットを含む（TLD）という
+ *    構造的事実に基づきWeb参照元として復元する（媒体コード・UTM単独値は元々
+ *    ドットを含まない設計のため、この判定はドットなし推測とは別物で維持する）。
+ *  - ドットを含まない値は、既知の媒体コードマスタまたは明示allowlist
+ *    （LEGACY_MEDIA_RECOVERY_ALLOWLIST_）に載っている場合だけ媒体コードとして
+ *    復元する。載っていなければ、media/direct/webのいずれへも推測分類せず、
+ *    opaqueとして保持する（実データの分布を確認できない状態で断定しない）。
+ * 【実PROD分布確認】この環境（Firebase repoのローカル/CI worktree）からは、
+ * gcloud等の実PROD Firestore（aokitosou-miniappプロジェクト）への認証済み
+ * アクセス経路が無く、READ ONLYでの実分布確認は本ラウンドでも未実施
+ * （詳細は本コミットの報告内・COPY_TEST接続readiness一覧を参照）。
  */
+// 独立監査再提出R9・項目5：媒体マスタ（GAS側Spreadsheet）へこのFirebase repoから
+// 直接アクセスする手段が無いため、明示的に確認済みの媒体コードだけをここへ列挙する
+// （'meishi'＝過去の全ラウンドの実装・テストで一貫して名刺媒体コードとして扱われて
+// きた既知の値）。安易に拡張しない：新しいコードを追加する場合は媒体マスタでの
+// 実在確認、または取締役の明示的な根拠提示を経ること。
+var LEGACY_MEDIA_RECOVERY_ALLOWLIST_ = ['meishi'];
 function recoverLegacySourceLabel_(source) {
-  const s = String(source || '').trim();
-  if (!s || s === 'direct' || s === 'internal' || s === '不明') return { kind: 'none' };
-  if (s.indexOf(' / ') >= 0) return { kind: 'none' }; // UTM結合表記の可能性が高いopaque値
-  const asMedia = normalizeMediaCode(s);
-  if (asMedia.mediaValidity === 'valid') return { kind: 'media', mediaCode: asMedia.mediaCode };
-  const asSource = normalizeWebSource(s);
-  if (asSource.webSourceStatus === 'referrer') return { kind: 'source', webSource: asSource.webSource };
-  return { kind: 'none' };
+  // 独立監査再提出R9・項目5：非文字列sourceをString()で媒体化しない（数値等が
+  // 暗黙変換で偶然media/hostname形式に一致し得るため）。呼び出し元
+  // （fetchLegacyRowsForGrouping_）が既に非文字列を空文字へ落としているため、
+  // ここへ到達する時点で非文字列が来ることは無い設計だが、念のため型を
+  // 明示的に再検査し、文字列でなければ「情報無し」として扱う。
+  if (typeof source !== 'string') return { kind: 'none' };
+  const s = source.trim();
+  if (!s || s === 'direct' || s === 'internal') return { kind: 'none' };
+  if (s === '不明') return { kind: 'opaque' }; // referrerはあったがパース失敗＝情報はあるが判別不能
+  if (s.indexOf(' / ') >= 0) return { kind: 'opaque' }; // UTM結合表記（utm_medium有り）
+  if (s.indexOf('.') >= 0) {
+    const asSource = normalizeWebSource(s);
+    if (asSource.webSourceStatus === 'referrer') return { kind: 'source', webSource: asSource.webSource };
+    return { kind: 'opaque' }; // ドットは含むがホスト名として不正な形式
+  }
+  // ドットを含まない値：「ドットなしなら媒体」という推測は撤回した。既知の媒体
+  // コードマスタ・明示allowlistに載っている場合だけ媒体として復元する
+  // （UTM sourceのみの'google'等を媒体扱いしない）。
+  if (LEGACY_MEDIA_RECOVERY_ALLOWLIST_.indexOf(s) >= 0) {
+    const asMedia = normalizeMediaCode(s);
+    if (asMedia.mediaValidity === 'valid') return { kind: 'media', mediaCode: asMedia.mediaCode };
+  }
+  return { kind: 'opaque' }; // 実データ確認できない曖昧値：media/direct/webのいずれへも推測分類しない
 }
 
 /** 1件のlegacy raw log行から、V2のvisit_sessionsと同じ媒体・Web参照元フィールドを導出する。 */
@@ -639,6 +677,16 @@ function deriveLegacyMediaAndSource_(row) {
     // sourceラベルより一次情報として信頼できる）。referrerが無い/direct相当の
     // 場合のみ、sourceから復元したWeb参照元を採用する。
     return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: recovered.webSource, webSourceStatus: 'referrer' };
+  }
+  if (recovered.kind === 'opaque' && webSource.webSourceStatus !== 'referrer') {
+    // 独立監査再提出R9・項目5：referrerフィールド自体が既に外部参照元を示している
+    // 場合はそちらを優先する（一次情報の方が信頼できる）。referrerが無い/direct
+    // 相当の場合だけopaque判定を適用する。「実データ確認できない曖昧値」を
+    // media/direct/webのいずれへも推測分類せず、独立したlegacy_opaque状態として
+    // 保持する（真の直接アクセス'direct'へ偽装しない）。生のsource値はwebSourceへ
+    // 一切入れない（診断用ハッシュだけ残す。既存のinvalidMediaCodeHash等と同じ
+    // パターン＝生値を保持しない）。
+    return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: '', webSourceStatus: 'legacy_opaque', legacyOpaqueSourceHash: hashDiagnostic_(row.source) };
   }
   return { mediaCode: media.mediaCode, mediaValidity: media.mediaValidity, webSource: webSource.webSource, webSourceStatus: webSource.webSourceStatus };
 }

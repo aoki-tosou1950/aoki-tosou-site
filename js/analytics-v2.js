@@ -79,6 +79,9 @@
     // 同じ実害になる）。この総数上限は、401再発かどうかに関わらず、実際に試行を
     // 開始した時点で必ず1つ消費し、上限に達したら以後の自動試験を一切行わない
     // （finalStopped=true。QAのresumeAfterStop()による手動解除のみが復帰手段）。
+    // 独立監査再提出R9：この20という値は「無制限リトライを防ぐ」という目的を満たす
+    // ための暫定値であり、確定仕様として決定されたものではない（運用実績・実際の
+    // 一時的障害の継続時間分布を踏まえて、別途正式な値を決定する余地を残す）。
     var STOP_TOTAL_ATTEMPT_LIMIT = 20;
     var PERMANENT_DELETE_STATUSES = [400, 404, 413, 422, 403];
     var RETRYABLE_STATUSES = [408, 429];
@@ -87,6 +90,22 @@
     var memoryVisitState = null;
     var memoryVisitorId = null;
     var memoryStopState = null;
+    // 独立監査再提出R9・項目1：離脱時beaconの対象範囲・重複防止をページ単位の
+    // メモリだけで管理する（永続化しない＝ページを離れれば自然に消える。この
+    // 集合自体を次ページへ引き継ぐ必要は無い）。
+    // pageOriginEventIds：このページの生存中にtrack()で新規発生したevent_idの集合。
+    // 離脱時beaconは、この集合に含まれるイベントだけを対象とする（nextRetryAt
+    // 猶予中の古い保持系リトライエントリ・別ページ由来のエントリを、離脱を理由に
+    // 強制フラッシュしない）。
+    var pageOriginEventIds = {};
+    // beaconSentEventIds：このページの生存中に既にsendBeaconを試みたevent_idの集合。
+    // visibilitychange(hidden)→pagehideが連続しても、同じイベントを二重beacon
+    // 送信しない。hidden後に新規発生したイベントは、この集合にまだ無いため、
+    // 後続のpagehideで1回だけ送信できる。
+    var beaconSentEventIds = {};
+    // 独立監査再提出R9・項目2：nextTrialAtまでの単発setTimeoutのハンドル
+    // （このページの生存中だけ有効。ページを離れれば自然に消える）。
+    var trialTimerHandle = null;
 
     function safeLocalGet(key) { try { return window.localStorage.getItem(key); } catch (err) { return null; } }
     function safeLocalSet(key, value) { try { window.localStorage.setItem(key, value); return true; } catch (err) { return false; } }
@@ -173,6 +192,11 @@
 
     /* ---- visit状態（sessionStorage。不能時はページ内メモリを使い回す） ---- */
     function isFiniteNumber(v) { return typeof v === 'number' && isFinite(v); }
+    // 独立監査再提出R9・項目4：startedAt/lastActivityAtの未来方向の許容ずれ
+    // （クロックスキュー・システム時計のわずかなずれを吸収する）。これを超える
+    // 未来時刻は「破損・改ざん・別プロセス由来の異常値」とみなし、保存状態を
+    // 破棄して新しいvisitIdを発行する（既存訪問として推測継続しない）。
+    var VISIT_STATE_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
     /** 監査差し戻し（独立監査再提出R8）#4：保存済みvisit状態を使用前に厳格検証する。
      * 以前は「JSON objectか」（typeof===‘object’）しか確認していなかったため、
      * visitId欠損・形式不正な状態（例：sessionStorageの手動編集・別スキーマの
@@ -198,6 +222,12 @@
       if (typeof state.visitId !== 'string' || !/^vst2_[a-zA-Z0-9]+$/.test(state.visitId)) return false;
       if (!isFiniteNumber(state.startedAt) || state.startedAt <= 0) return false;
       if (!isFiniteNumber(state.lastActivityAt) || state.lastActivityAt <= 0) return false;
+      // 独立監査再提出R9・項目4：startedAt/lastActivityAtの型・有限・正数だけでなく、
+      // 時刻としての整合性も検証する。
+      if (state.startedAt > state.lastActivityAt) return false; // 開始が最終活動より後は矛盾（壊れた状態）
+      var now = nowMs();
+      if (state.startedAt > now + VISIT_STATE_FUTURE_TOLERANCE_MS) return false; // 許容幅を超える未来の開始時刻
+      if (state.lastActivityAt > now + VISIT_STATE_FUTURE_TOLERANCE_MS) return false; // 許容幅を超える未来の最終活動時刻
       if (typeof state.mediaCode !== 'string') return false;
       if (typeof state.webSource !== 'string') return false;
       if (state.boundaryKey !== null && typeof state.boundaryKey !== 'string') return false;
@@ -346,14 +376,49 @@
     }
     function saveStopState(state) { memoryStopState = state; safeLocalSet(STOP_STATE_KEY, state ? JSON.stringify(state) : ''); if (!state) { try { window.localStorage.removeItem(STOP_STATE_KEY); } catch (err) {} } }
     function isStopped() { return !!loadStopState(); }
+
+    /** 独立監査再提出R9・項目2：nextTrialAtまでの単発setTimeoutを実装する。
+     * 以前は停止中の試験再送がinit()（ページ読み込み時）の1回きりの同期チェック
+     * でしか行われず、ページを再読込しない限り、期限が来ても自動的には試験再送
+     * されなかった（開いたままのタブでは永久に停止したままになり得た）。
+     * scheduleTrialTimer_()は、既存タイマーがあれば一旦clearしてから
+     * （重複タイマー防止）、永続化されたnextTrialAtまでの単発setTimeoutを
+     * 新たに設定する。stopState自体が無い・finalStopped・nextTrialAtが無い
+     * 場合は何もスケジュールしない（＝以後の自動試験を行わない）。
+     * 期限が既に過ぎていてもsetTimeout(fn, 0)相当で必ず非同期にfireする
+     * （同期的な即時試験は行わない＝「期限前reloadだけでは試験再送しない」を
+     * 維持したまま、期限到来後は確実に・かつ非同期に試験する）。 */
+    function clearTrialTimer_() {
+      if (trialTimerHandle !== null) {
+        try { window.clearTimeout(trialTimerHandle); } catch (err) {}
+        trialTimerHandle = null;
+      }
+    }
+    function scheduleTrialTimer_() {
+      clearTrialTimer_();
+      var stopState = loadStopState();
+      if (!stopState || stopState.finalStopped) return;
+      var nextTrialAt = Number(stopState.nextTrialAt || 0);
+      if (!nextTrialAt) return;
+      var delay = Math.max(0, nextTrialAt - nowMs());
+      try {
+        trialTimerHandle = window.setTimeout(function() {
+          trialTimerHandle = null;
+          attemptTrialResend();
+        }, delay);
+      } catch (err) {}
+    }
+
     function beginStop() {
       var now = nowMs();
       saveStopState({ stoppedAt: now, trialCount: 0, totalAttempts: 0, nextTrialAt: now + backoffForAttempts(1), finalStopped: false });
+      scheduleTrialTimer_();
     }
     /** 実際に試験再送を試みて401で失敗した後に呼ぶ：trialCountを1つ進め、上限
      * （4回）に達していればfinalStopped化し、達していなければ次のエスカレート
      * 間隔を設定する。totalAttempts（実試行総数。attemptTrialResend側で既に
-     * 加算済み）はここでは変更せず、そのまま引き継ぐ。 */
+     * 加算済み）はここでは変更せず、そのまま引き継ぐ。結果に応じてタイマーを
+     * clear（finalStopped）またはreschedule（次のエスカレート間隔）する。 */
     function rescheduleTrialAfterFailedAttempt() {
       var state = loadStopState();
       var now = nowMs();
@@ -362,8 +427,10 @@
       var totalAttempts = Number(state && state.totalAttempts || 0);
       if (newCount >= STOP_TRIAL_MAX_ATTEMPTS) {
         saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, totalAttempts: totalAttempts, nextTrialAt: null, finalStopped: true });
+        clearTrialTimer_();
       } else {
         saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: newCount, totalAttempts: totalAttempts, nextTrialAt: now + backoffForAttempts(newCount + 1), finalStopped: false });
+        scheduleTrialTimer_();
       }
     }
     /** (a) outboxが空で実際には何も試せなかった場合、または (b) 実際に試験再送を
@@ -371,15 +438,17 @@
      * 呼ぶ：trialCount（＝401再発回数）は消費せず、現在のエスカレート段階のまま
      * 次回チェック時刻だけを先送りする。totalAttempts（実試行総数）は
      * attemptTrialResend側で既に加算済みのものをそのまま引き継ぐ（(a)の場合は
-     * 実際に試行していないため元々加算されていない）。 */
+     * 実際に試行していないため元々加算されていない）。次回のためにタイマーを
+     * rescheduleする。 */
     function rescheduleTrialWait() {
       var state = loadStopState();
       var now = nowMs();
       var count = Number(state && state.trialCount || 0);
       var totalAttempts = Number(state && state.totalAttempts || 0);
       saveStopState({ stoppedAt: state ? state.stoppedAt : now, trialCount: count, totalAttempts: totalAttempts, nextTrialAt: now + backoffForAttempts(count + 1), finalStopped: false });
+      scheduleTrialTimer_();
     }
-    function clearStop() { saveStopState(null); }
+    function clearStop() { saveStopState(null); clearTrialTimer_(); }
     /** QA専用：試験的に即時再開する（trialCount・totalAttempts・finalStoppedを含む状態を完全に破棄する）。 */
     function resumeAfterStop() { clearStop(); }
 
@@ -493,6 +562,10 @@
     function track(eventType, extra) {
       var event = buildEvent(eventType, extra);
       enqueue(event);
+      // 独立監査再提出R9・項目1：このページで新規発生したイベントとして記録する
+      // （離脱時beaconの対象範囲を「現在ページで新規発生したイベント」だけに
+      // 限定するため。停止中でも記録自体は行う＝停止解除後に判定材料として使える）。
+      pageOriginEventIds[event.event_id] = true;
       if (isStopped()) return; // outboxには積むが、停止中は送信を試みない（次回の試験再送・復帰を待つ）
       sendViaFetch({ event: event, attempts: 0 });
     }
@@ -515,7 +588,12 @@
      * エスカレート・4回上限のいずれも実質的に無意味化する（「無制限試験」で禁止事項）。
      * 廃止後は、この関数はいつ・何度呼ばれても、永続化されたnextTrialAt／trialCount／
      * finalStoppedの記録だけを見て判定するため、ページリロードによる回数制限の
-     * バイパスができない。 */
+     * バイパスができない。
+     * 独立監査再提出R9・項目2：この関数自体は、init()からの1回きりの直接呼び出しでは
+     * なく、scheduleTrialTimer_()が設定する単発setTimeoutのコールバックとして
+     * 呼ばれる（ページを再読込しなくても、開いたままのタブでnextTrialAtの期限が
+     * 来た時点で自動的に呼ばれるようにするため）。この関数自身がnextTrialAtを
+     * 再チェックするため、タイマーが多少ずれて発火しても安全（期限前なら何もしない）。 */
     function attemptTrialResend() {
       var stopState = loadStopState();
       if (!stopState || stopState.finalStopped) return; // 上限到達後は自動試験を一切行わない（QAのresumeAfterStop()のみが復帰手段）
@@ -533,6 +611,7 @@
       var totalAttempts = Number(stopState.totalAttempts || 0);
       if (totalAttempts >= STOP_TOTAL_ATTEMPT_LIMIT) {
         saveStopState(Object.assign({}, stopState, { nextTrialAt: null, finalStopped: true }));
+        clearTrialTimer_();
         return;
       }
       saveStopState(Object.assign({}, stopState, { totalAttempts: totalAttempts + 1 }));
@@ -558,9 +637,27 @@
       });
     }
 
-    /** 離脱時：fetchのthenを待てないため、可能な限りsendBeaconで送る（削除はしない）。 */
+    /** 離脱時：fetchのthenを待てないため、可能な限りsendBeaconで送る（削除はしない）。
+     * 独立監査再提出R9・項目1で以下の制約を追加した：
+     *  - PROD 401停止中はsendBeaconを一切送らない（送信全体を止めるという停止契約の
+     *    趣旨に、401を認識できないbeaconの送信は反する。停止解除は試験再送（fetch）
+     *    経由のみで判定する）。
+     *  - 対象は「このページで新規発生したイベント」（pageOriginEventIds）だけに限定
+     *    する（nextRetryAt猶予中の古い保持系リトライエントリ・別ページ由来の
+     *    エントリを、離脱を理由に強制フラッシュしない）。
+     *  - 同一event_idを1ページ内で二重beacon送信しない（beaconSentEventIds。
+     *    visibilitychange(hidden)→pagehideが連続する典型ケースに対応）。hidden後に
+     *    新規発生したイベントは、この集合にまだ無いため後続のpagehideで1回だけ送れる。 */
     function flushOutboxViaBeacon() {
-      pruneOutbox(loadOutbox()).forEach(function(item) { sendViaBeaconBestEffort(item.event); });
+      if (isStopped()) return;
+      pruneOutbox(loadOutbox()).forEach(function(item) {
+        var eventId = item.event && item.event.event_id;
+        if (!eventId) return;
+        if (!pageOriginEventIds[eventId]) return;
+        if (beaconSentEventIds[eventId]) return;
+        beaconSentEventIds[eventId] = true;
+        sendViaBeaconBestEffort(item.event);
+      });
     }
 
     function isLineUrl(href) {
@@ -584,7 +681,13 @@
       // 渡し、ページ新規表示のたびに待機時間を無視した即時試験再送を行っていた
       // （「無制限試験」で禁止事項）。force引数は廃止し、永続化されたnextTrialAtを
       // 過ぎている場合にのみ試験する（attemptTrialResend内部で判定する）。
-      if (isStopped()) attemptTrialResend();
+      // 独立監査再提出R9・項目2：ページ読み込み時にattemptTrialResend()を1回だけ
+      // 同期的に呼ぶのではなく、scheduleTrialTimer_()でnextTrialAtまでの単発
+      // setTimeoutを設定する（reload後も停止状態とnextTrialAtをlocalStorageから
+      // 復元し、期限がまだ先ならその時刻まで待ってから発火する＝「期限前reload
+      // だけでは試験再送しない」を維持したまま、期限が来た時点でページを再読込
+      // しなくても自動的に試験再送されるようにする）。
+      if (isStopped()) scheduleTrialTimer_();
       else flushOutboxViaFetch();
       track('page_view');
       bindClicks();
@@ -611,11 +714,17 @@
         pruneOutbox: pruneOutbox, loadOutbox: loadOutbox, enqueue: enqueue,
         classifyResponseStatus: classifyResponseStatus, backoffForAttempts: backoffForAttempts,
         attemptTrialResend: attemptTrialResend, flushOutboxViaFetch: flushOutboxViaFetch,
+        flushOutboxViaBeacon: flushOutboxViaBeacon,
         loadStopState: loadStopState, beginStop: beginStop,
         rescheduleTrialAfterFailedAttempt: rescheduleTrialAfterFailedAttempt, rescheduleTrialWait: rescheduleTrialWait,
+        scheduleTrialTimer_: scheduleTrialTimer_, clearTrialTimer_: clearTrialTimer_,
+        getTrialTimerHandle_: function() { return trialTimerHandle; },
+        getPageOriginEventIds_: function() { return pageOriginEventIds; },
+        getBeaconSentEventIds_: function() { return beaconSentEventIds; },
         WRITER_GENERATION: WRITER_GENERATION, VISIT_TIMEOUT_MS: VISIT_TIMEOUT_MS,
         OUTBOX_MAX_ITEMS: OUTBOX_MAX_ITEMS, OUTBOX_MAX_AGE_MS: OUTBOX_MAX_AGE_MS,
         STOP_TRIAL_MAX_ATTEMPTS: STOP_TRIAL_MAX_ATTEMPTS, STOP_TOTAL_ATTEMPT_LIMIT: STOP_TOTAL_ATTEMPT_LIMIT, RETRY_BACKOFF_MS: RETRY_BACKOFF_MS,
+        VISIT_STATE_FUTURE_TOLERANCE_MS: VISIT_STATE_FUTURE_TOLERANCE_MS,
         ENDPOINT: ENDPOINT
       }
     };
