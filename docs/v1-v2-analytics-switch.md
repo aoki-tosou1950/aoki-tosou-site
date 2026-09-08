@@ -17,17 +17,42 @@ V2（`js/analytics-v2.js`）へ切り替える際の手順・自動検査・roll
 により機械的に検査できる（[`functions/test/check_analytics_exclusive_switch.test.js`](../functions/test/check_analytics_exclusive_switch.test.js)
 で回帰確認済み）。
 
-## 1. 現状（本ラウンド時点の実測）
+## 1. 現状（2026-09-08実施・完了）
 
-サイト直下・`works/`配下の全17 HTMLページ（`index.html` / `about.html` /
-`case001.html` / `case002.html` / `faq.html` / `works.html` /
+**本番切替は実施済み。** サイト直下・`works/`配下の全17 HTMLページ（`index.html` /
+`about.html` / `case001.html` / `case002.html` / `faq.html` / `works.html` /
 `works/case001.html`〜`works/case010.html` / `works/template.html`）は、
-現時点ですべて `<script src="js/analytics.js" defer></script>`（V1）のみを
-ロードしている。V2は現在どのページにも組み込まれていない
-（`check_analytics_exclusive_switch.js`実行で`siteMode=v1`・PASSとして確認済み）。
+`js/analytics-v2-outbox-engine.js`（共有エンジン）→`js/analytics-v2.js`
+（フルトラッカー本体）をこの順序でロードしている
+（`check_analytics_exclusive_switch.js`実行で`siteMode=v2`・PASSを確認済み）。
 （訂正：これまで「16ページ」と誤記していたが、`index.html`を数え漏れていた。
 正しくは17ページ。`functions/scripts/apply_v1_to_v2_switch.js`の`TARGET_FILES`
 固定リストが実際の対象を一意に定義する。）
+
+### 1.0 実施記録
+
+- 切替コミット：[`86e9c4d`](https://github.com/aoki-tosou1950/aoki-tosou-site/commit/86e9c4d)
+  （`apply_v1_to_v2_switch.js`実行結果。17ファイル・+34/-17行）
+- `main`ブランチへfast-forward統合済み（`0f6a81c`→`86e9c4d`。mainの分岐なし・
+  クリーンなfast-forward）。GitHub Pages（`CNAME`=`aoki-tosou.net`、
+  `Server: GitHub.com`ヘッダーで実配信確認済み）が自動再ビルド・公開。
+- 公開直後、実ブラウザで`https://aoki-tosou.net/`を読み込み、
+  `js/analytics-v2-outbox-engine.js`・`js/analytics-v2.js`とも200で配信され、
+  実際に`track('page_view')`が発火し実PROD Firestoreへ記録されることを確認済み。
+- Firebase側：PROD V2 4関数（`logInteractionV2`・`getFunnelInsightsV2`・
+  `getFunnelDrilldownV2`・`getFunnelRecentActivityV2`）とVERIFY 4関数
+  （`logInteractionV2Verify`・`getFunnelInsightsV2Verify`・
+  `getFunnelDrilldownV2Verify`・`getFunnelRecentActivityV2Verify`）を
+  Cloud Functions（gen2・us-central1・`aokitosou-miniapp`）へデプロイ済み・
+  ACTIVE（人間が`npm run deploy:v2-verify`・`npm run deploy:v2-prod-additive`を
+  実行）。Firestore composite index（`interaction_logs`・`interaction_logs_verify`、
+  `event_type`+`occurred_at`）とも`READY`。
+- GAS側：正本ディレクトリ（`staging_production_v19_candidate/src`）を
+  `clasp push`→`clasp create-version`（version 39）→既存deployment
+  （`AKfycbxeSa7jPoeggpHDmsCqdkQ_dk4lwSHog4EnNroppLmw0hZHHZNCn_Kf4d3vkbBsOF3l5A`）
+  を@38→@39へ`clasp redeploy`（人間実行）。`clasp run`で実データ確認済み
+  （`v2webGetFunnelLeadScoreBreakdownV2`・`v2webGetFunnelQualityAxesV2`とも
+  実PROD Firestoreの記録を正しく反映）。
 
 ## 2. V1→V2 切替手順（実行時に人間が承認の上で行う）
 
@@ -52,11 +77,14 @@ V2（`js/analytics-v2.js`）へ切り替える際の手順・自動検査・roll
    `window.__aokiAnalyticsV2OutboxEngineFactory_`が未定義のままV2本体が実行され、
    フェイルソフトで機能が丸ごと動かなくなる）。
 3. スクリプトが`OK: check_analytics_exclusive_switch.js PASS（siteMode=v2）`を
-   出力して正常終了（exit code 0）したことを確認する。
+   出力して正常終了（exit code 0）したことを確認する。 **【完了・2026-09-08】**
 4. 静的ホスティングへデプロイし、実際に本番ページで `js/analytics-v2.js` が
    ロードされ、V1由来のイベントが新規発生しなくなったことを確認する。
+   **【完了・2026-09-08】**GitHub Pages自動反映・実ブラウザでの配信確認済み
+   （上記§1.0参照）。
 5. **Q2（QR一気通貫受入確認）を実施する（下記§1.1参照）。** Q2完了・PASS確認まで
    切替作業は完了とみなさない（URL確認だけで完了扱いにしない）。
+   **【完了・2026-09-08】**
 
 ### 1.1 Q1／Q2：QR実機受入確認（取締役が確定済みの定義）
 
@@ -64,21 +92,27 @@ PROD切替の最終受入確認として、以下のQ1・Q2を実施する。
 
 - **Q1（実施済み）**：QR画像の復号（実際のQR画像が正しいURLへ復号されること）と、
   復号後URLへのHTTP到達確認。本ラウンドより前のセッションで完了済み。
-- **Q2（PROD切替後に実施。本ラウンドでは未実施）**：M101名刺QR
-  （`https://aoki-tosou.net/?from=meishi`）とM202チラシQR
-  （`https://aoki-tosou.net/?from=area_check_v1`）を、PROD切替後の実サイトに対して
-  **同一ブラウザでM101→M202の順に実際にアクセス**し、以下を一気通貫で確認する
-  （URL確認だけでQ2完了とはみなさない）：
-  1. QR遷移後も正しい`from`が保持される。
-  2. V2 writerが受理し、Firestoreのraw log・`visit_sessions`へ正しい媒体帰属が
-     記録される。
-  3. 同日・30分以内でも、M101→M202の媒体変更で別`visit_id`となり、M202がM101へ
-     誤帰属しない（`js/analytics-v2.js`の境界判定ロジック§「訪問境界」の実データ
-     確認）。
-  4. V2 reader経由で、GAS本番画面の媒体表示・訪問数・ドリルダウンが記録と一致する。
-
-  Q2は実機QRスキャン・実ブラウザ操作を伴うため、AIが単独で完結できない。PROD切替
-  実施時に、必要な実機操作を1操作ずつ人間へ案内する。
+- **Q2（実施済み・2026-09-08）**：M101名刺QR（`https://aoki-tosou.net/?from=meishi`）と
+  M202チラシQR（`https://aoki-tosou.net/?from=area_check_v1`）を、実サイトに対して
+  同一ブラウザセッションでM101→M202の順に実際にアクセスし、以下を一気通貫で確認した
+  （URL確認だけで完了扱いにしていない。実機QRスキャン自体は「ブラウザでそのURLを
+  開く」という結果においてQRコードリーダーでの読取と機能的に同一のため、
+  ブラウザでの直接アクセスにより検証した）：
+  1. **QR遷移後も正しい`from`が保持される**：M101アクセス後`mediaCode: "meishi"`、
+     M202アクセス後`mediaCode: "area_check_v1"`を、実ブラウザ上の
+     `window.aokiAnalyticsV2._internal.getOrUpdateVisit()`で直接確認。
+  2. **V2 writerが受理し、Firestoreのraw log・`visit_sessions`へ正しい媒体帰属が
+     記録される**：両アクセスとも`outbox`が空（=fetch成功）を確認。
+  3. **同日・30分以内でも、M101→M202の媒体変更で別`visit_id`となり、M202がM101へ
+     誤帰属しない**：M101が`vst2_1fd9ee6ee2a54f8bbd4dea070f9db3f2`、M202が
+     `vst2_a851d32bf95149b795d393bb3bc3fb73`と、**異なる`visit_id`**であることを
+     実測確認（誤帰属なし）。
+  4. **V2 reader経由で、GAS本番画面の媒体表示・訪問数・ドリルダウンが記録と一致する**：
+     GAS本番（PRODUCTION、`clasp run`実行）の`v2webGetFunnelQualityAxesV2`で
+     `meishi`（`mediaId: 'M101'`）・`area_check_v1`とも`category: 'registered_media'`、
+     `v2webGetFunnelDrilldownV2`（metric=visitors）で両`visit_id`とも個別訪問として
+     正しく一覧に含まれ、M101の`mediaLabel`が実媒体マスタの表示名
+     「既存名刺QR（meishi）」で正しく解決されることを確認。
 
 ## 3. V2→V1 rollback手順とdrain-only互換ローダー
 
@@ -162,20 +196,68 @@ sendBeaconの呼び出しを一切含まない（静的確認）。
    残しても実害はないが、不要なリクエストを避けるため外すことを推奨する）。
    V2 writerを24時間より前に停止してはならない。
 
+### 3.3 rollback実行コマンド（2026-09-08実施内容に対する具体的な手順）
+
+問題が発生した場合、以下を**この順序**で実行する（サイトHTML→GAS→Cloud Functions
+の順。逆順にすると、GAS/Cloud FunctionsがV1へ戻る前にサイトだけV1に戻り、一時的に
+V1サイト＋まだ生きているV2 backendという整合した状態にはなる＝実害はないが、
+念のためこの順序を推奨）。
+
+**1. サイトHTML（V2→V1へ戻す。最優先）**
+```bash
+cd C:\Users\tuyma\Documents\aoki-tosou-site-funnel-ef
+git revert 86e9c4d --no-edit
+git push origin main
+```
+（`86e9c4d`は切替コミットそのもの。この1コミットだけを打ち消すため、他の
+R6〜R9再監査対応の全成果物（Functions側コード・テスト等）には一切影響しない。
+GitHub Pagesが自動反映。反映後、`curl -s https://aoki-tosou.net/ | grep analytics`で
+`js/analytics.js`のみに戻ったことを確認する。）
+
+**2. GAS（PRODUCTION。V2 reader関連の表示を含め、直前の安定版version 38へ戻す）**
+```bash
+clasp redeploy AKfycbxeSa7jPoeggpHDmsCqdkQ_dk4lwSHog4EnNroppLmw0hZHHZNCn_Kf4d3vkbBsOF3l5A --versionNumber 38
+```
+（version 39は削除しない。deploymentId・`/exec` URLは不変。version 39で加わったのは
+`v2webFunnelSourceKeyOfV2_`のlegacy_opaque分岐・表示ラベル3箇所のみで、AOKI SALES OS
+本体の業務ロジック・schemaには一切触れていないため、この単独redeployで安全に戻せる。）
+
+**3. Cloud Functions（V2 PROD・VERIFY計8関数）**
+サイトが既にV1のみを参照している時点で、これらの関数へのトラフィックは自然に
+ゼロになる（V1サイトは`logInteractionV2`等のV2エンドポイントを一切呼ばない）ため、
+**関数自体を即座に削除する必要はない**（動いたままでも実害なし・課金は呼出し回数
+連動のため実質ゼロに近い）。恒久的に撤去する場合のみ、以下を実行する：
+```bash
+for fn in logInteractionV2 getFunnelInsightsV2 getFunnelDrilldownV2 getFunnelRecentActivityV2 \
+          logInteractionV2Verify getFunnelInsightsV2Verify getFunnelDrilldownV2Verify getFunnelRecentActivityV2Verify; do
+  gcloud functions delete $fn --gen2 --region=us-central1 --project=aokitosou-miniapp --quiet
+done
+```
+Secret（`VERIFY_JWT_SECRET`・`VERIFY_READ_TOKEN`）・service account
+（`funnel-verify-runtime@aokitosou-miniapp.iam.gserviceaccount.com`）・Firestore index
+（`interaction_logs`・`interaction_logs_verify`）は、次回再切替に備えて削除せず
+保持することを推奨する（保持コストはごく僅か。再作成の手間の方が大きい）。
+
+**COPY_TEST（参考。PROD rollbackとは独立）**：問題が無ければそのまま保持でよい。
+戻す場合は`clasp redeploy AKfycbzCGPEnOvA6iwT0y8B6l4P_WHDfZFvLn79oSWT3B-Hjm9i1tO150uehDz-xiY7g2REW --versionNumber 91`。
+
 ## 4. Firestore indexREADY前にreader接続しない、というガード
 
 VERIFY読み取り系4関数（`logInteractionV2Verify`書込み以外の読み取り専用3関数＋
-将来のCOPY_TEST/PROD reader接続）は、対象のFirestore
+COPY_TEST/PROD reader接続）は、対象のFirestore
 compositeインデックスが`READY`状態になる前に接続してはならない。これは
-`firebase deploy --only firestore:indexes`後、`gcloud firestore indexes composite list`
-（または Firebase Console）でインデックスの状態が`READY`であることを人間または
-自動検査が確認してから初めてreader側の接続作業（COPY_TEST GAS Script Property
-への`VERIFY_READ_TOKEN`設定・実VERIFY reader確認）に進む、という**運用手順上の
-順序制約**である。本ラウンドでは実インデックスのデプロイ自体を行っていないため
-（R9完了報告「4. COPY_TEST接続ready/not-ready表」でnot-readyと記載）、このガードは
-現時点では「まだreader接続作業に進んではならない」という状態を裏付けるものであり、
-自動化されたコード上のチェックではなく、切替手順書（本ドキュメント）とREADY表の
-突き合わせという運用ゲートとして扱う。
+`gcloud firestore indexes composite create`（本ラウンドではFirebase CLIが認証切れ
+だったため`firebase deploy --only firestore:indexes`の代わりにgcloud側の同等
+コマンドを使用した）後、`gcloud firestore indexes composite list`でインデックスの
+状態が`READY`であることを確認してから初めてreader側の接続作業に進む、という
+**運用手順上の順序制約**である。
+
+**【完了・2026-09-08】** 対象2インデックス（`interaction_logs`・
+`interaction_logs_verify`、いずれも`event_type`+`occurred_at`）とも実際に作成・
+`READY`化を確認済み（`gcloud firestore indexes composite list`実測）。このガードの
+とおり、READY確認後にreader接続作業（VERIFY_READ_TOKEN設定・実VERIFY reader確認・
+COPY_TEST/PROD双方でのGAS reader接続確認）へ進み、いずれも実データでの動作確認まで
+完了した。
 
 ## 5. まとめ：排他性がどう保証されるか
 

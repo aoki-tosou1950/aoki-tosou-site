@@ -16,13 +16,28 @@ const os = require('os');
 const SITE_ROOT = path.resolve(__dirname, '..', '..');
 const { TARGET_FILES } = require('../scripts/apply_v1_to_v2_switch');
 
+// R9再監査対応：本番切替（2026-09-08）以降、実サイトのTARGET_FILESは既にV2
+// （engine+analytics-v2.js）を参照している。このテストは「V1状態からの切替」の
+// 挙動を検証するものであり、実サイトの現在の状態（V1のまま／V2切替済みのいずれか）
+// に依存せず常に同じ結果になるべきである。コピー後、既にV2化されているファイルは
+// 逆変換でV1状態へ正規化してから、各テストの本来の検証（V1→V2への順変換）を行う
+// （実ファイルの中身自体は書き換えない。一時ディレクトリ上のコピーだけを正規化する）。
+const V2_TAG_RE = /<script src="((?:\.\.\/)?)js\/analytics-v2-outbox-engine\.js" defer><\/script>\n<script src="(?:\.\.\/)?js\/analytics-v2\.js" defer><\/script>/;
+function normalizeToV1Baseline_(content) {
+  const m = content.match(V2_TAG_RE);
+  if (!m) return content; // 既にV1状態、またはこのテストの対象外パターン
+  const prefix = m[1];
+  return content.replace(V2_TAG_RE, '<script src="' + prefix + 'js/analytics.js" defer></script>');
+}
+
 function makeTempSiteCopy_() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v1v2switch-test-'));
   fs.mkdirSync(path.join(tmpDir, 'works'));
   fs.mkdirSync(path.join(tmpDir, 'functions', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'js'));
   TARGET_FILES.forEach((rel) => {
-    fs.copyFileSync(path.join(SITE_ROOT, rel), path.join(tmpDir, rel));
+    const content = fs.readFileSync(path.join(SITE_ROOT, rel), 'utf8');
+    fs.writeFileSync(path.join(tmpDir, rel), normalizeToV1Baseline_(content), 'utf8');
   });
   fs.copyFileSync(
     path.join(SITE_ROOT, 'functions', 'scripts', 'check_analytics_exclusive_switch.js'),
@@ -86,7 +101,10 @@ test('R9再監査対応：実行すると全17ファイルがengine→analytics-
 test('R9再監査対応：切替後、対象ファイル以外の内容は一切変更されない（スクリプトタグの1箇所だけが変わる）', () => {
   const tmpDir = makeTempSiteCopy_();
   try {
-    const beforeIndex = fs.readFileSync(path.join(SITE_ROOT, 'index.html'), 'utf8');
+    // makeTempSiteCopy_が既にV1状態へ正規化した直後の内容を「切替前」の基準とする
+    // （実サイト自体が既にV2切替済みの場合でも、このテストは常にV1→V2の1回分の
+    // 差分だけを検証できる）。
+    const beforeIndex = fs.readFileSync(path.join(tmpDir, 'index.html'), 'utf8');
     const mod = loadScriptModuleForRoot_(tmpDir);
     mod.run_(false);
     const afterIndex = fs.readFileSync(path.join(tmpDir, 'index.html'), 'utf8');
