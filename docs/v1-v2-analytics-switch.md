@@ -19,29 +19,40 @@ V2（`js/analytics-v2.js`）へ切り替える際の手順・自動検査・roll
 
 ## 1. 現状（本ラウンド時点の実測）
 
-サイト直下・`works/`配下の全16 HTMLページ（`index.html` / `about.html` /
+サイト直下・`works/`配下の全17 HTMLページ（`index.html` / `about.html` /
 `case001.html` / `case002.html` / `faq.html` / `works.html` /
 `works/case001.html`〜`works/case010.html` / `works/template.html`）は、
 現時点ですべて `<script src="js/analytics.js" defer></script>`（V1）のみを
 ロードしている。V2は現在どのページにも組み込まれていない
 （`check_analytics_exclusive_switch.js`実行で`siteMode=v1`・PASSとして確認済み）。
+（訂正：これまで「16ページ」と誤記していたが、`index.html`を数え漏れていた。
+正しくは17ページ。`functions/scripts/apply_v1_to_v2_switch.js`の`TARGET_FILES`
+固定リストが実際の対象を一意に定義する。）
 
 ## 2. V1→V2 切替手順（実行時に人間が承認の上で行う）
 
 1. 事前条件（本ドキュメント§4「COPY_TEST/PROD切替前の最終BLOCK条件」を含む、
    R9完了報告の「4. COPY_TEST接続ready/not-ready表」の全項目がreadyであること）
    を満たしていることを確認する。
-2. 16ページすべての `<script src="(\.\./)?js/analytics\.js" defer></script>` を、
+2. [`functions/scripts/apply_v1_to_v2_switch.js`](../functions/scripts/apply_v1_to_v2_switch.js)
+   を実行する：
+   ```
+   node functions/scripts/apply_v1_to_v2_switch.js
+   ```
+   このスクリプトが対象17ページを固定リストで明示し、各ページで
+   `<script src="(../)?js/analytics.js" defer></script>` を
    **`js/analytics-v2-outbox-engine.js`（共有エンジン）→ `js/analytics-v2.js`
-   （フルトラッカー本体）の2本のscriptタグ、この順序**へ一括置換する
+   （フルトラッカー本体）の2本のscriptタグ、この順序**へ確実に置換し、置換直後に
+   `check_analytics_exclusive_switch.js`（`siteMode=v2`・PASS）を自動実行する
+   （正規表現を人間が手作業で調整する必要はない。置換件数の検証・排他チェックまで
+   スクリプト内で完結する。全ページ一括のall-or-nothingで、一部だけ切り替わった
+   状態を作らない）。`--dry-run`を付けると書き換えずに対象一覧だけ確認できる。
    （R9再監査対応・項目2でoutbox＋PROD 401サーキットブレーカーを共有エンジンへ
    分離したため、`analytics-v2.js`単体では動作しない。engineが後ろだと
    `window.__aokiAnalyticsV2OutboxEngineFactory_`が未定義のままV2本体が実行され、
-   フェイルソフトで機能が丸ごと動かなくなる。1ページだけ先行させない。全ページを
-   同一コミット・同一デプロイでまとめて切り替える）。
-3. 置換直後、デプロイ前に `node functions/scripts/check_analytics_exclusive_switch.js`
-   を実行し、`siteMode=v2`・PASSであることを確認する（`v1`のまま残っているページ・
-   `mixed`状態を検出したらデプロイを中止する）。
+   フェイルソフトで機能が丸ごと動かなくなる）。
+3. スクリプトが`OK: check_analytics_exclusive_switch.js PASS（siteMode=v2）`を
+   出力して正常終了（exit code 0）したことを確認する。
 4. 静的ホスティングへデプロイし、実際に本番ページで `js/analytics-v2.js` が
    ロードされ、V1由来のイベントが新規発生しなくなったことを確認する。
 5. **Q2（QR一気通貫受入確認）を実施する（下記§1.1参照）。** Q2完了・PASS確認まで
@@ -130,7 +141,7 @@ sendBeaconの呼び出しを一切含まない（静的確認）。
 
 ### 3.2 rollback手順
 
-1. 16ページすべての `js/analytics-v2.js` の`<script>`タグを `js/analytics.js`
+1. 17ページすべての `js/analytics-v2.js` の`<script>`タグを `js/analytics.js`
    （V1フルトラッカーへ復帰）へ戻すと同時に、`js/analytics-v2-outbox-engine.js`
    （共有エンジン。drain-onlyが実行時依存する）と
    `js/analytics-v2-drain-only.js` を、**この順序**で同じページへ追加する

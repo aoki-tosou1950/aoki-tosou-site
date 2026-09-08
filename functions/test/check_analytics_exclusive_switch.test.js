@@ -113,11 +113,22 @@ test('R9再監査#2：engineがdrain-onlyより前に正しく置かれている
   assert.equal(result.ok, true);
 });
 
-test('R9#7：現行サイト全16ページの実ファイルを走査 → 現時点はsiteMode=v1でPASS（本ラウンドではPROD HTML変更を行っていないことの回帰確認）', () => {
-  const { run_ } = require('../scripts/check_analytics_exclusive_switch');
+test('R9再監査対応：現行サイト全17ページの実ファイルを走査 → 常にPASS・siteModeは決してmixedにならない（V1のみ運用中・V2切替後のいずれの実運用状態でも回帰確認できる。切替スクリプト適用のタイミングに依存しない）', () => {
+  // 訂正：以前は「16ページ」「現時点は必ずsiteMode=v1」と記載していたが、
+  // index.htmlを数え漏れており実際は17ページ。また本テストがsiteMode=v1を
+  // 固定で期待していたため、V1→V2切替後にこのテスト自体が失敗する設計だった
+  // （切替自体はREADME/switch手順どおりの正しい状態遷移であり、テストが古い
+  // 前提を固定してしまっていたのが問題）。V1運用中・V2切替後のいずれでも
+  // 意味のある回帰確認になるよう、siteModeの値そのものではなく
+  // 「exclusiveチェックに違反していない（mixedでない・BLOCKが無い）」ことだけを
+  // 検証する形に改めた。
+  const checker = require('../scripts/check_analytics_exclusive_switch');
+  const { TARGET_FILES } = require('../scripts/apply_v1_to_v2_switch');
   const path = require('node:path');
   const siteRoot = path.resolve(__dirname, '..', '..');
-  const result = run_(siteRoot);
+  const result = checker.run_(siteRoot);
   assert.equal(result.ok, true);
-  assert.equal(result.siteMode, 'v1');
+  assert.notEqual(result.siteMode, 'mixed');
+  assert.ok(result.siteMode === 'v1' || result.siteMode === 'v2', 'siteModeはv1またはv2のいずれか（実際: ' + result.siteMode + '）');
+  assert.equal(TARGET_FILES.length, 17, 'apply_v1_to_v2_switch.jsのTARGET_FILESは17件であること');
 });
