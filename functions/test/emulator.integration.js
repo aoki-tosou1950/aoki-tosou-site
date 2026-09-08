@@ -5,6 +5,10 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
+// 独立監査再提出R9再監査対応・項目1：Firestore Admin SDKクライアント初期化前に
+// ローカルエミュレータ接続であることを検証する（本番Firestoreへの誤接続防止）。
+const { requireLocalFirestoreEmulator } = require('./lib/require_local_emulator_');
+requireLocalFirestoreEmulator();
 
 const project = process.env.GCLOUD_PROJECT || 'demo-aokitosou';
 const base = `http://127.0.0.1:5001/${project}/us-central1`;

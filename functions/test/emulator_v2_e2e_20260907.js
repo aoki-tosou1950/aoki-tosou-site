@@ -33,6 +33,14 @@ const { signVerifyJwt } = require('../lib/funnelV2');
   });
 })();
 
+// 独立監査再提出R9再監査対応・項目1：Firestore Admin SDKクライアントを初期化する
+// 「前」に、FIRESTORE_EMULATOR_HOSTがローカルエミュレータを指していることを検証
+// する（未設定・非ローカルなら即座に中止。実本番Firestoreへの誤接続を防ぐ）。
+// 実インシデント（2026-09-07〜08）の詳細はfunctions/test/lib/require_local_emulator_.js
+// のコメント参照。
+const { requireLocalFirestoreEmulator } = require('./lib/require_local_emulator_');
+requireLocalFirestoreEmulator();
+
 const project = process.env.GCLOUD_PROJECT || 'demo-aokitosou';
 const base = `http://127.0.0.1:5001/${project}/us-central1`;
 const db = getFirestore(initializeApp({ projectId: project }, 'v2-e2e-test'));

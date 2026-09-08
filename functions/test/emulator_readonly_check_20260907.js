@@ -10,10 +10,11 @@
  * ===================================================================== */
 const assert = require('node:assert/strict');
 
-if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  console.error('FIRESTORE_EMULATOR_HOST未設定。emulator経由でのみ実行すること（本番誤接続防止）。');
-  process.exit(1);
-}
+// 独立監査再提出R9再監査対応・項目1：単なる「設定されているか」だけでなく、
+// ローカルホストを指しているかまで検証する共通ガードへ統一した
+// （functions/test/lib/require_local_emulator_.js参照）。
+const { requireLocalFirestoreEmulator } = require('./lib/require_local_emulator_');
+requireLocalFirestoreEmulator();
 
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
