@@ -21,6 +21,15 @@ Module._load = function(request, parent, isMain) {
     getFirestore: () => db, FieldValue: { serverTimestamp: () => 'unit-time' }
   };
   if (request === 'axios') return { post: async (url, body) => { pushed.push({ url, body }); } };
+  if (request === './lib/media-labels' && parent && path.dirname(parent.filename) === path.resolve(__dirname, '..')) {
+    return { mediaDisplay: async (source) => {
+      if (source === 'lookup_offline') throw new Error('lookup unavailable');
+      if (source === 'direct') return '直接・不明';
+      return ({ meishi: '既存名刺QR（meishi）',
+        area_check_v1: 'エリア点検チラシ 劣化住宅地・他社周辺 v1' })[source] ||
+        '未登録の媒体（' + source + '）';
+    } };
+  }
   if (request === './lib/funnel' && parent && path.dirname(parent.filename) === path.resolve(__dirname, '..')) {
     const funnel = originalLoad.apply(this, arguments);
     return { ...funnel, createFunnelStore: () => ({
@@ -52,7 +61,7 @@ test('両フォームで保存と集計を維持し、媒体つきの管理者LI
     ['submitOtherInquiry', 'other_inquiries', { name: '佐藤', city: '別府市北浜1-2', works: ['塗装'] }]
   ];
   for (const [name, collection, base] of cases) {
-    for (const source of ['meishi', 'area_check_v1', 'direct']) {
+    for (const source of ['meishi', 'area_check_v1', 'not_known', 'direct', 'lookup_offline']) {
       const res = response();
       await functions[name]({ method: 'POST', headers: {
         origin: 'https://aoki-tosou.net', 'content-type': 'application/json'
@@ -63,12 +72,14 @@ test('両フォームで保存と集計を維持し、媒体つきの管理者LI
       assert.equal(saved.at(-1).data.test_event, false);
       assert.equal(pushed.at(-1).url, 'https://api.line.me/v2/bot/message/push');
       assert.equal(pushed.at(-1).body.to, 'unit-admin');
-      assert.match(pushed.at(-1).body.messages[0].text,
-        new RegExp(`媒体: ${source === 'direct' ? '直接・不明' : source}`));
+      const displayed = ({ meishi: '既存名刺QR（meishi）',
+        area_check_v1: 'エリア点検チラシ 劣化住宅地・他社周辺 v1',
+        not_known: '未登録の媒体（not_known）', direct: '直接・不明' })[source] || source;
+      assert.ok(pushed.at(-1).body.messages[0].text.includes('媒体: ' + displayed));
     }
   }
-  assert.equal(saved.length, 6);
-  assert.equal(pushed.length, 6);
-  assert.equal(metrics.length, 6);
+  assert.equal(saved.length, 10);
+  assert.equal(pushed.length, 10);
+  assert.equal(metrics.length, 10);
   assert.ok(metrics.every((args) => args[0] === 'inquirySubmits' && args[4] === false));
 });

@@ -18,7 +18,8 @@
   "dependencies": {
     "axios": "^1.20.0",
     "firebase-admin": "^14.3.0",
-    "firebase-functions": "^7.3.2"
+    "firebase-functions": "^7.3.2",
+    "google-auth-library": "^11.1.0"
   },
   "private": true
 }

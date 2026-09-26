@@ -24,6 +24,7 @@ const {
   visitorToken
 } = require('./lib/funnel');
 const { formatFormAdminMessage, formatOtherAdminMessage, sendAdminLinePush } = require('./lib/line');
+const { mediaDisplay } = require('./lib/media-labels');
 const {
   validateCoreFields: validateCoreFieldsV2,
   normalizeMediaCode,
@@ -938,9 +939,11 @@ exports.submitForm = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
+    let mediaLabel = '';
+    try { mediaLabel = await mediaDisplay(source); } catch (_error) { /* LINE uses raw-code fallback. */ }
     const lineMessage = formatFormAdminMessage({
       name: trimmedName, address: trimmedAddress, phone: trimmedPhone,
-      datetime: optionalString(datetime, 200), message: trimmedMessage, source
+      datetime: optionalString(datetime, 200), message: trimmedMessage, source, mediaLabel
     });
     await sendAdminLinePush(axios, {
       context: 'submitForm',
@@ -1106,7 +1109,9 @@ exports.submitOtherInquiry = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
-    const lineMessage = formatOtherAdminMessage(data);
+    let mediaLabel = '';
+    try { mediaLabel = await mediaDisplay(data.source); } catch (_error) { /* LINE uses raw-code fallback. */ }
+    const lineMessage = formatOtherAdminMessage(data, mediaLabel);
     await sendAdminLinePush(axios, {
       context: 'submitOtherInquiry',
       token: process.env.LINE_ACCESS_TOKEN,

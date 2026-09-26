@@ -16,9 +16,9 @@ function formatMediaSource(source) {
     ? code : '直接・不明';
 }
 
-function formatFormAdminMessage({ name, address, phone, datetime, message, source }) {
+function formatFormAdminMessage({ name, address, phone, datetime, message, source, mediaLabel }) {
   return `【お問い合わせ受信】\n` +
-    `■ 媒体: ${formatMediaSource(source)}\n` +
+    `■ 媒体: ${mediaLabel || formatMediaSource(source)}\n` +
     `■ 名前: ${name}\n` +
     `■ 住所: ${address}\n` +
     `■ 電話: ${phone}\n` +
@@ -26,14 +26,14 @@ function formatFormAdminMessage({ name, address, phone, datetime, message, sourc
     `■ メッセージ: ${message || 'なし'}`;
 }
 
-function formatOtherAdminMessage(data) {
+function formatOtherAdminMessage(data, mediaLabel) {
   const worksText = data.works.length > 0 ? data.works.join('・') : 'なし';
   const datesText =
     `第1希望: ${data.date1 || '-'} ${data.time1 || '-'}\n` +
     `第2希望: ${data.date2 || '-'} ${data.time2 || '-'}\n` +
     `第3希望: ${data.date3 || '-'} ${data.time3 || '-'}`;
   return `【その他のご依頼】\n\n` +
-    `媒体: ${formatMediaSource(data.source)}\n` +
+    `媒体: ${mediaLabel || formatMediaSource(data.source)}\n` +
     `名前: ${data.name}\n` +
     `住所: ${data.city || 'なし'}\n` +
     `依頼内容: ${worksText}\n` +

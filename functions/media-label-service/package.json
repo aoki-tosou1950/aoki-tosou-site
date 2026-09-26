@@ -1,0 +1,15 @@
+{
+  "name": "aoki-sales-media-labels",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/lookup.test.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^11.1.0"
+  }
+}
