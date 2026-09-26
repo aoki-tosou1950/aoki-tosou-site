@@ -383,12 +383,30 @@
     function isLineUrl(href) {
       try { var host = new URL(href, safeHref()).hostname; return host === 'line.me' || host.slice(-8) === '.line.me'; } catch (err) { return false; }
     }
+    function passMediaToForm(link, href) {
+      var target = new URL(href, safeHref());
+      if (target.origin !== 'https://aokitosou-miniapp.web.app' ||
+          (target.pathname !== '/index.html' && target.pathname !== '/inquiry-other.html')) return;
+      var mediaCode = getOrUpdateVisit().mediaCode;
+      if (/^[A-Za-z0-9_-]{1,50}$/.test(mediaCode)) target.searchParams.set('from', mediaCode);
+      else target.searchParams.delete('from');
+      link.href = target.href;
+    }
+    function prepareFormLinks() {
+      try {
+        var links = document.querySelectorAll('a[href]');
+        for (var i = 0; i < links.length; i++) {
+          try { passMediaToForm(links[i], links[i].getAttribute('href') || ''); } catch (err) {}
+        }
+      } catch (err) {}
+    }
     function bindClicks() {
       document.addEventListener('click', function(event) {
         try {
           var link = event.target.closest && event.target.closest('a[href]');
           if (!link) return;
           var href = link.getAttribute('href') || '';
+          passMediaToForm(link, href);
           if (isLineUrl(href)) return track('line_click', { contactChannel: 'LINE' });
           if (href.toLowerCase().indexOf('tel:') === 0) track('phone_click', { contactChannel: '電話' });
         } catch (err) {}
@@ -410,6 +428,7 @@
       if (isStopped()) scheduleTrialTimer_();
       else flushOutboxViaFetch();
       track('page_view');
+      prepareFormLinks();
       bindClicks();
       try {
         document.addEventListener('visibilitychange', function() {

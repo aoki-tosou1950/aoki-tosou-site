@@ -23,7 +23,7 @@ const {
   verifyLineSignature,
   visitorToken
 } = require('./lib/funnel');
-const { sendAdminLinePush } = require('./lib/line');
+const { formatFormAdminMessage, formatOtherAdminMessage, sendAdminLinePush } = require('./lib/line');
 const {
   validateCoreFields: validateCoreFieldsV2,
   normalizeMediaCode,
@@ -938,13 +938,10 @@ exports.submitForm = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
-    const lineMessage =
-      `【お問い合わせ受信】\n` +
-      `■ 名前: ${trimmedName}\n` +
-      `■ 住所: ${trimmedAddress}\n` +
-      `■ 電話: ${trimmedPhone}\n` +
-      `■ 日時: ${optionalString(datetime, 200) || 'なし'}\n` +
-      `■ メッセージ: ${trimmedMessage || 'なし'}`;
+    const lineMessage = formatFormAdminMessage({
+      name: trimmedName, address: trimmedAddress, phone: trimmedPhone,
+      datetime: optionalString(datetime, 200), message: trimmedMessage, source
+    });
     await sendAdminLinePush(axios, {
       context: 'submitForm',
       token: process.env.LINE_ACCESS_TOKEN,
@@ -1109,18 +1106,7 @@ exports.submitOtherInquiry = onRequest(
 
     // --- LINE Messaging API push（管理者のみ。broadcast は使用禁止）---
     // Firestore 保存後に独立して実行。失敗しても送信成功を返す。
-    const worksText = works.length > 0 ? works.join('・') : 'なし';
-    const datesText =
-      `第1希望: ${data.date1 || '-'} ${data.time1 || '-'}\n` +
-      `第2希望: ${data.date2 || '-'} ${data.time2 || '-'}\n` +
-      `第3希望: ${data.date3 || '-'} ${data.time3 || '-'}`;
-    const lineMessage =
-      `【その他のご依頼】\n\n` +
-      `名前: ${data.name}\n` +
-      `住所: ${data.city || 'なし'}\n` +
-      `依頼内容: ${worksText}\n` +
-      `${datesText}\n` +
-      `備考: ${data.detail || 'なし'}`;
+    const lineMessage = formatOtherAdminMessage(data);
     await sendAdminLinePush(axios, {
       context: 'submitOtherInquiry',
       token: process.env.LINE_ACCESS_TOKEN,

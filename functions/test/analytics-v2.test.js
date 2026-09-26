@@ -79,6 +79,7 @@ function browser(opts) {
   const document = {
     referrer,
     visibilityState: 'visible',
+    querySelectorAll(selector) { return selector === 'a[href]' ? (opts.links || []) : []; },
     addEventListener(type, handler) {
       if (type === 'click') clickHandler = handler;
       if (type === 'visibilitychange') visibilityHandler = handler;
@@ -156,6 +157,53 @@ function browser(opts) {
     }
   };
 }
+
+function formLink(href) {
+  return { href, getAttribute() { return this.href; } };
+}
+
+test('QRから複数ページを移動しても、両フォームのリンクへV2の媒体を渡す', async () => {
+  const targets = [
+    'https://aokitosou-miniapp.web.app/index.html',
+    'https://aokitosou-miniapp.web.app/inquiry-other.html'
+  ];
+  for (const media of ['meishi', 'area_check_v1']) {
+    const first = browser({ url: `https://aoki-tosou.net/?from=${media}` });
+    await tick();
+    const second = browser({ url: 'https://aoki-tosou.net/about.html',
+      referrer: `https://aoki-tosou.net/?from=${media}`,
+      localStore: first.localStore, sessionStore: first.sessionStore });
+    await tick();
+    const links = targets.map(formLink);
+    const third = browser({ url: 'https://aoki-tosou.net/works/case001.html',
+      referrer: 'https://aoki-tosou.net/about.html',
+      localStore: first.localStore, sessionStore: first.sessionStore, links });
+    assert.equal(first.fetchCalls[0].body.visitMediaCode, media);
+    assert.equal(second.fetchCalls[0].body.visitMediaCode, media);
+    assert.equal(third.fetchCalls[0].body.visitMediaCode, media);
+    for (const link of links) assert.equal(new URL(link.href).searchParams.get('from'), media);
+    for (const target of targets) assert.equal(new URL(third.click(target).href).searchParams.get('from'), media);
+    assert.equal(third.fetchCalls.length, 1, 'フォームリンク更新で計測イベントを増やさない');
+  }
+});
+
+test('直接訪問と媒体失効時は古いfromを残さず、通常のクリック計測を維持する', () => {
+  const stale = formLink('https://aokitosou-miniapp.web.app/index.html?from=meishi');
+  const direct = browser({ url: 'https://aoki-tosou.net/', links: [stale] });
+  assert.equal(new URL(stale.href).searchParams.has('from'), false);
+  assert.equal(new URL(direct.click('https://aokitosou-miniapp.web.app/inquiry-other.html').href).searchParams.has('from'), false);
+  assert.equal(direct.fetchCalls[0].body.visitWebSource, 'direct');
+  direct.click('https://line.me/R/ti/p/test');
+  direct.click('tel:0971234567');
+  assert.deepEqual(direct.fetchCalls.map((call) => call.body.eventType), ['page_view', 'line_click', 'phone_click']);
+
+  const first = browser({ url: 'https://aoki-tosou.net/?from=meishi', now: RealDate.parse('2026-09-07T10:00:00+09:00') });
+  const expired = formLink('https://aokitosou-miniapp.web.app/index.html?from=meishi');
+  browser({ url: 'https://aoki-tosou.net/about.html',
+    localStore: first.localStore, sessionStore: first.sessionStore,
+    now: RealDate.parse('2026-09-07T10:31:00+09:00'), links: [expired] });
+  assert.equal(new URL(expired.href).searchParams.has('from'), false);
+});
 
 /* ===================================================================
  * 訪問境界：確定済みアルゴリズム（独立監査差し戻し対応）
