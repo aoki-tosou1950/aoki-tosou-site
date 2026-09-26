@@ -75,3 +75,25 @@
 5. Functionsログに例外、異常再試行、LINE/集計失敗、Secret・PII露出がないことを確認する。
 
 ロールバックは本番直前commitを記録し、そのcommitのFunctionsを再deployする。Firestoreのイベント原本や日次総数は削除・一括補正しない。テスト除外に問題がある場合はコードを戻して再集計し、データ破壊を避ける。
+
+## Webhook 障害記録（2026-09-04 JST）
+
+### 事実確認結果
+
+- LINE チャネルから `request_timeout` が1件通知された。対象URLは `lineWebhook`。
+- Cloud Run request log は 17:03:20.406 JST の POST を HTTP 200、latency 3.534749674秒として記録した。LINE の2秒応答要件を超えている。
+- 同じインスタンスで、17:03:20.474 JST に `AUTOSCALING` を理由とする新規起動、17:03:24.275 JST にstartup TCP probe成功が記録された。起動待ちが遅延に寄与した有力な証拠である。
+- 障害時の稼働リビジョンは `linewebhook-00004-diy`（2026-08-30作成）で、調査時点でも100%のトラフィックを受けていた。本番の不変ソースZIPと正本 `functions/` は、`index.js`、`lib/funnel.js`、依存定義、テストを含む全13ファイルで一致した。
+- アプリケーション例外ログは確認されなかった。したがって「最終200だが2秒超過」は確定し、「処理失敗」は確認されていない。
+
+### KPI への影響と不明点
+
+- `lineWebhook` は署名検証済みの `follow` / `unfollow` だけを `funnel_daily/{JST日付}/line_events/{webhookEventId}` のFirestoreトランザクションで記録・重複排除する。フォーム受付、管理者LINE通知、顧客への返信には依存しない。
+- 17:03〜17:04 JST の当該 `line_events` 新規記録は0件だった。ただしWebhook本文・イベント種別・重複IDを保存またはログ出力していないため、空events、対象外イベント、既存イベントの再配信による重複除外のどれかは特定できない。KPI欠落とも断定しない。
+- 9/4 17:00 JST〜9/5 23:59 JST のCloud Loggingでは、LINE送信元のリクエストは今回の1件と、17:13:27 JSTの200・0.013701262秒の1件だけだった。`lineWebhook` のERRORログは0件だった。
+- LINE Developersのエラー統計および再配信設定は、同コンソールの閲覧権限がないため未確認。Cloud Logging上の継続再発は確認されていない。
+
+### 対応方針
+
+- この記録に伴う本番変更、再起動、Webhook設定変更、イベント再投入、デプロイは行わない。
+- 次回、Webhook関連の変更を正規の変更手順で行う場合の候補として、PIIやLINE userIdを記録せず、イベント種別、`webhookEventId`の不可逆ハッシュ、重複判定結果、Firestoreトランザクション開始／完了、応答直前時刻を構造化ログで観測可能にする。これは原因判別のための候補であり、本件のみを理由にキュー化、minInstances変更、timeout延長は行わない。
