@@ -1,9 +1,21 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MODEL, buildInput, classifyWithOpenAI, processJob, referenceKpi } = require('../lib/form-ai');
+const { MODEL, buildInput, classifyWithGemini, processJob, referenceKpi } = require('../lib/form-ai');
 
-test('only text, work type and source are sent to the API; no identifying columns', async () => {
+function fakeAuth(reply, check) {
+  return { getClient: async () => ({ request: async (options) => {
+    if (check) check(options);
+    return { data: {
+      modelVersion: MODEL,
+      candidates: [{ finishReason: 'STOP', content: {
+        parts: [{ text: JSON.stringify(reply) }]
+      } }]
+    } };
+  } }) };
+}
+
+test('Vertex OAuth request sends only selected form fields, not identifying columns or an API key', async () => {
   const input = buildInput('survey', {
     name: '本名', address: '大分市実在町1', phone: '0971234567',
     source: 'meishi', message: '外壁塗装の見積をお願いします。 090-1234-5678'
@@ -11,29 +23,27 @@ test('only text, work type and source are sent to the API; no identifying column
   assert.equal(input.name, undefined);
   assert.equal(input.address, undefined);
   assert.equal(input.phone, undefined);
-  assert.equal(input.formType, 'survey');
   assert.doesNotMatch(input.text, /090-1234-5678/);
-  const result = await classifyWithOpenAI(input, {
-    apiKey: 'test-only',
-    httpClient: { post: async (url, payload) => {
-      assert.equal(url, 'https://api.openai.com/v1/responses');
-      assert.equal(payload.store, false);
-      assert.equal(payload.model, MODEL);
-      const sent = JSON.stringify(payload.input);
-      assert.doesNotMatch(sent, /本名|大分市実在町|0971234567/);
-      return { data: { model: MODEL, output: [
-        { content: [{ type: 'output_text', text: JSON.stringify({
-          decision: 'customer', reason: '外壁塗装の見積依頼'
-        }) }] }
-      ] } };
-    } }
+  const result = await classifyWithGemini(input, {
+    auth: fakeAuth({ decision: 'customer', reason: '外壁塗装の見積依頼' }, options => {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.url, 'https://aiplatform.googleapis.com/v1/projects/' +
+        'aokitosou-miniapp/locations/global/publishers/google/models/' +
+        MODEL + ':generateContent');
+      assert.equal(options.data.generationConfig.responseMimeType, 'application/json');
+      assert.equal(options.data.generationConfig.responseSchema.type, 'OBJECT');
+      assert.equal(options.timeout, 15000);
+      const sent = JSON.stringify(options.data);
+      assert.doesNotMatch(sent, /本名|大分市実在町|0971234567|090-1234-5678/);
+      assert.doesNotMatch(sent, /apiKey|key=/);
+    })
   });
   assert.deepEqual(result, {
     decision: 'customer', reason: '外壁塗装の見積依頼', model: MODEL
   });
 });
 
-test('fake examples of customer, sales and unknown flow through the model boundary', async () => {
+test('fictional customer, sales and ambiguous samples pass through Gemini contract', async () => {
   const samples = [
     ['外壁の色あせを直したい。見積もりをください', 'customer'],
     ['雨漏りした屋上の防水工事を相談したい', 'customer'],
@@ -44,19 +54,26 @@ test('fake examples of customer, sales and unknown flow through the model bounda
   ];
   for (const [text, expected] of samples) {
     const input = buildInput('other', { detail: text, works: ['塗装'], source: '' });
-    const decision = expected; // API response stub: contract test, not model-quality evaluation.
-    const output = await classifyWithOpenAI(input, {
-      apiKey: 'test-only',
-      httpClient: { post: async () => ({ data: { model: MODEL, output: [
-        { content: [{ type: 'output_text', text: JSON.stringify({
-          decision, reason: '架空データのテスト'
-        }) }] }
-      ] } }) }
+    const output = await classifyWithGemini(input, {
+      auth: fakeAuth({ decision: expected, reason: '架空データのテスト' })
     });
     assert.equal(output.decision, expected);
   }
 });
 
+test('Gemini errors and unfinished responses fail closed', async () => {
+  const input = buildInput('survey', { message: '見積もり希望' });
+  await assert.rejects(classifyWithGemini(input, {
+    auth: { getClient: async () => ({ request: async () => {
+      throw new Error('API unavailable');
+    } }) }
+  }), /API unavailable/);
+  await assert.rejects(classifyWithGemini(input, {
+    auth: { getClient: async () => ({ request: async () => ({
+      data: { candidates: [{ finishReason: 'MAX_TOKENS' }] }
+    }) }) }
+  }), /Incomplete/);
+});
 function database(original) {
   const results = new Map();
   return {

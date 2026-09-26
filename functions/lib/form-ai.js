@@ -1,7 +1,7 @@
 'use strict';
 
-const MODEL = 'gpt-5.4-2026-03-05';
-const PROMPT_VERSION = 'form-triage-v1';
+const MODEL = 'gemini-3.5-flash';
+const PROMPT_VERSION = 'form-triage-gemini-v1';
 const DECISIONS = new Set(['customer', 'sales', 'unknown']);
 const SYSTEM = [
   '青木塗装工業の受信フォームを分類する。出力は判断と短い理由のみ。',
@@ -32,47 +32,51 @@ function buildInput(formType, data) {
   };
 }
 
-async function classifyWithOpenAI(input, { apiKey, httpClient, model = MODEL }) {
-  if (!apiKey) throw new Error('API key unavailable');
+async function classifyWithGemini(input, { auth, projectId = 'aokitosou-miniapp', model = MODEL }) {
   if (!input.text.trim() && !input.works.length)
     return { decision: 'unknown', reason: '分類に必要な本文がありません', model: 'none' };
-  const response = await httpClient.post('https://api.openai.com/v1/responses', {
-    model,
-    store: false,
-    input: [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: JSON.stringify(input) }
-    ],
-    text: { format: {
-      type: 'json_schema', name: 'form_triage_v1', strict: true,
-      schema: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          decision: { type: 'string', enum: ['customer', 'sales', 'unknown'] },
-          reason: { type: 'string' }
-        },
-        required: ['decision', 'reason']
+  if (!auth || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projectId))
+    throw new Error('Vertex AI authentication or project unavailable');
+  const client = await auth.getClient();
+  const response = await client.request({
+    url: 'https://aiplatform.googleapis.com/v1/projects/' + projectId +
+      '/locations/global/publishers/google/models/' + encodeURIComponent(model) + ':generateContent',
+    method: 'POST',
+    data: {
+      systemInstruction: { parts: [{ text: SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
+      generationConfig: {
+        thinkingConfig: { thinkingLevel: 'MINIMAL' },
+        maxOutputTokens: 400,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            decision: { type: 'STRING', enum: ['customer', 'sales', 'unknown'] },
+            reason: { type: 'STRING' }
+          },
+          required: ['decision', 'reason'],
+          propertyOrdering: ['decision', 'reason']
+        }
       }
-    } },
-    max_output_tokens: 400
-  }, {
-    timeout: 15000,
-    headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+    },
+    timeout: 15000
   });
   const body = response.data || {};
-  const text = (body.output || []).flatMap(item => item.content || [])
-    .filter(item => item.type === 'output_text').map(item => item.text).join('');
-  const parsed = JSON.parse(text);
+  const candidate = (body.candidates || [])[0];
+  if (!candidate || candidate.finishReason !== 'STOP')
+    throw new Error('Incomplete classifier response');
+  const output = (candidate.content?.parts || []).map(part => part.text || '').join('');
+  const parsed = JSON.parse(output);
   if (!DECISIONS.has(parsed.decision) ||
-      typeof parsed.reason !== 'string' || !parsed.reason.trim() ||
-      typeof body.model !== 'string') throw new Error('Invalid classifier response');
+      typeof parsed.reason !== 'string' || !parsed.reason.trim())
+    throw new Error('Invalid classifier response');
   return {
     decision: parsed.decision,
     reason: redact(parsed.reason).slice(0, 120),
-    model: body.model
+    model: typeof body.modelVersion === 'string' ? body.modelVersion : model
   };
 }
-
 async function processJob(db, jobId, job, { classifier, serverTimestamp }) {
   const resultRef = db.collection('form_ai_classifications').doc(jobId);
   if (!['submissions', 'other_inquiries'].includes(job.collection) ||
@@ -133,5 +137,5 @@ function referenceKpi(records) {
 }
 
 module.exports = {
-  MODEL, PROMPT_VERSION, buildInput, classifyWithOpenAI, processJob, referenceKpi
+  MODEL, PROMPT_VERSION, buildInput, classifyWithGemini, processJob, referenceKpi
 };

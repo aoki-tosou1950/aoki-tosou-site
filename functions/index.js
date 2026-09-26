@@ -26,7 +26,10 @@ const {
 } = require('./lib/funnel');
 const { formatFormAdminMessage, formatOtherAdminMessage, sendAdminLinePush } = require('./lib/line');
 const { mediaDisplay } = require('./lib/media-labels');
-const { classifyWithOpenAI, processJob, referenceKpi } = require('./lib/form-ai');
+const { classifyWithGemini, processJob, referenceKpi } = require('./lib/form-ai');
+const { GoogleAuth } = require('google-auth-library');
+const vertexAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+const FORM_AI_RUNTIME_SERVICE_ACCOUNT = 'form-ai-runtime@aokitosou-miniapp.iam.gserviceaccount.com';
 const {
   validateCoreFields: validateCoreFieldsV2,
   normalizeMediaCode,
@@ -1150,14 +1153,14 @@ exports.classifyFormAi = onDocumentCreated(
   {
     document: 'form_ai_jobs/{jobId}',
     region: 'us-central1',
-    secrets: ['OPENAI_API_KEY'],
+    serviceAccount: FORM_AI_RUNTIME_SERVICE_ACCOUNT,
     retry: true
   },
   async (event) => {
     if (!event.data) return;
     await processJob(db, event.params.jobId, event.data.data(), {
-      classifier: (input) => classifyWithOpenAI(input, {
-        apiKey: process.env.OPENAI_API_KEY, httpClient: axios
+      classifier: (input) => classifyWithGemini(input, {
+        auth: vertexAuth
       }),
       serverTimestamp: () => FieldValue.serverTimestamp()
     });

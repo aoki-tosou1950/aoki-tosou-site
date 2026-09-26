@@ -3,7 +3,7 @@
 // Read-only: retrieve only fields required for classification; never write records.
 const { execFileSync } = require('node:child_process');
 const axios = require('axios');
-const { buildInput, classifyWithOpenAI, MODEL } = require('../lib/form-ai');
+const { buildInput, classifyWithGemini } = require('../lib/form-ai');
 const PROJECT = 'aokitosou-miniapp';
 const FIELDS = ['source', 'test_event', 'message', 'detail', 'works', 'createdAt'];
 const legacyTestSources = new Set(['production_smoke', 'production_smoke_hardening']);
@@ -36,11 +36,17 @@ async function records(collection, accessToken) {
 }
 
 async function main() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured; no records or API calls processed');
+
+
   const accessToken = execFileSync('gcloud.cmd', ['auth', 'print-access-token'], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
   }).trim();
+  const auth = { getClient: async () => ({
+    request: ({ url, method, data, timeout }) => axios({
+      url, method, data, timeout,
+      headers: { Authorization: 'Bearer ' + accessToken }
+    })
+  }) };
   let counted = 0;
   for (const collection of ['submissions', 'other_inquiries']) {
     const docs = await records(collection, accessToken);
@@ -55,9 +61,11 @@ async function main() {
       const input = buildInput(collection === 'submissions' ? 'survey' : 'other', data);
       let result;
       try {
-        result = await classifyWithOpenAI(input, { apiKey, httpClient: axios });
-      } catch (_) {
-        result = { decision: 'unknown', reason: 'AI判定に失敗しました', model: MODEL };
+        result = await classifyWithGemini(input, { auth });
+      } catch (error) {
+        throw new Error('Gemini trial stopped (record ' + (counted + 1) +
+          ', HTTP ' + (error.response?.status || 'unavailable') +
+          '); no classification was written');
       }
       counted++;
       process.stdout.write(JSON.stringify({
