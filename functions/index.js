@@ -860,6 +860,8 @@ exports.submitForm = onRequest(
   {
     region: 'us-central1',
     cors: false,
+    maxInstances: 2,
+    concurrency: 1,
     secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
@@ -1055,6 +1057,8 @@ exports.submitOtherInquiry = onRequest(
   {
     region: 'us-central1',
     cors: false,
+    maxInstances: 2,
+    concurrency: 1,
     secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
@@ -1153,6 +1157,8 @@ exports.classifyFormAi = onDocumentCreated(
   {
     document: 'form_ai_jobs/{jobId}',
     region: 'us-central1',
+    maxInstances: 1,
+    concurrency: 1,
     serviceAccount: FORM_AI_RUNTIME_SERVICE_ACCOUNT,
     retry: true
   },

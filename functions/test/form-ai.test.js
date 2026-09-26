@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MODEL, buildInput, classifyWithGemini, processJob, referenceKpi } = require('../lib/form-ai');
+const { MODEL, AI_DAILY_LIMIT, buildInput, classifyWithGemini, processJob, referenceKpi } = require('../lib/form-ai');
 
 function fakeAuth(reply, check) {
   return { getClient: async () => ({ request: async (options) => {
@@ -32,6 +32,7 @@ test('Vertex OAuth request sends only selected form fields, not identifying colu
         MODEL + ':generateContent');
       assert.equal(options.data.generationConfig.responseMimeType, 'application/json');
       assert.equal(options.data.generationConfig.responseSchema.type, 'OBJECT');
+      assert.equal(options.data.generationConfig.maxOutputTokens, 200);
       assert.equal(options.timeout, 15000);
       const sent = JSON.stringify(options.data);
       assert.doesNotMatch(sent, /本名|大分市実在町|0971234567|090-1234-5678/);
@@ -76,9 +77,20 @@ test('Gemini errors and unfinished responses fail closed', async () => {
 });
 function database(original) {
   const results = new Map();
+  const usage = new Map();
   return {
-    results,
+    results, usage,
+    async runTransaction(work) {
+      const staged = [];
+      const answer = await work({
+        get: async ref => ({ exists: usage.has(ref.id), data: () => usage.get(ref.id) }),
+        set: (ref, value) => staged.push([ref.id, value])
+      });
+      for (const [id, value] of staged) usage.set(id, value);
+      return answer;
+    },
     collection(name) {
+      if (name === 'form_ai_daily_usage') return { doc(id) { return { id }; } };
       if (name === 'form_ai_classifications') return {
         doc(id) { return {
           async get() { return { exists: results.has(id) }; },
@@ -94,7 +106,6 @@ function database(original) {
     }
   };
 }
-
 test('separate worker records once and failed AI is unknown; no test rows', async () => {
   const db = database({ message: '外壁塗装の相談', source: 'meishi', test_event: false });
   const job = { collection: 'submissions', submissionId: 'docA', receivedDay: '2026-09-26' };
@@ -138,4 +149,43 @@ test('duplicate parallel work cannot create two results or double-count', async 
     total: 1,
     byMedia: [{ code: 'area_check_v1', count: 1 }]
   });
+});
+test('text and work counts are capped before sending to Gemini', () => {
+  const input = buildInput('other', {
+    detail: '塗'.repeat(2000), source: 'meishi',
+    works: Array(20).fill('屋'.repeat(100))
+  });
+  assert.equal(input.text.length, 600);
+  assert.equal(input.works.length, 10);
+  assert.equal(input.works[0].length, 32);
+  assert.equal(AI_DAILY_LIMIT, 20);
+});
+
+test('daily budget admits at most the configured number of attempts and fails closed', async () => {
+  const db = database({ message: '塗装の相談', source: 'meishi' });
+  const fixedNow = () => new Date('2026-09-26T15:30:00.000Z');
+  let calls = 0;
+  const deps = {
+    classifier: async () => {
+      calls++;
+      return { decision: 'customer', reason: '工事相談', model: MODEL };
+    },
+    now: fixedNow, dailyLimit: 2, serverTimestamp: () => 'unit-time'
+  };
+  for (let index = 0; index < 3; index++) {
+    await processJob(db, 'submissions_d' + index, {
+      collection: 'submissions', submissionId: 'd' + index, receivedDay: '2026-09-27'
+    }, deps);
+  }
+  assert.equal(calls, 2);
+  assert.equal(db.usage.get('2026-09-27').count, 2);
+  assert.equal(db.results.get('submissions_d2').decision, 'unknown');
+  assert.equal(db.results.get('submissions_d2').reason, '本日のAI判定上限に達しました');
+  const failDb = database({ message: '工事を相談したい' });
+  failDb.runTransaction = async () => { throw new Error('Firestore unavailable'); };
+  await processJob(failDb, 'submissions_fail', {
+    collection: 'submissions', submissionId: 'fail', receivedDay: '2026-09-27'
+  }, deps);
+  assert.equal(calls, 2);
+  assert.equal(failDb.results.get('submissions_fail').reason, 'AI判定の利用上限を確認できません');
 });

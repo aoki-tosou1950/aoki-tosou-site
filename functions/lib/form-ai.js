@@ -1,6 +1,7 @@
 'use strict';
 
 const MODEL = 'gemini-3.5-flash';
+const AI_DAILY_LIMIT = 20;
 const PROMPT_VERSION = 'form-triage-gemini-v1';
 const DECISIONS = new Set(['customer', 'sales', 'unknown']);
 const SYSTEM = [
@@ -14,7 +15,7 @@ const SYSTEM = [
 ].join('\n');
 
 function redact(text) {
-  return String(text || '').slice(0, 1200)
+  return String(text || '').slice(0, 600)
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[メール]')
     .replace(/(?:\+81[-\s]?)?0\d{1,4}[-\s]?\d{2,4}[-\s]?\d{3,4}/g, '[電話]')
     .replace(/\b\d{3}[-－]\d{4}\b/g, '[郵便番号]');
@@ -27,7 +28,7 @@ function buildInput(formType, data) {
     source: /^[A-Za-z0-9_-]{1,50}$/.test(String(data.source || ''))
       ? String(data.source) : '',
     works: formType === 'other' && Array.isArray(data.works)
-      ? data.works.slice(0, 20).map(x => String(x).slice(0, 50)) : [],
+      ? data.works.slice(0, 10).map(x => String(x).slice(0, 32)) : [],
     text: redact(content)
   };
 }
@@ -47,7 +48,7 @@ async function classifyWithGemini(input, { auth, projectId = 'aokitosou-miniapp'
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
       generationConfig: {
         thinkingConfig: { thinkingLevel: 'MINIMAL' },
-        maxOutputTokens: 400,
+        maxOutputTokens: 200,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -77,7 +78,30 @@ async function classifyWithGemini(input, { auth, projectId = 'aokitosou-miniapp'
     model: typeof body.modelVersion === 'string' ? body.modelVersion : model
   };
 }
-async function processJob(db, jobId, job, { classifier, serverTimestamp }) {
+function jstDay(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const part = type => parts.find(item => item.type === type)?.value;
+  return part('year') + '-' + part('month') + '-' + part('day');
+}
+
+// Count API attempts, including failures and retries. A transaction prevents concurrent
+// workers from admitting more than the daily limit. If it fails, the worker never calls AI.
+async function reserveAiAttempt(db, day, limit = AI_DAILY_LIMIT) {
+  const ref = db.collection('form_ai_daily_usage').doc(day);
+  return db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    const count = snapshot.exists ? Number(snapshot.data().count) || 0 : 0;
+    if (count >= limit) return false;
+    transaction.set(ref, { count: count + 1, updatedAt: new Date() }, { merge: true });
+    return true;
+  });
+}
+
+async function processJob(db, jobId, job, {
+  classifier, serverTimestamp, now = () => new Date(), dailyLimit = AI_DAILY_LIMIT
+}) {
   const resultRef = db.collection('form_ai_classifications').doc(jobId);
   if (!['submissions', 'other_inquiries'].includes(job.collection) ||
       !/^[A-Za-z0-9_-]{1,200}$/.test(job.submissionId || ''))
@@ -91,10 +115,24 @@ async function processJob(db, jobId, job, { classifier, serverTimestamp }) {
   const formType = job.collection === 'submissions' ? 'survey' : 'other';
   const input = buildInput(formType, record);
   let verdict;
-  try {
-    verdict = await classifier(input);
-  } catch (_error) {
-    verdict = { decision: 'unknown', reason: 'AI判定に失敗しました', model: MODEL };
+  if (!input.text.trim() && !input.works.length) {
+    verdict = { decision: 'unknown', reason: '分類に必要な本文がありません', model: 'none' };
+  } else {
+    let permitted = false;
+    try {
+      permitted = await reserveAiAttempt(db, jstDay(now()), dailyLimit);
+    } catch (_error) {
+      verdict = { decision: 'unknown', reason: 'AI判定の利用上限を確認できません', model: 'none' };
+    }
+    if (!verdict && !permitted)
+      verdict = { decision: 'unknown', reason: '本日のAI判定上限に達しました', model: 'none' };
+    if (!verdict) {
+      try {
+        verdict = await classifier(input);
+      } catch (_error) {
+        verdict = { decision: 'unknown', reason: 'AI判定に失敗しました', model: MODEL };
+      }
+    }
   }
   const doc = {
     sourceCollection: job.collection,
@@ -106,9 +144,7 @@ async function processJob(db, jobId, job, { classifier, serverTimestamp }) {
     model: verdict.model,
     promptVersion: PROMPT_VERSION,
     receivedDay: record.createdAt && typeof record.createdAt.toDate === 'function'
-      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo',
-        year: 'numeric', month: '2-digit', day: '2-digit' }).format(record.createdAt.toDate())
-      : job.receivedDay,
+      ? jstDay(record.createdAt.toDate()) : job.receivedDay,
     classifiedAt: serverTimestamp()
   };
   try {
@@ -119,7 +155,6 @@ async function processJob(db, jobId, job, { classifier, serverTimestamp }) {
     throw error;
   }
 }
-
 function referenceKpi(records) {
   const byMedia = Object.create(null);
   for (const item of records) {
@@ -137,5 +172,5 @@ function referenceKpi(records) {
 }
 
 module.exports = {
-  MODEL, PROMPT_VERSION, buildInput, classifyWithGemini, processJob, referenceKpi
+  MODEL, PROMPT_VERSION, AI_DAILY_LIMIT, buildInput, classifyWithGemini, reserveAiAttempt, processJob, referenceKpi
 };
