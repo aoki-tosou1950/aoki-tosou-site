@@ -1,6 +1,7 @@
 'use strict';
 
 const { onRequest } = require('firebase-functions/v2/https');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const axios = require('axios');
@@ -25,6 +26,7 @@ const {
 } = require('./lib/funnel');
 const { formatFormAdminMessage, formatOtherAdminMessage, sendAdminLinePush } = require('./lib/line');
 const { mediaDisplay } = require('./lib/media-labels');
+const { classifyWithOpenAI, processJob, referenceKpi } = require('./lib/form-ai');
 const {
   validateCoreFields: validateCoreFieldsV2,
   normalizeMediaCode,
@@ -837,6 +839,20 @@ async function getLineInsight() {
   }
 }
 
+async function enqueueAiJob(collection, submissionId, isTest) {
+  if (isTest || !submissionId) return;
+  try {
+    await db.collection('form_ai_jobs').doc(collection + '_' + submissionId).create({
+      collection, submissionId,
+      receivedDay: jstDateKey(new Date()),
+      queuedAt: FieldValue.serverTimestamp()
+    });
+  } catch (error) {
+    if (error.code !== 6 && error.code !== 'already-exists')
+      console.error('form AI job enqueue failed:', String(error.code || 'unknown'));
+  }
+}
+
 exports.submitForm = onRequest(
   {
     region: 'us-central1',
@@ -909,6 +925,7 @@ exports.submitForm = onRequest(
       return res.status(400).json({ error: 'phone must contain only digits and hyphens' });
     }
 
+    let submissionId = '';
     try {
       // --- Firestore 保存 ---
       const submissionRef = await db.collection('submissions').add({
@@ -927,6 +944,7 @@ exports.submitForm = onRequest(
         userAgent: optionalString(req.headers['user-agent'], 500),
         createdAt: FieldValue.serverTimestamp()
       });
+      submissionId = submissionRef.id;
       try {
         await recordInternalMetric('inquirySubmits', `form_${submissionRef.id}`, source || 'フォーム', new Date(), isTest);
       } catch (metricError) {
@@ -951,6 +969,8 @@ exports.submitForm = onRequest(
       to: process.env.ADMIN_LINE_USER_ID,
       messages: [{ type: 'text', text: lineMessage }]
     });
+    // 通知の完了後に作成。ジョブ実行は別のCloud Functionで行う。
+    await enqueueAiJob('submissions', submissionId, isTest);
 
     return res.status(200).json({ success: true, message: 'お問い合わせを受け付けました。' });
   }
@@ -1095,8 +1115,10 @@ exports.submitOtherInquiry = onRequest(
     };
 
     // --- Firestore 保存 ---
+    let inquiryId = '';
     try {
       const inquiryRef = await db.collection('other_inquiries').add(data);
+      inquiryId = inquiryRef.id;
       try {
         await recordInternalMetric('inquirySubmits', `form_${inquiryRef.id}`, data.source || 'フォーム', new Date(), isTest);
       } catch (metricError) {
@@ -1118,8 +1140,27 @@ exports.submitOtherInquiry = onRequest(
       to: process.env.ADMIN_LINE_USER_ID,
       messages: [{ type: 'text', text: lineMessage }]
     });
+    await enqueueAiJob('other_inquiries', inquiryId, isTest);
 
     return res.status(200).json({ success: true });
+  }
+);
+
+exports.classifyFormAi = onDocumentCreated(
+  {
+    document: 'form_ai_jobs/{jobId}',
+    region: 'us-central1',
+    secrets: ['OPENAI_API_KEY'],
+    retry: true
+  },
+  async (event) => {
+    if (!event.data) return;
+    await processJob(db, event.params.jobId, event.data.data(), {
+      classifier: (input) => classifyWithOpenAI(input, {
+        apiKey: process.env.OPENAI_API_KEY, httpClient: axios
+      }),
+      serverTimestamp: () => FieldValue.serverTimestamp()
+    });
   }
 );
 
@@ -1222,8 +1263,17 @@ exports.getFunnelDashboard = onRequest(
       ]);
       const siteRows = siteSnapshot.docs.map((doc) => doc.data());
       const salesRows = salesSnapshot.docs.map((doc) => doc.data());
+      const payload = dashboardPayload(Object.assign({ key: period }, bounds), siteRows, salesRows, lineInsight);
+      let aiFormReference = { label: 'AI判定のお客様フォーム件数（参考）', status: 'unavailable', total: null, byMedia: [] };
+      try {
+        const aiRows = await db.collection('form_ai_classifications')
+          .where('receivedDay', '>=', bounds.start).where('receivedDay', '<=', bounds.end).get();
+        aiFormReference = referenceKpi(aiRows.docs.map((doc) => doc.data()));
+        aiFormReference.byMedia = await Promise.all(aiFormReference.byMedia.map(async (row) =>
+          Object.assign({}, row, { label: await mediaDisplay(row.code) })));
+      } catch (_error) { /* 既存の集客ファネルはAI側の取得失敗で止めない。 */ }
       res.set('Cache-Control', 'private, no-store');
-      return res.status(200).json(dashboardPayload(Object.assign({ key: period }, bounds), siteRows, salesRows, lineInsight));
+      return res.status(200).json(Object.assign({}, payload, { aiFormReference }));
     } catch (error) {
       console.error('getFunnelDashboard failed:', error);
       return res.status(500).json({ error: 'Internal Server Error' });

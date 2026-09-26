@@ -1,0 +1,43 @@
+diff --git a/src/V2MobileWebApp.js b/src/V2MobileWebApp.js
+index 37c330a..dcaa154 100644
+--- a/src/V2MobileWebApp.js
++++ b/src/V2MobileWebApp.js
+@@ -1171,6 +1171,7 @@ function v2webGetFunnelSummary(period){
+     stages:stages,
+     detail:{lineClicks:Number(m.lineClicks)||0,phoneClicks:Number(m.phoneClicks)||0,lineFollows:Number(m.lineFollows)||0,lineUnfollows:Number(m.lineUnfollows)||0},
+     topSources:(upstream.topSources||[]).slice(0,3).map(function(s){return{source:String((s&&s.source)||'不明'),visitors:Number(s&&s.visitors)||0};}),
++    aiFormReference:upstream.aiFormReference||{status:'unavailable',total:null,byMedia:[]},
+     generatedAt:new Date().toISOString()
+   };
+ }
+@@ -1247,7 +1248,7 @@ function v2webFunnelFetchUpstream_(period){
+     if(code<200||code>=300)return{ok:false,reason:'集客データを取得できませんでした（HTTP '+code+'）。'};
+     var body=JSON.parse(response.getContentText());
+     if(!body||!body.metrics)return{ok:false,reason:'集客データを取得できませんでした（応答の形式が不正です）。'};
+-    return{ok:true,metrics:body.metrics,topSources:body.topSources};
++    return{ok:true,metrics:body.metrics,topSources:body.topSources,aiFormReference:body.aiFormReference};
+   }catch(error){
+     return{ok:false,reason:'集客データを取得できませんでした（通信エラー）。'};
+   }
+diff --git a/src/V2MobileApp.html b/src/V2MobileApp.html
+index f40b079..4c405bc 100644
+--- a/src/V2MobileApp.html
++++ b/src/V2MobileApp.html
+@@ -644,7 +644,16 @@ function renderFunnelResult_(result){
+   if(result.topSources&&result.topSources.length){
+     sourcesHtml='\x3Cp class="funnel-sources">流入元：'+result.topSources.map(function(s){return esc(s.source)+' '+esc(s.visitors)+'件'}).join('／')+'\x3C/p>';
+   }
+-  box.innerHTML='\x3Cdiv class="funnel-stages">'+stagesHtml+'\x3C/div>\x3Cp class="funnel-detail">'+detailText+'\x3C/p>'+sourcesHtml+'\x3Cp class="funnel-period-range">'+esc(result.period.start)+'〜'+esc(result.period.end)+'\x3C/p>';
++  var ai=result.aiFormReference||{};
++  var mediaRows=(ai.byMedia||[]).map(function(row){
++    return '\x3Cp>'+esc(row.label||row.code||'直接・不明')+'：'+esc(row.count||0)+'件\x3C/p>';
++  }).join('');
++  var referenceHtml='\x3Cdiv class="detail-card">\x3Ch3>AI判定のお客様フォーム件数（参考）\x3C/h3>'
++    +(ai.status==='reference'
++      ? '\x3Cp>合計 '+esc(ai.total||0)+'件\x3C/p>'+(mediaRows||'\x3Cp>該当なし\x3C/p>')
++      : '\x3Cp>参考値を取得できません\x3C/p>')
++    +'\x3Cp>台帳由来の問い合わせ数には加算していません。\x3C/p>\x3C/div>';
++  box.innerHTML='\x3Cdiv class="funnel-stages">'+stagesHtml+'\x3C/div>\x3Cp class="funnel-detail">'+detailText+'\x3C/p>'+sourcesHtml+referenceHtml+'\x3Cp class="funnel-period-range">'+esc(result.period.start)+'〜'+esc(result.period.end)+'\x3C/p>';
+ }
+ /** 対応終了・終了日の設定（稼働影響の終了日UX補修・2026-08-13）。終了日は現実世界の事実であり
+  * 操作日に固定しない。呼び出し元（今日画面のインライン日付選択・稼働影響詳細画面の終了日訂正）が

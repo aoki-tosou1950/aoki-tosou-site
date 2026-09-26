@@ -36,6 +36,7 @@
   <section id="content" class="hidden">
     <div id="funnel" class="funnel card"></div>
     <div id="metrics" class="grid"></div>
+    <section class="panel card" style="margin-top:14px" aria-labelledby="ai-reference-title"><h2 id="ai-reference-title">AI判定のお客様フォーム件数（参考）</h2><p class="note">台帳由来の問い合わせ数とは別の参考値です。正式な件数には加算しません。</p><div id="ai-reference"></div></section>
     <div class="lower">
       <section class="panel card"><h2>主な流入元</h2><table><thead><tr><th>流入元</th><th>訪問者</th></tr></thead><tbody id="sources"></tbody></table></section>
       <section class="panel card"><h2>LINEの状態</h2><div id="line"></div></section>
@@ -61,6 +62,11 @@
     document.getElementById('metrics').innerHTML=cards.map(function(c){return '<div class="metric card"><small>'+c[0]+'</small><b>'+Number(data.metrics[c[1]]||0).toLocaleString('ja-JP')+'</b></div>';}).join('');
     var sourceRows=(data.topSources||[]).map(function(s){return '<tr><td>'+esc(s.source)+'</td><td>'+Number(s.visitors||0).toLocaleString('ja-JP')+'</td></tr>';}).join('');
     document.getElementById('sources').innerHTML=sourceRows||'<tr><td colspan="2">まだデータがありません</td></tr>';
+    var ai=data.aiFormReference||{};
+    var aiRows=(ai.byMedia||[]).map(function(row){return '<tr><td>'+esc(row.label||row.code||'直接・不明')+'</td><td>'+Number(row.count||0).toLocaleString('ja-JP')+'</td></tr>';}).join('');
+    document.getElementById('ai-reference').innerHTML=ai.status==='reference'
+      ? '<p><b>合計 '+Number(ai.total||0).toLocaleString('ja-JP')+' 件</b></p><table><thead><tr><th>媒体</th><th>お客様フォーム</th></tr></thead><tbody>'+(aiRows||'<tr><td colspan="2">該当なし</td></tr>')+'</tbody></table>'
+      : '<p class="note">AI判定の参考値を取得できません。</p>';
     var line=data.lineInsight||{};
     document.getElementById('line').innerHTML=line.available
       ? '<p><b>累計友だち追加 '+Number(line.followersCumulative||0).toLocaleString('ja-JP')+'</b><br>ブロック '+Number(line.blocks||0).toLocaleString('ja-JP')+'<br>ターゲットリーチ '+Number(line.targetedReaches||0).toLocaleString('ja-JP')+'</p><p class="note">基準日 '+esc(line.date)+'。現在友だち数はAPIで正確に取得できないため推測表示しません。</p>'

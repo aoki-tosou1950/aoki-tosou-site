@@ -7,10 +7,18 @@ const path = require('node:path');
 const saved = [];
 const pushed = [];
 const metrics = [];
-const db = { collection(name) { return { async add(data) {
-  saved.push({ collection: name, data });
-  return { id: `unit-${saved.length}` };
-} }; } };
+const jobs = [];
+const sequence = [];
+const db = { collection(name) { return {
+  async add(data) {
+    saved.push({ collection: name, data });
+    return { id: `unit-${saved.length}` };
+  },
+  doc(id) { return { async create(data) {
+    jobs.push({ id, data });
+    sequence.push('job');
+  } }; }
+}; } };
 
 // 読み込み時からFirestoreとLINE APIを置換し、実データと実通知には触れない。
 const originalLoad = Module._load;
@@ -20,7 +28,10 @@ Module._load = function(request, parent, isMain) {
   if (request === 'firebase-admin/firestore') return {
     getFirestore: () => db, FieldValue: { serverTimestamp: () => 'unit-time' }
   };
-  if (request === 'axios') return { post: async (url, body) => { pushed.push({ url, body }); } };
+  if (request === 'axios') return { post: async (url, body) => {
+    pushed.push({ url, body });
+    sequence.push('notify');
+  } };
   if (request === './lib/media-labels' && parent && path.dirname(parent.filename) === path.resolve(__dirname, '..')) {
     return { mediaDisplay: async (source) => {
       if (source === 'lookup_offline') throw new Error('lookup unavailable');
@@ -81,5 +92,7 @@ test('両フォームで保存と集計を維持し、媒体つきの管理者LI
   assert.equal(saved.length, 10);
   assert.equal(pushed.length, 10);
   assert.equal(metrics.length, 10);
+  assert.equal(jobs.length, 10);
+  assert.deepEqual(sequence, Array.from({ length: 10 }, () => ['notify', 'job']).flat());
   assert.ok(metrics.every((args) => args[0] === 'inquirySubmits' && args[4] === false));
 });
