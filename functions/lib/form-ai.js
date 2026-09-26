@@ -1,7 +1,8 @@
 'use strict';
 
 const MODEL = 'gemini-3.5-flash';
-const AI_DAILY_LIMIT = 20;
+const AI_DAILY_LIMIT = 10;
+const AI_MAX_INPUT_TOKENS = 5000;
 const PROMPT_VERSION = 'form-triage-gemini-v1';
 const DECISIONS = new Set(['customer', 'sales', 'unknown']);
 const SYSTEM = [
@@ -39,28 +40,41 @@ async function classifyWithGemini(input, { auth, projectId = 'aokitosou-miniapp'
   if (!auth || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projectId))
     throw new Error('Vertex AI authentication or project unavailable');
   const client = await auth.getClient();
-  const response = await client.request({
-    url: 'https://aiplatform.googleapis.com/v1/projects/' + projectId +
-      '/locations/global/publishers/google/models/' + encodeURIComponent(model) + ':generateContent',
-    method: 'POST',
-    data: {
-      systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
-      generationConfig: {
-        thinkingConfig: { thinkingLevel: 'MINIMAL' },
-        maxOutputTokens: 200,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            decision: { type: 'STRING', enum: ['customer', 'sales', 'unknown'] },
-            reason: { type: 'STRING' }
-          },
-          required: ['decision', 'reason'],
-          propertyOrdering: ['decision', 'reason']
-        }
+  const endpoint = 'https://aiplatform.googleapis.com/v1/projects/' + projectId +
+    '/locations/global/publishers/google/models/' + encodeURIComponent(model);
+  const payload = {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: JSON.stringify(input) }] }],
+    generationConfig: {
+      thinkingConfig: { thinkingLevel: 'MINIMAL' },
+      maxOutputTokens: 200,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          decision: { type: 'STRING', enum: ['customer', 'sales', 'unknown'] },
+          reason: { type: 'STRING' }
+        },
+        required: ['decision', 'reason'],
+        propertyOrdering: ['decision', 'reason']
       }
-    },
+    }
+  };
+  // Count the exact text sent to Gemini. On counting failures, skip generation.
+  const count = await client.request({
+    url: endpoint + ':countTokens',
+    method: 'POST',
+    data: { systemInstruction: payload.systemInstruction, contents: payload.contents },
+    timeout: 5000
+  });
+  const inputTokens = count.data?.totalTokens;
+  if (!Number.isSafeInteger(inputTokens) || inputTokens <= 0 ||
+      inputTokens > AI_MAX_INPUT_TOKENS)
+    throw new Error('Input token limit unavailable or exceeded');
+  const response = await client.request({
+    url: endpoint + ':generateContent',
+    method: 'POST',
+    data: payload,
     timeout: 15000
   });
   const body = response.data || {};
@@ -172,5 +186,5 @@ function referenceKpi(records) {
 }
 
 module.exports = {
-  MODEL, PROMPT_VERSION, AI_DAILY_LIMIT, buildInput, classifyWithGemini, reserveAiAttempt, processJob, referenceKpi
+  MODEL, PROMPT_VERSION, AI_DAILY_LIMIT, AI_MAX_INPUT_TOKENS, buildInput, classifyWithGemini, reserveAiAttempt, processJob, referenceKpi
 };

@@ -1,10 +1,11 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MODEL, AI_DAILY_LIMIT, buildInput, classifyWithGemini, processJob, referenceKpi } = require('../lib/form-ai');
+const { MODEL, AI_DAILY_LIMIT, AI_MAX_INPUT_TOKENS, buildInput, classifyWithGemini, processJob, referenceKpi } = require('../lib/form-ai');
 
 function fakeAuth(reply, check) {
   return { getClient: async () => ({ request: async (options) => {
+    if (options.url.endsWith(':countTokens')) return { data: { totalTokens: 100 } };
     if (check) check(options);
     return { data: {
       modelVersion: MODEL,
@@ -44,6 +45,30 @@ test('Vertex OAuth request sends only selected form fields, not identifying colu
   });
 });
 
+test('token preflight bounds input and fails closed without generation', async () => {
+  const input = buildInput('survey', { message: '塗装の相談' });
+  for (const totalTokens of [5000, 5001, undefined, null]) {
+    const calls = [];
+    const auth = { getClient: async () => ({ request: async options => {
+      calls.push(options);
+      if (options.url.endsWith(':countTokens'))
+        return { data: { totalTokens } };
+      return { data: { candidates: [{
+        finishReason: 'STOP', content: { parts: [{ text: '{"decision":"customer","reason":"相談"}' }] }
+      }] } };
+    } }) };
+    if (totalTokens === 5000) {
+      assert.equal((await classifyWithGemini(input, { auth })).decision, 'customer');
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].timeout, 5000);
+      assert.deepEqual(calls[0].data.contents, calls[1].data.contents);
+      assert.deepEqual(calls[0].data.systemInstruction, calls[1].data.systemInstruction);
+    } else {
+      await assert.rejects(classifyWithGemini(input, { auth }), /Input token limit/);
+      assert.equal(calls.length, 1);
+    }
+  }
+});
 test('fictional customer, sales and ambiguous samples pass through Gemini contract', async () => {
   const samples = [
     ['外壁の色あせを直したい。見積もりをください', 'customer'],
@@ -70,8 +95,9 @@ test('Gemini errors and unfinished responses fail closed', async () => {
     } }) }
   }), /API unavailable/);
   await assert.rejects(classifyWithGemini(input, {
-    auth: { getClient: async () => ({ request: async () => ({
-      data: { candidates: [{ finishReason: 'MAX_TOKENS' }] }
+    auth: { getClient: async () => ({ request: async options => ({
+      data: options.url.endsWith(':countTokens') ? { totalTokens: 100 } :
+        { candidates: [{ finishReason: 'MAX_TOKENS' }] }
     }) }) }
   }), /Incomplete/);
 });
@@ -158,7 +184,8 @@ test('text and work counts are capped before sending to Gemini', () => {
   assert.equal(input.text.length, 600);
   assert.equal(input.works.length, 10);
   assert.equal(input.works[0].length, 32);
-  assert.equal(AI_DAILY_LIMIT, 20);
+  assert.equal(AI_DAILY_LIMIT, 10);
+  assert.equal(AI_MAX_INPUT_TOKENS, 5000);
 });
 
 test('daily budget admits at most the configured number of attempts and fails closed', async () => {
