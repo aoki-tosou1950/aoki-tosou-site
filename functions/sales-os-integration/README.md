@@ -12,4 +12,4 @@ API 有効化・権限付与後に read-only の scripts/ai_form_history_trial.j
 
 戻し方: 元の Apps Script ソース／デプロイ版へ戻し、サイト関数は本作業前の 89197b2（A 反映済み）から該当関数のみ再公開する。AI 分類トリガーを止める。フォーム記録・通知済みメッセージ・過去の判定記録は消さない。
 
-費用の安全策（未公開の作業ブランチ）: AI 判定は JST で1日20回まで。Firestore トランザクションで API 呼び出し前に枠を確保し、枠切れ・枠の読み書き失敗時は Gemini を呼ばず「判断がつかない」として記録する。入力本文600文字、工事種別10個各32文字、出力200トークンまで。分類関数は maxInstances=1/concurrency=1、既存の両フォーム関数は maxInstances=2/concurrency=1 とする。保存と LINE 通知を AI の成功に依存させない。これらはデプロイ前には効かない。Google Cloud 側の Vertex API 有効化・実行アカウントと費用上限は未設定。
+費用の安全策（未公開の作業ブランチ）: AI 判定は JST で1日20回まで。Firestore トランザクションで API 呼び出し前に枠を確保し、枠切れ・枠の読み書き失敗時は Gemini を呼ばず「判断がつかない」として記録する。入力本文600文字、工事種別10個各32文字、出力200トークンまで。分類関数は maxInstances=1/concurrency=1、既存の両フォーム関数は maxInstances=5/concurrency=10 とする。保存と LINE 通知を AI の成功に依存させない。これらはデプロイ前には効かない。Google Cloud 側の Vertex API 有効化・実行アカウントと費用上限は未設定。

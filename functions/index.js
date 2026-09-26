@@ -860,8 +860,8 @@ exports.submitForm = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    maxInstances: 2,
-    concurrency: 1,
+    maxInstances: 5,
+    concurrency: 10,
     secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
@@ -1057,8 +1057,8 @@ exports.submitOtherInquiry = onRequest(
   {
     region: 'us-central1',
     cors: false,
-    maxInstances: 2,
-    concurrency: 1,
+    maxInstances: 5,
+    concurrency: 10,
     secrets: ['LINE_ACCESS_TOKEN', 'ADMIN_LINE_USER_ID', 'FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
