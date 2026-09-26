@@ -1,0 +1,702 @@
+/* Plan 1b: shared site chrome and the new home page.
+   Loaded after common.css so legacy page content can keep its own layout. */
+:root {
+  --aoki-navy: #14233a;
+  --aoki-paper: #f6f4ef;
+  --aoki-brown: #8f5317;
+  --aoki-gold: #c98a3a;
+  --aoki-muted: #5a6272;
+  --aoki-green: #067f3a;
+  --aoki-line: #e3ded4;
+  --aoki-footer: #0e1a2c;
+}
+
+/* Every HTML page has the same static header/footer markup. */
+body .site-header,
+body .site-header *,
+body .site-footer,
+body .site-footer * {
+  font-family: "Zen Kaku Gothic New", "Hiragino Sans", sans-serif !important;
+  word-break: auto-phrase;
+  line-break: strict;
+}
+body .site-header,
+body .site-footer { box-sizing: border-box; }
+body .site-header *,
+body .site-footer * { box-sizing: border-box; }
+body .site-header {
+  position: relative;
+  z-index: 100;
+  width: 100%;
+  background: #fff;
+  color: var(--aoki-navy);
+  border-bottom: 1px solid var(--aoki-line);
+  box-shadow: none;
+}
+body .site-header .header-inner {
+  max-width: 1440px;
+  min-height: 132px;
+  margin: auto;
+  padding: 0 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 38px;
+}
+body .site-header .header-logo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 0 1 auto;
+  color: var(--aoki-navy);
+  text-decoration: none;
+}
+body .site-header .logo-name {
+  font-family: "Shippori Mincho B1", "Hiragino Mincho ProN", serif !important;
+  color: var(--aoki-navy);
+  font-size: 30px !important;
+  font-weight: 800 !important;
+  line-height: 1.4 !important;
+  white-space: nowrap;
+}
+body .site-header .logo-sub {
+  color: var(--aoki-muted);
+  display: block;
+  font-size: 18px !important;
+  line-height: 1.4 !important;
+  white-space: nowrap;
+}
+body .site-header .logo-sub--mobile { display: none; }
+body .site-header .header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 13px;
+  min-width: 0;
+}
+body .site-header .header-contact {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 25px;
+}
+body .site-header .header-contact-label {
+  color: var(--aoki-muted);
+  font-size: 18px !important;
+  line-height: 1.4 !important;
+  white-space: nowrap;
+}
+body .site-header .header-phone {
+  color: var(--aoki-navy);
+  font-size: 24px !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+body .site-header .header-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 19px;
+  border-radius: 99px;
+  background: var(--aoki-green);
+  color: #fff;
+  font-size: 18px !important;
+  line-height: 1.3 !important;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+body .site-header .site-nav {
+  display: flex;
+  align-items: center;
+  gap: 42px;
+}
+body .site-header .site-nav a {
+  color: var(--aoki-navy);
+  font-size: 24px !important;
+  line-height: 1.35 !important;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  border-radius: 0;
+}
+body .site-header .site-nav a:hover,
+body .site-header .site-nav a[aria-current="page"] {
+  color: var(--aoki-brown);
+  border-bottom-color: var(--aoki-gold);
+}
+body .site-header .nav-toggle { display: none; }
+
+body .site-footer {
+  padding: 64px max(30px, calc((100vw - 1200px) / 2));
+  background: var(--aoki-footer);
+  color: #c9d1dc;
+  text-align: left;
+}
+body .site-footer .footer-inner { max-width: 1200px; margin: auto; }
+body .site-footer .footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 36px;
+}
+body .site-footer .footer-company { display: flex; flex-direction: column; gap: 9px; }
+body .site-footer .footer-name {
+  color: #fff;
+  font-family: "Shippori Mincho B1", "Hiragino Mincho ProN", serif !important;
+  font-size: 26px !important;
+  line-height: 1.5 !important;
+  font-weight: 700;
+  margin: 0;
+}
+body .site-footer .footer-address,
+body .site-footer .footer-area {
+  color: #c9d1dc;
+  font-size: 20px !important;
+  line-height: 1.6 !important;
+  margin: 0;
+}
+body .site-footer .footer-nav {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+body .site-footer .footer-nav a {
+  color: #fff;
+  font-size: 20px !important;
+  line-height: 1.5 !important;
+  text-decoration: none;
+}
+body .site-footer .footer-bottom {
+  margin-top: 38px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,.15);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+body .site-footer .footer-copy {
+  color: #c9d1dc;
+  font-size: 18px !important;
+  line-height: 1.5 !important;
+  margin: 0;
+}
+body .site-footer .footer-contact {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+body .site-footer .footer-contact a {
+  color: #fff;
+  font-size: 18px !important;
+  line-height: 1.5 !important;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Home only. Keep legacy pages' headings, cards and body text intact. */
+body.aoki-home {
+  margin: 0;
+  background: var(--aoki-paper);
+  color: var(--aoki-navy);
+  font-family: "Zen Kaku Gothic New", "Hiragino Sans", sans-serif !important;
+  letter-spacing: normal;
+  line-height: 1.7;
+}
+body.aoki-home main,
+body.aoki-home main * {
+  box-sizing: border-box;
+  font-family: "Zen Kaku Gothic New", "Hiragino Sans", sans-serif !important;
+  word-break: auto-phrase;
+  line-break: strict;
+}
+body.aoki-home .serif,
+body.aoki-home .serif * {
+  font-family: "Shippori Mincho B1", "Hiragino Mincho ProN", serif !important;
+}
+body.aoki-home main a { color: inherit; text-decoration: none; }
+body.aoki-home main img { display: block; max-width: 100%; }
+body.aoki-home main h1,
+body.aoki-home main h2,
+body.aoki-home main h3,
+body.aoki-home main p { margin: 0; }
+body.aoki-home main :focus-visible,
+body.aoki-home .mobile-sticky-cta :focus-visible,
+body .site-header :focus-visible,
+body .site-footer :focus-visible { outline: 3px solid var(--aoki-gold); outline-offset: 3px; }
+body.aoki-home .home-container { max-width: 1200px; margin-inline: auto; }
+body.aoki-home .section-kicker {
+  color: var(--aoki-brown);
+  font-size: 20px !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+body.aoki-home .section-title {
+  margin-top: 14px;
+  color: var(--aoki-navy);
+  font-size: 56px !important;
+  line-height: 1.42 !important;
+  font-weight: 800;
+}
+body.aoki-home .section-intro {
+  color: var(--aoki-muted);
+  font-size: 22px !important;
+  line-height: 1.85 !important;
+}
+
+body.aoki-home .home-hero {
+  height: 900px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--aoki-navy);
+  color: #fff;
+}
+body.aoki-home .hero-image,
+body.aoki-home .hero-shade { position: absolute; inset: 0; width: 100%; height: 100%; }
+body.aoki-home .hero-image { object-fit: cover; object-position: center 60%; }
+body.aoki-home .hero-shade {
+  background: linear-gradient(180deg, rgba(14,26,44,.30) 0%, rgba(14,26,44,.38) 50%, rgba(14,26,44,.82) 100%);
+}
+body.aoki-home .hero-heading {
+  position: absolute;
+  z-index: 1;
+  top: 104px;
+  left: 30px;
+  right: 30px;
+  text-align: center;
+  text-shadow: 0 4px 32px rgba(0,0,0,.35);
+}
+body.aoki-home .hero-heading h1 {
+  color: #fff;
+  font-size: 128px !important;
+  line-height: 1.15 !important;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+body.aoki-home .hero-heading p {
+  margin-top: 20px;
+  color: #fff;
+  font-size: 54px !important;
+  line-height: 1.3 !important;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+body.aoki-home .hero-bottom {
+  position: absolute;
+  z-index: 1;
+  left: max(40px, calc((100vw - 1248px) / 2));
+  right: max(40px, calc((100vw - 1248px) / 2));
+  bottom: 72px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 32px;
+}
+body.aoki-home .hero-copy { max-width: 720px; }
+body.aoki-home .hero-overline {
+  color: #fff;
+  font-size: 30px !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+}
+body.aoki-home .hero-description {
+  margin-top: 14px;
+  color: #e3e8ef;
+  font-size: 24px !important;
+  line-height: 1.7 !important;
+}
+body.aoki-home .hero-description--mobile { display: none; }
+body.aoki-home .hero-actions { display: flex; gap: 14px; margin-top: 26px; }
+body.aoki-home .hero-actions a,
+body.aoki-home .mobile-hero-actions a {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 64px;
+  padding: 0 29px;
+  border-radius: 99px;
+  font-size: 22px !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+  white-space: nowrap;
+}
+body.aoki-home .hero-actions .button-line,
+body.aoki-home .mobile-hero-actions .button-line { background: var(--aoki-green); color: #fff; }
+body.aoki-home .hero-actions .button-phone,
+body.aoki-home .mobile-hero-actions .button-phone { border: 1.5px solid rgba(255,255,255,.7); color: #fff; }
+body.aoki-home .hero-points { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 20px; }
+body.aoki-home .hero-points span { color: #e3e8ef; font-size: 20px !important; line-height: 1.5 !important; }
+body.aoki-home .hero-points span::before { content: "✓"; color: #e8c48e; margin-right: 6px; font-weight: 700; }
+body.aoki-home .inspection-card {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 360px;
+  gap: 8px;
+  padding: 26px 28px;
+  background: #fff;
+  color: var(--aoki-navy);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(10,20,35,.25);
+}
+body.aoki-home .inspection-card .section-kicker { font-size: 18px !important; }
+body.aoki-home .inspection-card strong { font-size: 25px !important; line-height: 1.5 !important; }
+body.aoki-home .inspection-card span:not(.section-kicker) {
+  color: var(--aoki-muted);
+  font-size: 20px !important;
+  line-height: 1.7 !important;
+}
+body.aoki-home .inspection-card .card-action { color: var(--aoki-navy) !important; font-weight: 700; margin-top: 6px; }
+body.aoki-home .mobile-hero-actions { display: none; }
+
+body.aoki-home .home-metrics { background: #fff; border-bottom: 1px solid var(--aoki-line); }
+body.aoki-home .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); }
+body.aoki-home .metric {
+  min-width: 0;
+  padding: 38px 30px;
+  border-right: 1px solid var(--aoki-line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+body.aoki-home .metric:last-child { border-right: 0; }
+body.aoki-home .metric-label { color: var(--aoki-brown); font-size: 20px !important; line-height: 1.4 !important; font-weight: 700; }
+body.aoki-home .metric-value { color: var(--aoki-navy); font-size: 52px !important; line-height: 1.2 !important; font-weight: 800; }
+body.aoki-home .metric-value small { font-size: 22px !important; line-height: 1.3 !important; }
+body.aoki-home .metric-value--text { font-size: 30px !important; line-height: 1.45 !important; }
+body.aoki-home .metric-caption { color: var(--aoki-muted); font-size: 20px !important; line-height: 1.5 !important; }
+
+body.aoki-home .home-policy { padding: 112px 30px; }
+body.aoki-home .policy-grid { display: grid; grid-template-columns: 5fr 7fr; gap: 80px; }
+body.aoki-home .policy-intro { margin-top: 22px; color: #3d4657; font-size: 22px !important; line-height: 2 !important; }
+body.aoki-home .policy-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+body.aoki-home .policy-steps li {
+  display: grid;
+  grid-template-columns: 76px minmax(0,1fr);
+  gap: 24px;
+  padding: 27px 31px;
+  background: #fff;
+  border: 1px solid var(--aoki-line);
+  border-radius: 8px;
+}
+body.aoki-home .step-num { color: var(--aoki-gold); font-size: 56px !important; line-height: 1.1 !important; font-weight: 800; }
+body.aoki-home .step-body strong { display: block; font-size: 23px !important; line-height: 1.5 !important; }
+body.aoki-home .step-body p { margin-top: 8px; color: var(--aoki-muted); font-size: 22px !important; line-height: 1.8 !important; }
+
+body.aoki-home .home-works { background: #fff; padding: 104px 30px; }
+body.aoki-home .works-heading { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 42px; }
+body.aoki-home .works-heading .section-intro { margin-top: 14px; }
+body.aoki-home .pill-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  flex-shrink: 0;
+  padding: 0 25px;
+  border: 1.5px solid var(--aoki-navy);
+  border-radius: 99px;
+  font-size: 22px !important;
+  line-height: 1.4 !important;
+  font-weight: 700;
+}
+body.aoki-home .mobile-works-link { display: none; }
+body.aoki-home .mobile-only { display: none; }
+body.aoki-home .works-grid { display: grid; grid-template-columns: 7fr 5fr; gap: 28px; }
+body.aoki-home .featured-case,
+body.aoki-home .secondary-case { display: block; }
+body.aoki-home .featured-case img { width: 100%; height: 440px; object-fit: cover; border-radius: 8px; }
+body.aoki-home .case-location { display: block; color: var(--aoki-muted); font-size: 20px !important; line-height: 1.5 !important; margin-top: 17px; }
+body.aoki-home .case-title { display: block; color: var(--aoki-navy); font-size: 30px !important; line-height: 1.5 !important; font-weight: 700; margin-top: 6px; }
+body.aoki-home .case-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+body.aoki-home .case-tags span { color: #3d4657; background: #f1ece2; border-radius: 99px; padding: 3px 10px; font-size: 18px !important; line-height: 1.5 !important; }
+body.aoki-home .secondary-list { display: flex; flex-direction: column; gap: 25px; }
+body.aoki-home .secondary-case { display: grid; grid-template-columns: 220px minmax(0,1fr); align-items: center; gap: 20px; }
+body.aoki-home .secondary-case + .secondary-case { border-top: 1px solid var(--aoki-line); padding-top: 25px; }
+body.aoki-home .secondary-case img { width: 220px; height: 180px; object-fit: cover; border-radius: 8px; }
+body.aoki-home .secondary-case .case-title { font-size: 23px !important; }
+body.aoki-home .secondary-case .case-location { margin-top: 0; }
+
+body.aoki-home .home-reasons { padding: 104px 30px; }
+body.aoki-home .home-reasons .section-heading { text-align: center; }
+body.aoki-home .reason-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 28px; margin-top: 48px; }
+body.aoki-home .reason-card { padding: 40px 36px; background: #fff; border-radius: 8px; border-top: 3px solid var(--aoki-navy); }
+body.aoki-home .reason-card .reason-number { color: var(--aoki-brown); font-size: 22px !important; line-height: 1.5 !important; font-weight: 700; }
+body.aoki-home .reason-card h3 { color: var(--aoki-navy); font-size: 28px !important; line-height: 1.5 !important; margin-top: 14px; }
+body.aoki-home .reason-card p { color: var(--aoki-muted); font-size: 22px !important; line-height: 1.85 !important; margin-top: 14px; }
+
+body.aoki-home .home-services { padding: 104px 30px; background: #fff; }
+body.aoki-home .services-heading { margin-bottom: 36px; }
+body.aoki-home .services-heading .section-intro { margin-top: 15px; max-width: 860px; }
+body.aoki-home .services-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+body.aoki-home .service-card { padding: 26px 24px; border: 1px solid var(--aoki-line); border-radius: 8px; }
+body.aoki-home .service-symbol { color: var(--aoki-brown); display: block; font-size: 28px !important; line-height: 1.3 !important; }
+body.aoki-home .service-card strong { display: block; color: var(--aoki-navy); font-size: 24px !important; line-height: 1.5 !important; margin-top: 8px; }
+body.aoki-home .service-card p { color: var(--aoki-muted); font-size: 20px !important; line-height: 1.7 !important; margin-top: 8px; }
+body.aoki-home .service-card--light { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; background: var(--aoki-paper); border: 0; }
+body.aoki-home .service-card--light strong,
+body.aoki-home .service-card--light p { margin: 0; }
+body.aoki-home .service-card--light .service-arrow { margin-left: auto; font-size: 20px !important; line-height: 1.5 !important; font-weight: 700; white-space: nowrap; }
+
+body.aoki-home .home-contact { padding: 104px 30px; background: var(--aoki-navy); color: #fff; }
+body.aoki-home .contact-heading { text-align: center; }
+body.aoki-home .contact-heading .section-kicker { color: #e8c48e; }
+body.aoki-home .contact-heading h2 { color: #fff; font-size: 52px !important; line-height: 1.5 !important; margin-top: 16px; }
+body.aoki-home .contact-points { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 26px; margin-top: 22px; }
+body.aoki-home .contact-points span { color: #d5dce6; font-size: 20px !important; line-height: 1.6 !important; }
+body.aoki-home .contact-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; margin-top: 48px; }
+body.aoki-home .contact-card { display: flex; flex-direction: column; gap: 12px; border-radius: 10px; background: #fff; color: var(--aoki-navy); padding: 36px 32px; }
+body.aoki-home .contact-card--line { background: var(--aoki-green); color: #fff; }
+body.aoki-home .contact-card .contact-kicker { color: var(--aoki-brown); font-size: 20px !important; line-height: 1.4 !important; font-weight: 700; }
+body.aoki-home .contact-card--line .contact-kicker { color: #fff; }
+body.aoki-home .contact-card strong { font-size: 30px !important; line-height: 1.45 !important; }
+body.aoki-home .contact-card .contact-number { font-size: 34px !important; }
+body.aoki-home .contact-card p { color: var(--aoki-muted); font-size: 20px !important; line-height: 1.75 !important; }
+body.aoki-home .contact-card--line p { color: #fff; }
+body.aoki-home .contact-card .contact-action { margin-top: auto; font-size: 22px !important; line-height: 1.5 !important; font-weight: 700; }
+
+body.aoki-home .mobile-sticky-cta { display: none; }
+
+@media (max-width: 1300px) {
+  body .site-header .header-inner { padding-inline: 30px; gap: 24px; }
+  body .site-header .logo-name { font-size: 26px !important; }
+  body .site-header .logo-sub { font-size: 16px !important; }
+  body .site-header .site-nav { gap: 26px; }
+  body .site-header .site-nav a { font-size: 20px !important; }
+  body .site-header .header-contact { gap: 14px; }
+  body .site-header .header-contact-label { font-size: 16px !important; }
+  body .site-header .header-phone { font-size: 20px !important; }
+  body .site-header .header-line { font-size: 16px !important; }
+  body.aoki-home .hero-heading h1 { font-size: clamp(76px, 8.9vw, 128px) !important; }
+  body.aoki-home .hero-heading p { font-size: clamp(32px, 3.8vw, 54px) !important; }
+  body.aoki-home .hero-bottom { left: 40px; right: 40px; }
+  body.aoki-home .home-container { max-width: 1120px; }
+}
+@media (max-width: 1100px) {
+  body .site-header .header-inner { min-height: 118px; padding-inline: 22px; }
+  body .site-header .logo-name { font-size: 23px !important; }
+  body .site-header .logo-sub { font-size: 15px !important; }
+  body .site-header .site-nav { gap: 17px; }
+  body .site-header .site-nav a { font-size: 18px !important; }
+  body .site-header .header-contact-label { display: none; }
+  body.aoki-home .hero-copy { max-width: 560px; }
+  body.aoki-home .hero-overline { font-size: 24px !important; }
+  body.aoki-home .hero-description { font-size: 20px !important; }
+  body.aoki-home .inspection-card { flex-basis: 300px; padding: 20px; }
+  body.aoki-home .inspection-card strong { font-size: 21px !important; }
+  body.aoki-home .inspection-card span:not(.section-kicker) { font-size: 18px !important; }
+  body.aoki-home .hero-actions a { font-size: 19px !important; padding-inline: 18px; }
+  body.aoki-home .policy-grid { gap: 35px; }
+  body.aoki-home .secondary-case { grid-template-columns: 150px minmax(0,1fr); }
+  body.aoki-home .secondary-case img { width: 150px; height: 148px; }
+}
+@media (max-width: 850px) {
+  body .site-header .header-inner { min-height: 70px; padding: 0 20px; }
+  body .site-header .logo-name { font-size: 20px !important; }
+  body .site-header .logo-sub { font-size: 15px !important; }
+  body .site-header .header-contact { display: none; }
+  body .site-header .header-right { display: block; }
+  body .site-header .nav-toggle {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: #fff;
+    border: 1px solid var(--aoki-line);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  body .site-header .nav-toggle span { width: 22px; height: 2px; background: var(--aoki-navy); }
+  body .site-header .site-nav {
+    display: none !important;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    padding: 8px 0 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: #fff;
+    box-shadow: 0 12px 20px rgba(10,20,35,.14);
+  }
+  body .site-header .site-nav.open { display: flex !important; }
+  body .site-header .site-nav a { display: block; padding: 12px 24px; font-size: 18px !important; border: 0; }
+  body .site-header .site-nav a[aria-current="page"] { border: 0; background: var(--aoki-paper); }
+  body .site-footer .footer-top { flex-direction: column; }
+  body .site-footer .footer-bottom { align-items: flex-start; }
+
+  body.aoki-home .home-hero { height: 670px; }
+  body.aoki-home .hero-heading { top: 72px; }
+  body.aoki-home .hero-heading h1 { font-size: 76px !important; }
+  body.aoki-home .hero-bottom { bottom: 36px; left: 30px; right: 30px; }
+  body.aoki-home .hero-overline { font-size: 20px !important; }
+  body.aoki-home .hero-description { font-size: 18px !important; }
+  body.aoki-home .hero-actions { display: flex; }
+  body.aoki-home .hero-points { font-size: 18px !important; }
+  body.aoki-home .inspection-card { display: none; }
+  body.aoki-home .metrics-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.aoki-home .metric:nth-child(2) { border-right: 0; }
+  body.aoki-home .metric:nth-child(-n+2) { border-bottom: 1px solid var(--aoki-line); }
+  body.aoki-home .policy-grid { grid-template-columns: 1fr; }
+  body.aoki-home .home-policy, body.aoki-home .home-works,
+  body.aoki-home .home-reasons, body.aoki-home .home-services,
+  body.aoki-home .home-contact { padding-block: 72px; }
+  body.aoki-home .section-title { font-size: 42px !important; }
+  body.aoki-home .works-grid { grid-template-columns: 1fr; }
+  body.aoki-home .secondary-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.aoki-home .secondary-case, body.aoki-home .secondary-case + .secondary-case { display: block; border: 0; padding: 0; }
+  body.aoki-home .secondary-case img { width: 100%; height: 190px; }
+  body.aoki-home .reason-grid { gap: 14px; }
+  body.aoki-home .reason-card { padding: 24px 20px; }
+  body.aoki-home .reason-card h3 { font-size: 22px !important; }
+  body.aoki-home .reason-card p { font-size: 18px !important; }
+  body.aoki-home .contact-grid { gap: 14px; }
+  body.aoki-home .contact-card { padding: 24px 20px; }
+  body.aoki-home .contact-card strong { font-size: 23px !important; }
+  body.aoki-home .contact-card .contact-number { font-size: 25px !important; }
+  body.aoki-home .contact-card p { font-size: 18px !important; }
+}
+@media (max-width: 650px) {
+  body .site-header .header-inner { min-height: 64px; padding: 0 16px; }
+  body .site-header .logo-name { font-size: 18px !important; line-height: 1.3 !important; }
+  body .site-header .logo-sub { font-size: 15px !important; line-height: 1.3 !important; }
+  body .site-header .logo-sub--desktop { display: none; }
+  body .site-header .logo-sub--mobile { display: block; }
+  body .site-footer { padding: 40px 20px 112px; }
+  body .site-footer .footer-top { gap: 25px; }
+  body .site-footer .footer-name { font-size: 20px !important; }
+  body .site-footer .footer-address, body .site-footer .footer-area { font-size: 17px !important; }
+  body .site-footer .footer-nav { gap: 12px 22px; }
+  body .site-footer .footer-nav a { font-size: 17px !important; }
+  body .site-footer .footer-bottom { margin-top: 28px; padding-top: 18px; flex-direction: column-reverse; gap: 16px; }
+  body .site-footer .footer-copy { font-size: 16px !important; }
+  body .site-footer .footer-contact a { font-size: 16px !important; }
+
+  body.aoki-home .home-hero { height: 600px; }
+  body.aoki-home .hero-image { object-position: 62% 50%; }
+  body.aoki-home .hero-shade { background: linear-gradient(180deg,rgba(14,26,44,.35),rgba(14,26,44,.4) 55%,rgba(14,26,44,.85)); }
+  body.aoki-home .hero-heading { top: 72px; left: 20px; right: 20px; text-align: left; }
+  body.aoki-home .hero-heading h1 { font-size: 54px !important; line-height: 1.2 !important; }
+  body.aoki-home .hero-heading p { font-size: 25px !important; line-height: 1.45 !important; letter-spacing: 0; margin-top: 14px; }
+  body.aoki-home .mobile-only { display: inline; }
+  body.aoki-home .desktop-only { display: none; }
+  body.aoki-home .hero-bottom { left: 20px; right: 20px; bottom: 32px; display: block; }
+  body.aoki-home .hero-overline { font-size: 19px !important; }
+  body.aoki-home .hero-description { font-size: 17px !important; line-height: 1.7 !important; margin-top: 8px; }
+  body.aoki-home .hero-description--desktop { display: none; }
+  body.aoki-home .hero-description--mobile { display: block; }
+  body.aoki-home .hero-actions, body.aoki-home .hero-points { display: none; }
+  body.aoki-home .mobile-hero-actions { display: flex; flex-direction: column; gap: 12px; padding: 24px 20px 32px; background: var(--aoki-navy); }
+  body.aoki-home .mobile-hero-actions a { min-height: 60px; font-size: 18px !important; }
+  body.aoki-home .mobile-hero-actions .button-phone { min-height: 56px; }
+  body.aoki-home .metric { padding: 22px 20px; }
+  body.aoki-home .metric-label, body.aoki-home .metric-caption { font-size: 16px !important; }
+  body.aoki-home .metric-value { font-size: 34px !important; }
+  body.aoki-home .metric-value small { font-size: 19px !important; }
+  body.aoki-home .metric-value--text { font-size: 20px !important; }
+  body.aoki-home .home-policy, body.aoki-home .home-works,
+  body.aoki-home .home-reasons, body.aoki-home .home-services,
+  body.aoki-home .home-contact { padding: 56px 20px; }
+  body.aoki-home .section-kicker { font-size: 16px !important; }
+  body.aoki-home .section-title { font-size: 32px !important; line-height: 1.5 !important; margin-top: 10px; }
+  body.aoki-home .section-intro { font-size: 18px !important; line-height: 1.9 !important; }
+  body.aoki-home .policy-grid { gap: 20px; }
+  body.aoki-home .policy-intro { margin-top: 18px; font-size: 19px !important; line-height: 1.9 !important; }
+  body.aoki-home .policy-steps { gap: 12px; }
+  body.aoki-home .policy-steps li { grid-template-columns: 30px minmax(0,1fr); gap: 16px; padding: 20px; }
+  body.aoki-home .step-num { font-size: 30px !important; }
+  body.aoki-home .step-body strong, body.aoki-home .step-body p { font-size: 18px !important; line-height: 1.8 !important; }
+  body.aoki-home .step-body p { margin-top: 4px; }
+  body.aoki-home .works-heading { display: block; margin-bottom: 24px; }
+  body.aoki-home .works-heading .section-intro { display: none; }
+  body.aoki-home .works-heading .pill-link { display: none; }
+  body.aoki-home .featured-case img { height: 210px; }
+  body.aoki-home .case-location { font-size: 16px !important; margin-top: 12px; }
+  body.aoki-home .case-title { font-size: 21px !important; }
+  body.aoki-home .case-tags { display: none; }
+  body.aoki-home .secondary-list { grid-template-columns: 1fr; gap: 16px; }
+  body.aoki-home .secondary-case, body.aoki-home .secondary-case + .secondary-case { display: grid; grid-template-columns: 132px minmax(0,1fr); gap: 14px; padding: 0; }
+  body.aoki-home .secondary-case img { width: 132px; height: 100px; }
+  body.aoki-home .secondary-case .case-title { font-size: 18px !important; line-height: 1.5 !important; }
+  body.aoki-home .secondary-case .case-location { margin-top: 0; }
+  body.aoki-home .mobile-works-link { display: flex; width: 100%; margin-top: 24px; font-size: 19px !important; }
+  body.aoki-home .home-reasons .section-heading { text-align: left; }
+  body.aoki-home .reason-grid { grid-template-columns: 1fr; margin-top: 20px; gap: 16px; }
+  body.aoki-home .reason-card { padding: 24px 20px; }
+  body.aoki-home .reason-card .reason-number { font-size: 17px !important; }
+  body.aoki-home .reason-card h3 { font-size: 21px !important; margin-top: 8px; }
+  body.aoki-home .reason-card p { font-size: 18px !important; margin-top: 8px; }
+  body.aoki-home .services-heading { margin-bottom: 20px; }
+  body.aoki-home .services-heading .section-intro { display: none; }
+  body.aoki-home .services-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+  body.aoki-home .service-card { padding: 18px 16px; }
+  body.aoki-home .service-symbol { font-size: 26px !important; }
+  body.aoki-home .service-card strong { font-size: 18px !important; }
+  body.aoki-home .service-card p { display: none; }
+  body.aoki-home .service-card--light { gap: 12px; padding: 16px; }
+  body.aoki-home .service-card--light strong { font-size: 19px !important; }
+  body.aoki-home .service-card--light p { display: block; font-size: 16px !important; }
+  body.aoki-home .service-card--light .service-arrow { display: none; }
+  body.aoki-home .contact-heading { text-align: left; }
+  body.aoki-home .contact-heading h2 { font-size: 28px !important; line-height: 1.55 !important; }
+  body.aoki-home .contact-points { display: none; }
+  body.aoki-home .contact-grid { grid-template-columns: 1fr; gap: 16px; margin-top: 20px; }
+  body.aoki-home .contact-card { padding: 22px 20px; gap: 6px; }
+  body.aoki-home .contact-card .contact-kicker { font-size: 16px !important; }
+  body.aoki-home .contact-card strong { font-size: 22px !important; }
+  body.aoki-home .contact-card .contact-number { font-size: 26px !important; }
+  body.aoki-home .contact-card p { font-size: 17px !important; }
+  body.aoki-home .contact-card .contact-action { display: none; }
+  body.aoki-home { padding-bottom: 72px; }
+  body.aoki-home .mobile-sticky-cta.is-visible {
+    position: fixed;
+    z-index: 110;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    min-height: 72px;
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: minmax(0,1fr) minmax(0,1.4fr);
+    gap: 8px;
+    background: rgba(255,255,255,.97);
+    border-top: 1px solid var(--aoki-line);
+    box-shadow: 0 -6px 18px rgba(10,20,35,.12);
+  }
+  body.aoki-home .mobile-sticky-cta a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 99px;
+    color: var(--aoki-navy);
+    border: 1.5px solid var(--aoki-navy);
+    font-size: 18px !important;
+    line-height: 1.4 !important;
+    font-weight: 700;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  body.aoki-home .mobile-sticky-cta .sticky-line { background: var(--aoki-green); border-color: var(--aoki-green); color: #fff; }
+}
+@media (max-width: 375px) {
+  body.aoki-home .hero-heading h1 { font-size: 50px !important; }
+  body.aoki-home .metric { padding-inline: 14px; }
+  body.aoki-home .secondary-case, body.aoki-home .secondary-case + .secondary-case { grid-template-columns: 112px minmax(0,1fr); }
+  body.aoki-home .secondary-case img { width: 112px; }
+  body.aoki-home .mobile-sticky-cta a { font-size: 16px !important; }
+}

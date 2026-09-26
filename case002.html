@@ -256,23 +256,36 @@
     ]
   }
   </script>
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/plan1b.css">
 </head>
 <body>
 
 <header class="site-header">
   <div class="header-inner">
-    <a class="header-logo" href="index.html">有限会社 青木塗装工業</a>
-    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <nav class="site-nav" aria-label="グローバルナビゲーション">
-      <a href="index.html">ホーム</a>
-      <a href="works.html" aria-current="page">施工事例</a>
-      <a href="faq.html">よくある質問</a>
-      <a href="about.html">会社案内</a>
-      <a class="nav-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINE相談</a>
-    </nav>
+    <a class="header-logo" href="index.html">
+      <span class="logo-sub logo-sub--desktop">大分市の外壁塗装・屋根塗装・防水工事</span>
+      <span class="logo-sub logo-sub--mobile">大分市の外壁・屋根塗装</span>
+      <span class="logo-name">有限会社 青木塗装工業</span>
+    </a>
+    <div class="header-right">
+      <div class="header-contact">
+        <span class="header-contact-label">お電話は24時間365日受付（自動応答）</span>
+        <a class="header-phone" href="tel:0975940076">☎ 097-594-0076</a>
+        <a class="header-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a>
+      </div>
+      <button class="nav-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="site-menu">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="site-nav" id="site-menu" aria-label="グローバルナビゲーション">
+        <a href="index.html">ホーム</a>
+        <a href="works.html">施工事例</a>
+        <a href="index.html#services">対応工事</a>
+        <a href="faq.html">よくある質問</a>
+        <a href="about.html">会社案内</a>
+      </nav>
+    </div>
   </div>
 </header>
 
@@ -334,17 +347,29 @@
 </main>
 
 <footer class="site-footer">
-  <p class="footer-name">有限会社 青木塗装工業</p>
-  <nav class="footer-nav" style="display:flex;justify-content:center;gap:20px;margin-bottom:14px;flex-wrap:wrap;">
-    <a href="index.html" style="color:rgba(255,255,255,0.75);text-decoration:none;font-size:13px;">ホーム</a>
-    <a href="works.html" style="color:rgba(255,255,255,0.75);text-decoration:none;font-size:13px;">施工事例</a>
-    <a href="about.html" style="color:rgba(255,255,255,0.75);text-decoration:none;font-size:13px;">会社案内</a>
-    <a href="faq.html" style="color:rgba(255,255,255,0.75);text-decoration:none;font-size:13px;">よくある質問</a>
-  </nav>
-  <a class="footer-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">
-    💬 LINEで相談する
-  </a>
-  <p class="footer-copy">© 有限会社 青木塗装工業</p>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div class="footer-company">
+        <p class="footer-name">有限会社 青木塗装工業</p>
+        <p class="footer-address">〒870-0116 大分市大字常行180-5</p>
+        <p class="footer-area">対応エリア：大分市を中心に近郊地域</p>
+      </div>
+      <nav class="footer-nav" aria-label="フッターナビゲーション">
+        <a href="index.html">ホーム</a>
+        <a href="works.html">施工事例</a>
+        <a href="index.html#services">対応工事</a>
+        <a href="faq.html">よくある質問</a>
+        <a href="about.html">会社案内</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 有限会社 青木塗装工業</p>
+      <div class="footer-contact">
+        <a href="tel:0975940076">097-594-0076</a>
+        <a href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a>
+      </div>
+    </div>
+  </div>
 </footer>
 
 <script src="js/analytics-v2-outbox-engine.js" defer></script>
