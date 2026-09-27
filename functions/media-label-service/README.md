@@ -1,4 +1,4 @@
-# Sales OS media label lookup (deployment pending)
+# Sales OS media label lookup
 
 Read the existing Sales OS "媒体コードマスタ" sheet with the existing
 read-only service account in the Sales OS project. The HTTP response includes
@@ -20,7 +20,9 @@ Configuration on the existing Firebase form functions:
 - The Firebase runtime service account gets \`roles/run.invoker\` on ONLY
   this service, not any Sales OS workbook permission.
 - Both submit functions fetch at most once per warm instance per 15 minutes.
-  Total lookup deadline is 700ms. A 60-second failure cooldown suppresses
+  Total lookup deadline is 5 seconds. This permits the Cloud Run service to
+  remain scale-to-zero while covering its observed 3.304-second cold start,
+  without paying for minimum instances. A 60-second failure cooldown suppresses
   repeated unavailable lookups. Any error uses the raw source code and
   still sends LINE. Absent source remains "直接・不明".
 - There is no second media-name mapping: add a flyer version only once in

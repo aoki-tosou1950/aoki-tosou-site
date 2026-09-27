@@ -5,7 +5,10 @@ const { formatMediaSource } = require('./line');
 
 const CACHE_MS = 15 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
-const DEADLINE_MS = 700;
+// Allow a scale-to-zero Cloud Run instance to cold-start without paying for
+// minimum instances. LINE notification may wait a few seconds, then keeps the
+// existing raw-code fallback if the lookup is still unavailable.
+const DEADLINE_MS = 5000;
 
 function createMediaLabelResolver({ loadLabels, now = Date.now, cacheMs = CACHE_MS,
   retryMs = RETRY_MS, deadlineMs = DEADLINE_MS }) {

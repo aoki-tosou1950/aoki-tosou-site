@@ -1,7 +1,11 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMediaLabelResolver } = require('../lib/media-labels');
+const { createMediaLabelResolver, DEADLINE_MS } = require('../lib/media-labels');
+
+test('production deadline allows a scale-to-zero cold start without minimum instances', () => {
+  assert.equal(DEADLINE_MS, 5000);
+});
 
 test('registered, unknown and missing media; one fetch per cache window', async () => {
   let count = 0;
