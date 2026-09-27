@@ -132,7 +132,7 @@ function database(original) {
     }
   };
 }
-test('separate worker records once and failed AI is unknown; no test rows', async () => {
+test('separate worker records once and failed AI is unknown', async () => {
   const db = database({ message: '外壁塗装の相談', source: 'meishi', test_event: false });
   const job = { collection: 'submissions', submissionId: 'docA', receivedDay: '2026-09-26' };
   let calls = 0;
@@ -151,9 +151,29 @@ test('separate worker records once and failed AI is unknown; no test rows', asyn
   assert.equal(stored.model, MODEL);
   assert.equal(stored.sourceId, 'docA');
   assert.equal(stored.classifiedAt, 'unit-time');
-  const testDb = database({ message: '作動確認', test_event: true });
-  assert.deepEqual(await processJob(testDb, 'test', job, deps), { skipped: true });
-  assert.equal(testDb.results.size, 0);
+  assert.equal(stored.test_event, false);
+});
+
+test('authenticated smoke sends for both forms are classified but never added to KPI', async () => {
+  for (const [collection, payload] of [
+    ['submissions', { message: '外壁の見積もりを依頼します', source: 'meishi' }],
+    ['other_inquiries', { detail: '防水工事の見積をお願いします', source: 'area_check_v1' }]
+  ]) {
+    const db = database({ ...payload, test_event: true });
+    const jobId = collection + '_smoke';
+    let calls = 0;
+    const result = await processJob(db, jobId, {
+      collection, submissionId: 'smoke', receivedDay: '2026-09-27', test_event: true
+    }, {
+      classifier: async () => { calls++; return {
+        decision: 'customer', reason: '工事見積の依頼', model: MODEL
+      }; }, serverTimestamp: () => 'test-time'
+    });
+    assert.deepEqual(result, { created: true, decision: 'customer' });
+    assert.equal(calls, 1);
+    assert.equal(db.results.get(jobId).test_event, true);
+    assert.equal(referenceKpi([...db.results.values()]).total, 0);
+  }
 });
 
 test('duplicate parallel work cannot create two results or double-count', async () => {

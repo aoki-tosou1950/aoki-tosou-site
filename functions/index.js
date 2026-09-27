@@ -843,10 +843,11 @@ async function getLineInsight() {
 }
 
 async function enqueueAiJob(collection, submissionId, isTest) {
-  if (isTest || !submissionId) return;
+  if (!submissionId) return;
   try {
     await db.collection('form_ai_jobs').doc(collection + '_' + submissionId).create({
       collection, submissionId,
+      test_event: isTest,
       receivedDay: jstDateKey(new Date()),
       queuedAt: FieldValue.serverTimestamp()
     });

@@ -125,7 +125,7 @@ async function processJob(db, jobId, job, {
     throw new Error('Invalid job reference');
   if ((await resultRef.get()).exists) return { duplicate: true };
   const original = await db.collection(job.collection).doc(job.submissionId).get();
-  if (!original.exists || original.data().test_event === true) return { skipped: true };
+  if (!original.exists) return { skipped: true };
   const record = original.data();
   if (['production_smoke', 'production_smoke_hardening'].includes(record.source))
     return { skipped: true };
@@ -156,6 +156,7 @@ async function processJob(db, jobId, job, {
     sourceId: job.submissionId,
     source: input.source,
     formType,
+    test_event: record.test_event === true,
     decision: verdict.decision,
     reason: verdict.reason,
     model: verdict.model,
