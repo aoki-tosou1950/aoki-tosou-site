@@ -1,7 +1,7 @@
 'use strict';
 
 // Read-only: retrieve only fields required for classification; never write records.
-const { execFileSync } = require('node:child_process');
+const { execSync } = require('node:child_process');
 const axios = require('axios');
 const { buildInput, classifyWithGemini } = require('../lib/form-ai');
 const PROJECT = 'aokitosou-miniapp';
@@ -38,7 +38,7 @@ async function records(collection, accessToken) {
 async function main() {
 
 
-  const accessToken = execFileSync('gcloud.cmd', ['auth', 'print-access-token'], {
+  const accessToken = execSync('gcloud auth print-access-token', {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
   }).trim();
   const auth = { getClient: async () => ({
