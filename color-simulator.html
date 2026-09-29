@@ -79,14 +79,21 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);l
 @media (max-width:420px){.parts .chip{font-size:14px}.sw-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (prefers-reduced-motion:reduce){.sel-outline{animation:none}.house svg{transition:none}}
 .small{font-size:16px;color:var(--muted);margin:0}
-.photo-banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:6px;padding:14px 16px;border-radius:12px;background:var(--navy);color:var(--on-navy);text-decoration:none}
-.photo-banner:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
-.pb-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);flex:none;color:#e8c48e}
-.pb-text{display:grid;gap:2px;flex:1 1 220px;min-width:0}
-.pb-text b{font-size:19px}
-.pb-text span{font-size:16px;color:#e3e8ef;line-height:1.6}
-.pb-go{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 16px;border-radius:10px;background:#fff;color:var(--navy);font-weight:700;font-size:17px;flex:none}
-@media (max-width:480px){.pb-go{flex:1 1 100%}}
+.ways{display:grid;gap:10px;margin-top:6px}
+.ways-title{margin:0;font-weight:700;font-size:18px;color:var(--navy)}
+.ways-title b{display:inline-block;background:var(--gold);color:#fff;border-radius:6px;padding:0 8px;margin-right:6px;font-size:16px}
+.ways-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.way{display:grid;grid-template-columns:auto 1fr;column-gap:12px;row-gap:2px;align-items:center;padding:14px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);text-decoration:none}
+.way:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.way .wi{grid-row:1/3;display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:var(--navy-soft);color:var(--navy)}
+.way .wt{font-weight:700;font-size:19px;line-height:1.4}
+.way .wd{font-size:15px;color:var(--muted);line-height:1.5}
+.way .wg{grid-column:1/-1;margin-top:8px;display:inline-flex;justify-content:center;align-items:center;min-height:44px;border-radius:8px;font-weight:700;font-size:16px;background:var(--navy);color:var(--on-navy)}
+.way.here{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy) inset}
+.way.here .wg{background:var(--card);color:var(--navy);border:2px solid var(--navy)}
+.way.here .wi{background:var(--navy);color:var(--on-navy)}
+@media (max-width:520px){.ways-grid{grid-template-columns:1fr}}
+.how-to{margin:0;font-size:17px;color:var(--muted)}
 .photo-cta{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:10px}
 .photo-cta h2{font-family:var(--f-display);font-size:22px;margin:0;color:var(--navy)}
 .photo-cta p{margin:0}
@@ -105,18 +112,19 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);l
   <header class="tool-intro">
     <div class="eyebrow">大分市 青木塗装工業</div>
     <h1>外壁カラー<br>シミュレーター</h1>
-    <p class="lead">屋根・外壁・雨樋などの色を選んで、塗り替え後のイメージを確かめられます。家の絵の気になる場所をタップするか、下の色を選んでください。</p>
-    <a class="photo-banner" href="color-photo.html">
-      <span class="pb-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
-      <span class="pb-text"><b>ご自宅の写真でも試せます</b><span>お家の写真に色をのせて、塗り替え後を確かめられます。写真は送信されません。</span></span>
-      <span class="pb-go">写真で試す →</span>
-    </a>
+    <p class="lead">屋根・外壁・雨樋などの色を選んで、塗り替え後のイメージを確かめられます。</p>
+    <div class="ways">
+      <p class="ways-title"><b>2通り</b>イラストでも、ご自宅の写真でも試せます</p>
+      <div class="ways-grid"><a class="way here" href="#try" aria-current="page"><span class="wi"><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M3 11 12 4l9 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M5.5 9.5V20h13V9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="10" y="14" width="4" height="6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span class="wt">イラストで試す</span><span class="wd">見本の家で、すぐに色を選べます</span><span class="wg">このページで試す ↓</span></a><a class="way" href="color-photo.html"><span class="wi"><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span><span class="wt">ご自宅の写真で試す</span><span class="wd">実際のお家の写真に色をのせます。写真は送信されません</span><span class="wg">写真で試す →</span></a></div>
+    </div>
   </header>
 
-  <div class="stage">
+  <div class="stage" id="try">
     <div class="house" id="house"></div>
     <div class="now" id="now" aria-live="polite"></div>
   </div>
+
+  <p class="how-to">家の絵の気になる場所をタップするか、下の色を選んでください。</p>
 
   <section class="sec">
     <h2>おすすめの組み合わせ<small>まずはここから</small></h2>
