@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="index, follow">
+<title>写真でカラーシミュレーション｜大分市の青木塗装工業</title>
+<meta name="description" content="ご自宅の写真に外壁や屋根の色をのせて、塗り替え後のイメージを確かめられます。写真はお使いの端末の中だけで処理し、送信しません。">
+<link rel="canonical" href="https://aoki-tosou.net/color-photo.html">
+<meta property="og:type" content="website"><meta property="og:title" content="写真でカラーシミュレーション｜大分市の青木塗装工業"><meta property="og:description" content="ご自宅の写真に外壁や屋根の色をのせて、塗り替え後のイメージを確かめられます。"><meta property="og:url" content="https://aoki-tosou.net/color-photo.html"><meta property="og:site_name" content="有限会社 青木塗装工業">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/plan1b.css">
+<style>:root{
+  --bg:#f6f4ef; --card:#ffffff; --ink:#14233a; --muted:#5a6272; --line:#e3ded4;
+  --navy:#14233a; --navy-soft:#e6e9ef; --on-navy:#ffffff; --gold:#c98a3a; --brown:#8f5317; --warn:#b3261e;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body.aoki-tool{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:18px;line-height:1.7;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 48px;display:grid;gap:16px}
+.tool-intro{display:grid;gap:6px;max-width:760px}
+.eyebrow{font-size:16px;color:var(--brown);font-weight:700;letter-spacing:.08em}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,6vw,40px);line-height:1.35;margin:0;text-wrap:balance}
+.lead{margin:0;color:var(--muted)}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:16px}
+.steps li{display:flex;gap:6px;align-items:center}
+.steps b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-size:14px}
+.work{display:grid;gap:16px;align-items:start}
+.photo{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:6px;display:grid;gap:6px}
+.canvas-box{background:#2a2f36;border-radius:12px;overflow:hidden;display:grid;place-items:center;position:relative}
+canvas{display:block;max-width:100%;max-height:44vh;width:auto;height:auto;touch-action:none;cursor:crosshair}
+.badge{position:absolute;left:8px;top:8px;background:rgba(20,35,58,.85);color:#fff;font-size:14px;padding:2px 10px;border-radius:99px}
+.status{font-size:15px;color:var(--muted);min-height:1.6em;margin:0}
+.panel{display:grid;gap:16px}
+.sec{display:grid;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.sec h2{font-size:17px;margin:0;color:var(--navy);font-weight:700}
+.sec h2 small{font-weight:400;color:var(--muted);font-size:15px;margin-left:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:700 16px var(--f-body);min-height:48px;padding:6px 12px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.chip[aria-pressed="true"]{border-color:var(--navy);background:var(--navy);color:var(--on-navy)}
+.chip i{width:18px;height:18px;border-radius:4px;border:1px solid rgba(0,0,0,.25);flex:none}
+.chip:focus-visible,.sw:focus-visible,.btn:focus-visible,input:focus-visible,label.btn:focus-within{outline:3px solid var(--gold);outline-offset:2px}
+.sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.sw{display:grid;gap:4px;justify-items:center;background:var(--card);border:2px solid var(--line);border-radius:10px;padding:6px 4px;cursor:pointer;font:500 15px var(--f-body);color:var(--ink);min-height:84px}
+.sw span{width:100%;height:40px;border-radius:6px;border:1px solid rgba(0,0,0,.15)}
+.sw[aria-pressed="true"]{border-color:var(--navy);box-shadow:0 0 0 2px var(--navy) inset}
+.sw .code,.sum .code{font-size:14px;color:var(--muted);font-weight:500}
+.sw .code{display:block;margin-top:-4px;white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:-.02em}
+.btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;min-height:52px;padding:0 16px;border-radius:10px;border:0;background:var(--navy);color:var(--on-navy);font:700 17px var(--f-body);cursor:pointer;text-align:center}
+.btn.ghost{background:var(--card);color:var(--navy);border:2px solid var(--navy)}
+.btn:disabled{opacity:.4;cursor:default}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.upload input{position:absolute;width:1px;height:1px;opacity:0}
+.slider{display:grid;gap:2px;font-size:16px}
+.slider input{width:100%;height:40px;accent-color:var(--navy)}
+.slider .ends{display:flex;justify-content:space-between;font-size:15px;color:var(--muted)}
+.tip{margin:0;font-size:16px;color:var(--muted)}
+.sum{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.sum dt{color:var(--muted)}
+.sum dd{margin:0;font-weight:700;display:flex;gap:8px;align-items:center}
+.sum dd i{width:18px;height:18px;border-radius:4px;border:1px solid rgba(0,0,0,.2)}
+.note{font-size:16px;color:var(--muted);margin:0;display:grid;gap:6px;max-width:760px}
+.proto{font-size:15px;color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin:0}
+@media (min-width:900px){
+  .work{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+  .photo{top:12px}
+  canvas{max-height:78vh}
+}
+.aside{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:18px;display:grid;gap:10px;max-width:760px}
+.aside h2{font-family:var(--f-display);font-size:22px;margin:0;color:var(--navy)}
+.aside p{margin:0}
+</style>
+</head>
+<body class="aoki-tool">
+<header class="site-header">
+  <div class="header-inner">
+    <a class="header-logo" href="index.html"><span class="logo-sub logo-sub--desktop">大分市の外壁塗装・屋根塗装・防水工事</span><span class="logo-sub logo-sub--mobile">大分市の外壁・屋根塗装</span><span class="logo-name">有限会社 青木塗装工業</span></a>
+    <div class="header-right"><div class="header-contact"><span class="header-contact-label">お電話は24時間365日受付（自動応答）</span><a class="header-phone" href="tel:0975940076">☎ 097-594-0076</a><a class="header-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div><button class="nav-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="site-menu"><span></span><span></span><span></span></button><nav class="site-nav" id="site-menu" aria-label="グローバルナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav></div>
+  </div>
+</header>
+<main id="main-content" class="tool-main">
+
+<div class="wrap">
+  <header class="tool-intro">
+    <div class="eyebrow">大分市 青木塗装工業</div>
+    <h1>ご自宅の写真で<br>色を試す</h1>
+    <p class="lead">お家の写真に、塗り替え後の色をのせて確かめられます。写真はこの端末の中だけで処理し、どこにも送信しません。</p>
+    <ol class="steps"><li><b>1</b>写真を選ぶ</li><li><b>2</b>場所と色を選ぶ</li><li><b>3</b>写真の壁をタップ</li><li><b>4</b>はみ出しはなぞって消す</li></ol>
+  </header>
+
+  <div class="work">
+    <div class="photo">
+      <div class="canvas-box"><canvas id="cv" aria-label="色をのせた写真。タップやなぞる操作で色を塗ります"></canvas><span class="badge" id="badge">見本の写真（イラスト）</span></div>
+      <p class="status" id="status" aria-live="polite"></p>
+    </div>
+
+    <div class="panel">
+      <section class="sec">
+        <h2>1. 写真を選ぶ</h2>
+        <label class="btn upload" id="uploadLabel"><input type="file" id="file" accept="image/*">お家の写真を撮る・選ぶ</label>
+        <p class="tip">正面から、家全体が入るように撮った写真が向いています。</p>
+      </section>
+
+      <section class="sec">
+        <h2>2. 塗る場所</h2>
+        <div class="chips" id="layers"></div>
+      </section>
+
+      <section class="sec">
+        <h2 id="colorTitle">色を選ぶ</h2>
+        <div id="palette" class="sw-grid"></div>
+      </section>
+
+      <section class="sec">
+        <h2>3. 塗り方</h2>
+        <div class="chips" id="modes"></div>
+        <div class="slider" id="tolBox"><label for="tol">一度に塗る範囲</label><input type="range" id="tol" min="15" max="90" value="42"><div class="ends"><span>せまく</span><span>ひろく</span></div></div>
+        <div class="slider" id="sizeBox" hidden><label for="size">筆の太さ</label><input type="range" id="size" min="4" max="60" value="18"><div class="ends"><span>細く</span><span>太く</span></div></div>
+        <p class="tip" id="modeTip"></p>
+      </section>
+
+      <section class="sec">
+        <h2>4. 見比べる・やり直す</h2>
+        <div class="row">
+          <button class="btn ghost" id="compare" type="button">元の写真を見る</button>
+          <button class="btn ghost" id="undo" type="button">ひとつ戻す</button>
+          <button class="btn ghost" id="clearLayer" type="button">この場所の色を消す</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>選んだ色</h2>
+        <dl class="sum" id="sum"></dl>
+        <p class="tip">選んだ色で相談したいときは、下のボタンから申し込みフォームへお進みください（別画面で開きます）。</p>
+        <a class="btn" href="https://aokitosou-miniapp.web.app/index.html" target="_blank" rel="noopener noreferrer">この色で相談する</a>
+      </section>
+    </div>
+  </div>
+
+  <section class="aside">
+    <h2>あくまで目安です</h2>
+    <p>写真に色をのせた、かんたんな仕上がりイメージです。操作がわからないときや、きれいに塗れないときは、お気軽に担当者にお声がけください。ご自宅にお伺いして、一緒に色を見ながらイメージをお作りします。</p>
+    <a class="btn ghost" href="color-simulator.html">イラストで色を選ぶ</a>
+  </section>
+
+  <div class="note">
+    <p>写真の明るさや影をそのまま残して色をのせるため、実際の仕上がりの雰囲気をつかむための目安です。各色の番号は、日本塗料工業会「塗料用標準色（2024年P版）」の見本帳で照合した、近い色の目安です。画面の色は端末によって違って見えます。</p>
+    <p>最終的な色は、塗り板見本を屋外で確かめてから決めることをおすすめします。</p>
+  </div>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner"><div class="footer-top"><div class="footer-company"><p class="footer-name">有限会社 青木塗装工業</p><p class="footer-address">〒870-0116 大分市大字常行180-5</p><p class="footer-area">対応エリア：大分市を中心に近郊地域</p></div><nav class="footer-nav" aria-label="フッターナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav></div><div class="footer-bottom"><p class="footer-copy">© 有限会社 青木塗装工業</p><div class="footer-contact"><a href="tel:0975940076">097-594-0076</a><a href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div></div></div>
+</footer>
+
+<script src="js/analytics-v2-outbox-engine.js" defer></script>
+<script src="js/analytics-v2.js" defer></script>
+
+<script>
+const PAL={
+ wall:[["ホワイト","#dadada","PN-87"],["アイボリー","#ece2cc","P22-90C"],["クリーム","#ead39f","P22-85H"],["ベージュ","#dcc594","P22-80H"],["ライトブラウン","#c7a87f","P19-70H"],["ブラウン","#7c583a","P17-40H"],["ライトグレー","#c7c7c7","PN-80"],["グレージュ","#baab94","P21-70D"],["チャコール","#474747","PN-30"],["ネイビー","#103058","P75-20L"],["モスグリーン","#767f2f","P32-50L"],["テラコッタ","#c4836e","P09-60L"]],
+ roof:[["ブラック","#1c1c1c","PN-10"],["ダークグレー","#44474f","P75-30B"],["ブラウン","#7c583a","P17-40H"],["ネイビー","#103058","P75-20L"],["グリーン","#376b38","P39-40L"],["レッドブラウン","#733528","P09-30L"]],
+ trim:[["ホワイト","#dadada","PN-87"],["アイボリー","#ece2cc","P22-90C"],["シルバー","#abadb0","P75-70A"],["ダークグレー","#5c6067","P75-40B"],["ブラウン","#7c583a","P17-40H"],["ブラック","#1c1c1c","PN-10"]]
+};
+const codeOf=(pal,n)=>(PAL[pal].find(c=>c[0]===n)||["","",""])[2];
+// 1〜4 がそれぞれの場所。後から塗った場所が優先される
+const LAYERS=[null,
+ {n:"外壁①",pal:"wall",c:"ベージュ"},
+ {n:"外壁②（塗り分け）",pal:"wall",c:"チャコール"},
+ {n:"屋根",pal:"roof",c:"ブラック"},
+ {n:"雨樋・破風",pal:"trim",c:"ホワイト"}];
+const MODES=[["tap","タップで塗る","壁をタップすると、似た色の範囲がまとめて塗られます。広がりすぎたら「一度に塗る範囲」をせまくしてください。"],
+ ["brush","なぞって塗る","指でなぞった所を塗ります。細かい所や、塗り残しに使います。"],
+ ["erase","なぞって消す","指でなぞった所から、選んでいる場所の色を消します。窓や植木へのはみ出しに使います。"]];
+const hex=(pal,n)=>(PAL[pal].find(c=>c[0]===n)||["","#cccccc"])[1];
+const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const $=id=>document.getElementById(id);
+const cv=$("cv"),ctx=cv.getContext("2d",{willReadFrequently:true});
+let W=0,H=0,orig=null,L=null,label=null,cur=1,mode="tap",showOrig=false,undoStack=[];
+
+function setImage(src,w,h){
+  W=w;H=h;cv.width=W;cv.height=H;ctx.drawImage(src,0,0,W,H);
+  orig=ctx.getImageData(0,0,W,H);L=new Float32Array(W*H);label=new Uint8Array(W*H);undoStack=[];
+  const d=orig.data;for(let i=0,p=0;i<W*H;i++,p+=4)L[i]=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
+  render();
+}
+function render(){
+  if(!orig)return;
+  const out=ctx.createImageData(W,H),o=out.data,d=orig.data;
+  const sum=[0,0,0,0,0],cnt=[0,0,0,0,0];
+  for(let i=0;i<W*H;i++){const l=label[i];if(l){sum[l]+=L[i];cnt[l]++;}}
+  const mean=sum.map((s,i)=>cnt[i]?s/cnt[i]:0);
+  const tgt=LAYERS.map(x=>x?rgb(hex(x.pal,x.c)):null);
+  for(let i=0,p=0;i<W*H;i++,p+=4){
+    const l=showOrig?0:label[i];
+    if(!l){o[p]=d[p];o[p+1]=d[p+1];o[p+2]=d[p+2];o[p+3]=255;continue;}
+    // 写真の明暗（影・凹凸）を残して色だけを置き換える
+    const t=tgt[l],dl=(L[i]-mean[l])*0.85;
+    o[p]=t[0]+dl;o[p+1]=t[1]+dl;o[p+2]=t[2]+dl;o[p+3]=255;
+  }
+  ctx.putImageData(out,0,0);drawSummary(cnt);
+}
+function pushUndo(){undoStack.push(label.slice());if(undoStack.length>12)undoStack.shift();$("undo").disabled=false;}
+function flood(x,y,tol){
+  // 隣り合う画素との色の差で広げる（影のようにゆるやかな変化はつながり、雨樋や窓枠のようなくっきりした境目で止まる）
+  const d=orig.data,N=W*H,s0=(y*W+x)*4,sr=d[s0],sg=d[s0+1],sb=d[s0+2];
+  const nt=Math.max(4,tol/5),n2=nt*nt,st=tol*1.6,s2=st*st;
+  const seen=new Uint8Array(N),q=new Int32Array(N);let h=0,t=0,n=0;
+  q[t++]=y*W+x;seen[y*W+x]=1;
+  const tryAdd=(from,to)=>{if(seen[to])return;const a=from*4,b=to*4;
+    let r=d[b]-d[a],g=d[b+1]-d[a+1],bl=d[b+2]-d[a+2];if(r*r+g*g+bl*bl>n2)return;
+    r=d[b]-sr;g=d[b+1]-sg;bl=d[b+2]-sb;if(r*r+g*g+bl*bl>s2)return;seen[to]=1;q[t++]=to;};
+  while(h<t){const i=q[h++];label[i]=cur;n++;const xx=i%W;
+    if(xx>0)tryAdd(i,i-1);if(xx<W-1)tryAdd(i,i+1);if(i>=W)tryAdd(i,i-W);if(i<N-W)tryAdd(i,i+W);}
+  return n;
+}
+function stamp(x,y,r,val){const r2=r*r;for(let j=Math.max(0,y-r);j<=Math.min(H-1,y+r);j++)for(let i=Math.max(0,x-r);i<=Math.min(W-1,x+r);i++){const dx=i-x,dy=j-y;if(dx*dx+dy*dy<=r2){const k=j*W+i;if(val)label[k]=val;else if(label[k]===cur)label[k]=0;}}}
+function toImg(e){const r=cv.getBoundingClientRect();return [Math.floor((e.clientX-r.left)*W/r.width),Math.floor((e.clientY-r.top)*H/r.height),W/r.width];}
+let down=null,last=null,raf=0;
+function queue(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;render();});}
+cv.addEventListener("pointerdown",e=>{if(!orig)return;cv.setPointerCapture(e.pointerId);const[x,y,sc]=toImg(e);down={x,y,t:Date.now()};
+  if(showOrig)setOrig(false);
+  if(mode!=="tap"){pushUndo();const r=Math.round(+$("size").value*sc/2);stamp(x,y,r,mode==="brush"?cur:0);last=[x,y];queue();}});
+cv.addEventListener("pointermove",e=>{if(!down||mode==="tap")return;const[x,y,sc]=toImg(e);const r=Math.round(+$("size").value*sc/2);
+  const steps=Math.max(1,Math.ceil(Math.hypot(x-last[0],y-last[1])/Math.max(1,r/2)));
+  for(let s=1;s<=steps;s++)stamp(Math.round(last[0]+(x-last[0])*s/steps),Math.round(last[1]+(y-last[1])*s/steps),r,mode==="brush"?cur:0);last=[x,y];queue();});
+cv.addEventListener("pointerup",e=>{if(!down)return;const[x,y]=toImg(e);
+  if(mode==="tap"&&Math.hypot(x-down.x,y-down.y)<12*W/cv.getBoundingClientRect().width&&x>=0&&y>=0&&x<W&&y<H){pushUndo();const n=flood(x,y,+$("tol").value);render();
+    status(n<W*H*0.002?"塗れた範囲が小さいようです。「一度に塗る範囲」をひろくするか、なぞって塗ってください。":n>W*H*0.6?"広く塗りすぎたようです。「ひとつ戻す」を押し、「一度に塗る範囲」をせまくしてください。":`${LAYERS[cur].n}を${LAYERS[cur].c}で塗りました。`);}
+  down=null;last=null;});
+cv.addEventListener("pointercancel",()=>{down=null;last=null;});
+
+function status(t){$("status").textContent=t;}
+function setOrig(v){showOrig=v;$("compare").textContent=v?"色をのせた写真に戻す":"元の写真を見る";$("compare").setAttribute("aria-pressed",v);render();}
+$("compare").addEventListener("click",()=>setOrig(!showOrig));
+$("undo").addEventListener("click",()=>{if(!undoStack.length)return;label=undoStack.pop();$("undo").disabled=!undoStack.length;render();status("ひとつ前に戻しました。");});
+$("clearLayer").addEventListener("click",()=>{pushUndo();for(let i=0;i<label.length;i++)if(label[i]===cur)label[i]=0;render();status(`${LAYERS[cur].n}の色を消しました。`);});
+
+function chip(html,on,fn){const b=document.createElement("button");b.type="button";b.className="chip";b.setAttribute("aria-pressed",on);b.innerHTML=html;b.addEventListener("click",fn);return b;}
+function drawLayers(){$("layers").innerHTML="";LAYERS.forEach((x,i)=>{if(!x)return;$("layers").appendChild(chip(`<i style="background:${hex(x.pal,x.c)}"></i>${x.n}`,cur===i,()=>{cur=i;drawAll();}));});}
+function drawPalette(){const x=LAYERS[cur];$("colorTitle").innerHTML=`${x.n}の色を選ぶ<small>番号は日塗工（2024年P版）の近い色</small>`;$("palette").innerHTML="";
+  PAL[x.pal].forEach(([n,h,cd])=>{const b=document.createElement("button");b.type="button";b.className="sw";b.setAttribute("aria-pressed",x.c===n);b.innerHTML=`<span style="background:${h}"></span>${n}<small class="code">${cd}</small>`;
+    b.addEventListener("click",()=>{x.c=n;drawLayers();drawPalette();render();});$("palette").appendChild(b);});}
+function drawModes(){$("modes").innerHTML="";MODES.forEach(([k,l,t])=>$("modes").appendChild(chip(l,mode===k,()=>{mode=k;drawModes();})));
+  const m=MODES.find(x=>x[0]===mode);$("modeTip").textContent=m[2];$("tolBox").hidden=mode!=="tap";$("sizeBox").hidden=mode==="tap";}
+function drawSummary(cnt){const rows=LAYERS.map((x,i)=>x&&cnt[i]?`<dt>${x.n}</dt><dd><i style="background:${hex(x.pal,x.c)}"></i>${x.c}<span class="code">（日塗工 ${codeOf(x.pal,x.c)} 相当）</span></dd>`:"").join("");
+  $("sum").innerHTML=rows||"<dt>まだ塗っていません</dt><dd></dd>";}
+function drawAll(){drawLayers();drawPalette();drawModes();}
+
+// 写真の読み込み（端末の中だけで処理し、送信しない）
+$("file").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
+  const url=URL.createObjectURL(f),img=new Image();
+  img.onload=()=>{const max=1400,s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));setImage(img,Math.round(img.naturalWidth*s),Math.round(img.naturalHeight*s));URL.revokeObjectURL(url);
+    $("badge").hidden=true;cur=1;mode="tap";drawAll();status("写真を読み込みました。「外壁①」を選んだまま、写真の壁をタップしてください。");};
+  img.onerror=()=>status("この写真は読み込めませんでした。JPEGやPNGなど、別の形式の写真でお試しください。");
+  img.src=url;e.target.value="";});
+
+// 見本の写真（イラスト）：写真らしく、明暗・ざらつき・植木を入れて描く
+function sample(){
+  const w=1000,h=700,c=document.createElement("canvas");c.width=w;c.height=h;const g=c.getContext("2d");
+  let gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,"#9fc0dc");gr.addColorStop(1,"#e6edf2");g.fillStyle=gr;g.fillRect(0,0,w,h);
+  g.fillStyle="#6b6a67";g.fillRect(0,600,w,100);
+  g.fillStyle="#cdbb98";g.fillRect(230,250,540,175);g.fillRect(180,440,640,160);
+  gr=g.createLinearGradient(180,0,820,0);gr.addColorStop(0,"rgba(255,255,255,.10)");gr.addColorStop(1,"rgba(0,0,0,.10)");g.fillStyle=gr;g.fillRect(230,250,540,175);g.fillRect(180,440,640,160);
+  g.fillStyle="rgba(0,0,0,.18)";g.fillRect(230,250,540,22);g.fillRect(180,440,640,20);
+  g.fillStyle="#4a4d52";g.beginPath();g.moveTo(170,258);g.lineTo(500,105);g.lineTo(830,258);g.closePath();g.fill();g.fillRect(160,423,680,22);
+  g.strokeStyle="rgba(0,0,0,.08)";g.lineWidth=2;for(let y=125;y<258;y+=14){const k=(y-105)/153;g.beginPath();g.moveTo(500-330*k,y);g.lineTo(500+330*k,y);g.stroke();}
+  g.strokeStyle="#f4f3ee";g.lineWidth=12;g.lineJoin="round";g.beginPath();g.moveTo(165,262);g.lineTo(500,100);g.lineTo(835,262);g.stroke();
+  g.fillStyle="#f4f3ee";g.fillRect(200,262,12,338);g.fillRect(788,262,12,338);g.fillRect(160,418,680,8);
+  const win=(x,y,ww,hh)=>{g.fillStyle="#8a8f94";g.fillRect(x-5,y-5,ww+10,hh+10);g.fillStyle="#9fb5c6";g.fillRect(x,y,ww,hh);g.fillStyle="rgba(255,255,255,.35)";g.fillRect(x+6,y+6,ww/3,hh-12);g.fillStyle="#8a8f94";g.fillRect(x+ww/2-3,y,6,hh);};
+  win(290,300,100,70);win(450,300,100,70);win(610,300,100,70);win(270,480,120,80);win(630,480,130,80);
+  g.fillStyle="#6a4a33";g.fillRect(460,470,80,130);g.fillStyle="#d9c8a0";g.beginPath();g.arc(525,540,5,0,7);g.fill();
+  g.fillStyle="#6b4f35";g.fillRect(150,500,18,100);
+  [[160,470,70,"#4f7a3a"],[120,520,55,"#5f8a45"],[210,520,55,"#476f33"],[165,540,60,"#56803e"]].forEach(([x,y,r,col])=>{g.fillStyle=col;g.beginPath();g.arc(x,y,r,0,7);g.fill();});
+  const id=g.getImageData(0,0,w,h),d=id.data;for(let p=0;p<d.length;p+=4){const n=(Math.random()-0.5)*5;d[p]+=n;d[p+1]+=n;d[p+2]+=n;}g.putImageData(id,0,0);
+  setImage(c,w,h);
+  // 最初から効果が見えるよう、見本では外壁と屋根を塗った状態で始める
+  cur=1;[[600,540],[805,540],[420,390],[755,395],[500,262],[600,262],[500,450],[800,450]].forEach(([x,y])=>{if(!label[y*W+x])flood(x,y,60);});cur=3;flood(500,200,60);flood(700,433,60);cur=1;undoStack=[];render();
+  status("見本の写真では、外壁と屋根を塗った状態から始まります。「元の写真を見る」で比べられます。");
+}
+drawAll();$("undo").disabled=true;sample();
+</script>
+
+<script>
+  (function() {
+    var toggle = document.querySelector('.nav-toggle');
+    var nav = document.querySelector('.site-nav');
+    if (!toggle || !nav) return;
+    toggle.addEventListener('click', function() { var open = nav.classList.toggle('open'); toggle.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open)); });
+    document.addEventListener('click', function(e) { if (!e.target.closest('.site-header')) { nav.classList.remove('open'); toggle.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); } });
+  })();
+</script>
+
+</body>
+</html>

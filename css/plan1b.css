@@ -449,7 +449,7 @@ body.aoki-home .reason-more { display: inline-block; margin-top: 18px; color: va
 body.aoki-home .home-tools { padding: 104px 30px; background: #ede8de; }
 body.aoki-home .home-tools .section-heading { max-width: 900px; }
 body.aoki-home .home-tools .section-intro { margin-top: 15px; }
-body.aoki-home .tool-card-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; margin-top: 42px; }
+body.aoki-home .tool-card-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; margin-top: 42px; }
 body.aoki-home .tool-card { display: flex; min-height: 310px; flex-direction: column; gap: 12px; padding: 34px 30px; background: #fff; color: var(--aoki-navy); border: 1px solid var(--aoki-line); border-radius: 10px; }
 body.aoki-home .tool-card--primary { color: #fff; background: var(--aoki-navy); border-color: var(--aoki-navy); }
 body.aoki-home .tool-card-kicker { color: var(--aoki-brown); font-size: 18px !important; line-height: 1.4 !important; font-weight: 700; }
