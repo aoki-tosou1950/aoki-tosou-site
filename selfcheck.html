@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="index, follow">
+<title>外壁セルフチェック｜大分市の青木塗装工業</title>
+<meta name="description" content="外壁や室内の気になるサインを約1分で確認できる簡易セルフチェック。結果は塗り替えや点検を検討するための目安としてご利用ください。">
+<link rel="canonical" href="https://aoki-tosou.net/selfcheck.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="外壁セルフチェック｜大分市の青木塗装工業">
+<meta property="og:description" content="外壁や室内の気になるサインを約1分で確認できる簡易セルフチェック。">
+<meta property="og:url" content="https://aoki-tosou.net/selfcheck.html">
+<meta property="og:site_name" content="有限会社 青木塗装工業">
+<meta property="og:locale" content="ja_JP">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/plan1b.css">
+<style>
+/* 公式サイトV2に合わせた「紺×明朝・大きな文字」。1問1枚のカードを縦に並べ、最後に判定を出す */
+:root{
+  --bg:#f6f4ef; --card:#ffffff; --ink:#1b2438; --muted:#5a6272; --line:#e3ded4;
+  --navy:#14233a; --navy-soft:#e6e9ef; --on-navy:#ffffff;
+  --wall:#e9e3d6; --wall-dark:#cfc6b3; --powder:#ffffff; --crack:#6b5d4a; --moss:#5f7d3c; --water:#3f7fbf;
+  --lv-high:#b3261e; --lv-high-bg:#fbeae8; --lv-mid:#9a6200; --lv-mid-bg:#fdf1dc; --lv-low:#2f6b3a; --lv-low-bg:#e5f2e7;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body.aoki-tool{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:18px;line-height:1.75;margin:0}
+.tool-main{min-height:60vh}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 120px}
+.tool-intro{display:grid;gap:8px;padding-block:8px 20px}
+.eyebrow{font-size:16px;color:var(--navy);font-weight:700;letter-spacing:.08em}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);line-height:1.35;margin:0;text-wrap:balance}
+.lead{margin:0;color:var(--muted)}
+.how{display:flex;gap:10px;align-items:center;background:var(--navy-soft);border-radius:10px;padding:12px 14px;font-size:17px;margin-top:6px}
+.how b{color:var(--navy)}
+.list{display:grid;gap:14px}
+.item{display:grid;grid-template-columns:112px 1fr;gap:14px;align-items:center;background:var(--card);border:2px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%;transition:border-color .15s,background .15s}
+.item:focus-visible{outline:3px solid var(--navy);outline-offset:3px}
+.item[aria-pressed="true"]{border-color:var(--navy);background:var(--navy-soft)}
+.item svg{width:112px;height:auto;border-radius:8px;display:block}
+.txt{display:grid;gap:4px;min-width:0}
+.q{font-weight:700;font-size:19px;line-height:1.5}
+.hint{font-size:17px;color:var(--muted);line-height:1.6}
+.mark{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700;color:var(--muted);margin-top:4px}
+.box{width:28px;height:28px;border:2px solid var(--muted);border-radius:6px;display:grid;place-items:center;flex:none}
+.item[aria-pressed="true"] .mark{color:var(--navy)}
+.item[aria-pressed="true"] .box{background:var(--navy);border-color:var(--navy)}
+.box svg{width:18px;height:18px;opacity:0}
+.item[aria-pressed="true"] .box svg{opacity:1}
+@media (max-width:420px){.item{grid-template-columns:88px 1fr}.item svg{width:88px}}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center}
+.btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;min-height:56px;padding:0 24px;border-radius:10px;border:0;background:var(--navy);color:var(--on-navy);font:700 19px var(--f-body);cursor:pointer;width:100%;max-width:520px;text-decoration:none}
+.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.btn.ghost{background:transparent;color:var(--navy);border:2px solid var(--navy)}
+#result{margin-top:28px;display:grid;gap:16px}
+.verdict{border-radius:12px;padding:20px 18px;display:grid;gap:8px;border:2px solid currentColor}
+.verdict h2{font-family:var(--f-display);font-weight:800;font-size:26px;line-height:1.4;margin:0;text-wrap:balance}
+.verdict p{margin:0;color:var(--ink)}
+.lv-high{color:var(--lv-high);background:var(--lv-high-bg)}
+.lv-mid{color:var(--lv-mid);background:var(--lv-mid-bg)}
+.lv-low{color:var(--lv-low);background:var(--lv-low-bg)}
+.pill{justify-self:start;font-size:16px;font-weight:700;padding:2px 12px;border-radius:99px;border:1.5px solid currentColor}
+.found{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.found h3{font-size:17px;margin:0 0 6px;color:var(--muted);font-weight:700}
+.found ul{margin:0;padding-left:1.2em;display:grid;gap:6px}
+.found li span{display:block;font-size:16px;color:var(--muted)}
+.cta{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:20px 18px;display:grid;gap:12px}
+.cta h3{font-family:var(--f-display);font-size:22px;margin:0;color:var(--navy)}
+.cta p{margin:0}
+.note{font-size:16px;color:var(--muted);line-height:1.7;margin:0}
+.proto{font-size:15px;color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+.modes{display:grid;gap:14px}
+.mode{display:grid;gap:6px;text-align:left;font:inherit;color:inherit;background:var(--card);border:2px solid var(--line);border-radius:12px;padding:18px;cursor:pointer}
+.mode:hover{border-color:var(--navy)}
+.mode:focus-visible{outline:3px solid var(--navy);outline-offset:3px}
+.mode .mt{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.mode b{font-family:var(--f-display);font-size:24px;color:var(--navy)}
+.mode .time{font-size:16px;font-weight:700;color:var(--muted)}
+.mode p{margin:0;color:var(--muted);font-size:17px}
+.mode.rec{border-color:var(--navy)}
+.qhead{display:grid;gap:6px}
+.prog{font-size:16px;font-weight:700;color:var(--navy);letter-spacing:.06em}
+.meter{height:6px;background:var(--line);border-radius:99px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--navy);transition:width .3s}
+.qhead h2{font-family:var(--f-display);font-weight:800;font-size:24px;line-height:1.45;margin:0;text-wrap:balance}
+.qhead p{margin:0;color:var(--muted);font-size:16px}
+.opt{grid-template-columns:1fr}
+.opt.pic{grid-template-columns:112px 1fr}
+.bar.two{gap:10px}
+.bar.two .btn{max-width:260px}
+.bar.two .btn.ghost{flex:0 0 34%}
+.alert{border-radius:12px;padding:16px 18px;display:grid;gap:8px;background:var(--lv-mid-bg);border:2px solid var(--lv-mid)}
+.alert h3{margin:0;font-size:19px;color:var(--lv-mid)}
+.alert p{margin:0}
+.alert ul{margin:0;padding-left:1.2em}
+.tip{background:var(--navy-soft);border-radius:12px;padding:14px 18px;margin:0}
+.tip b{color:var(--navy)}
+</style>
+</head>
+<body class="aoki-tool">
+<header class="site-header">
+  <div class="header-inner">
+    <a class="header-logo" href="index.html"><span class="logo-sub logo-sub--desktop">大分市の外壁塗装・屋根塗装・防水工事</span><span class="logo-sub logo-sub--mobile">大分市の外壁・屋根塗装</span><span class="logo-name">有限会社 青木塗装工業</span></a>
+    <div class="header-right">
+      <div class="header-contact"><span class="header-contact-label">お電話は24時間365日受付（自動応答）</span><a class="header-phone" href="tel:0975940076">☎ 097-594-0076</a><a class="header-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div>
+      <button class="nav-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="site-menu"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-menu" aria-label="グローバルナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav>
+    </div>
+  </div>
+</header>
+<main id="main-content" class="tool-main">
+
+<div class="wrap">
+  <header class="tool-intro">
+    <div class="eyebrow">大分市 青木塗装工業</div>
+    <h1>お家の外壁<br>セルフチェック</h1>
+    <p class="lead" id="lead">家の外と中を見てできる簡易チェックです。目的に合わせてお選びください。</p>
+  </header>
+
+  <section id="home" class="modes">
+    <button class="mode" type="button" id="toQuick"><span class="mt"><b>かんたんチェック</b><span class="time">約1分</span></span><p>9つの項目から選ぶだけ。塗り替えの時期が近いかどうか、目安がわかります。</p></button>
+    <button class="mode rec" type="button" id="toFull"><span class="mt"><b>しっかりチェック</b><span class="time">約3分・5つの質問</span></span><p>外壁の種類や周辺環境もふまえて、気になる原因の可能性を整理します。</p></button>
+    <p class="note">どちらも簡易チェックです。正確な状態は、現地での点検で確認します。</p>
+  </section>
+
+  <section id="quick" hidden>
+    <div class="how" id="quickHeading" tabindex="-1" style="margin-bottom:14px"><span>当てはまるものを<b>タップ</b>してください。いくつ選んでも大丈夫です。</span></div>
+    <div class="list" id="qlist"></div>
+  </section>
+
+  <section id="full" hidden>
+    <div class="qhead" style="margin-bottom:14px">
+      <div class="prog" id="prog"></div>
+      <div class="meter" id="meterTrack" role="progressbar" aria-valuemin="1" aria-valuemax="5" aria-valuenow="1" aria-labelledby="fq"><i id="meter"></i></div>
+      <h2 id="fq" tabindex="-1"></h2>
+      <p id="fh"></p>
+    </div>
+    <div class="list" id="flist"></div>
+  </section>
+
+  <section id="result" hidden aria-live="polite"></section>
+</div>
+
+<div class="bar" id="bar" hidden></div>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-top"><div class="footer-company"><p class="footer-name">有限会社 青木塗装工業</p><p class="footer-address">〒870-0116 大分市大字常行180-5</p><p class="footer-area">対応エリア：大分市を中心に近郊地域</p></div><nav class="footer-nav" aria-label="フッターナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav></div>
+    <div class="footer-bottom"><p class="footer-copy">© 有限会社 青木塗装工業</p><div class="footer-contact"><a href="tel:0975940076">097-594-0076</a><a href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div></div>
+  </div>
+</footer>
+
+<script src="js/analytics-v2-outbox-engine.js" defer></script>
+<script src="js/analytics-v2.js" defer></script>
+
+<script>
+const S=(inner)=>`<svg viewBox="0 0 120 80" aria-hidden="true"><rect width="120" height="80" fill="var(--wall)"/>${inner}</svg>`;
+const ART={
+ leak:S(`<rect width="120" height="22" fill="var(--wall-dark)"/><ellipse cx="58" cy="30" rx="18" ry="7" fill="var(--crack)" opacity=".35"/><path d="M60 40c0 0-7 10-7 15a7 7 0 0 0 14 0c0-5-7-15-7-15z" fill="var(--water)"/>`),
+ thick:S(`<path d="M18 4 34 22 28 30 50 46 44 54 70 76" fill="none" stroke="var(--crack)" stroke-width="4" stroke-linejoin="round"/>`),
+ peel:S(`<path d="M30 20h50l6 14-8 16H34l-8-14z" fill="var(--wall-dark)"/><path d="M80 20l12 -6 4 10-10 10z" fill="var(--wall)" stroke="var(--crack)" stroke-width="2"/><circle cx="40" cy="62" r="7" fill="var(--wall)" stroke="var(--crack)" stroke-width="2"/>`),
+ seal:S(`<rect x="56" y="0" width="8" height="80" fill="var(--wall-dark)"/><path d="M57 14l6 6-6 6 6 6M57 46l6 5-6 6 6 6" fill="none" stroke="var(--crack)" stroke-width="2.5"/>`),
+ chalk:S(`<path d="M48 80V40c0-6 12-6 12 0v-6c0-6 12-6 12 0v4c0-6 12-6 12 0v42z" fill="var(--wall-dark)" stroke="var(--crack)" stroke-width="2"/><g fill="var(--powder)" stroke="var(--crack)" stroke-width=".6"><circle cx="54" cy="38" r="2.4"/><circle cx="66" cy="33" r="2"/><circle cx="78" cy="37" r="2.4"/></g><path d="M10 20h26M10 30h20M10 40h24" stroke="var(--powder)" stroke-width="5" stroke-linecap="round"/>`),
+ thin:S(`<path d="M20 10 30 24 26 32 44 44 40 52 60 70M76 8 84 20 80 28 94 40" fill="none" stroke="var(--crack)" stroke-width="1.4"/>`),
+ moss:S(`<g fill="var(--moss)"><ellipse cx="22" cy="72" rx="20" ry="10"/><ellipse cx="50" cy="76" rx="16" ry="8"/><ellipse cx="96" cy="70" rx="22" ry="11" opacity=".8"/><circle cx="34" cy="56" r="5" opacity=".7"/></g>`),
+ fade:S(`<rect x="10" y="14" width="46" height="52" rx="3" fill="var(--navy)"/><rect x="64" y="14" width="46" height="52" rx="3" fill="var(--navy)" opacity=".35"/>`),
+ years:S(`<rect x="30" y="10" width="60" height="60" rx="6" fill="var(--card)" stroke="var(--crack)" stroke-width="2"/><rect x="30" y="10" width="60" height="16" rx="6" fill="var(--navy)"/><text x="60" y="58" text-anchor="middle" font-size="26" font-weight="700" fill="var(--ink)" font-family="Zen Kaku Gothic New, sans-serif">10</text>`),
+ mortar:S(`<g fill="var(--wall-dark)"><circle cx="14" cy="12" r="2"/><circle cx="40" cy="22" r="2.5"/><circle cx="70" cy="10" r="2"/><circle cx="100" cy="26" r="2.5"/><circle cx="24" cy="44" r="2.5"/><circle cx="58" cy="50" r="2"/><circle cx="92" cy="58" r="2.5"/><circle cx="30" cy="70" r="2"/><circle cx="76" cy="72" r="2"/><circle cx="110" cy="44" r="2"/></g><path d="M0 34c20-6 40 6 60 0s40-6 60 0" fill="none" stroke="var(--wall-dark)" stroke-width="2"/>`),
+ board:S(`<g fill="var(--wall-dark)"><rect x="38" y="0" width="4" height="80"/><rect x="80" y="0" width="4" height="80"/><rect x="0" y="38" width="120" height="3"/></g><g stroke="var(--wall-dark)" stroke-width="1.5"><path d="M8 8h24M8 16h24M50 8h24M50 16h24M92 8h22M8 50h24M50 50h24M92 50h22"/></g>`),
+ diag:S(`<rect x="36" y="16" width="44" height="34" fill="var(--sky, var(--card))" stroke="var(--crack)" stroke-width="3"/><path d="M80 50 88 58 86 64 98 74 104 80" fill="none" stroke="var(--crack)" stroke-width="3"/><path d="M36 16 28 8 30 4 22 0" fill="none" stroke="var(--crack)" stroke-width="3"/>`),
+ repeat:S(`<path d="M30 6 38 30 34 50 42 76" fill="none" stroke="var(--filler, var(--wall-dark))" stroke-width="9" opacity=".7"/><path d="M34 10 40 30 36 50 42 72" fill="none" stroke="var(--crack)" stroke-width="2.5"/><path d="M80 6 88 30 84 50 92 76" fill="none" stroke="var(--wall-dark)" stroke-width="9"/>`),
+ float:S(`<path d="M20 80C30 50 90 50 100 80z" fill="var(--wall-dark)"/><path d="M26 76C38 56 82 56 94 76" fill="none" stroke="var(--crack)" stroke-width="2"/><path d="M60 20v14M52 26l8 8 8-8" fill="none" stroke="var(--crack)" stroke-width="2.5"/>`),
+ warp:S(`<rect x="0" y="0" width="54" height="80" fill="var(--wall)"/><path d="M62 0 Q72 40 62 80 H120 V0z" fill="var(--wall-dark)"/><path d="M58 0V80" stroke="var(--crack)" stroke-width="2" stroke-dasharray="4 3"/>`),
+ chip:S(`<rect x="10" y="10" width="100" height="60" fill="var(--wall-dark)"/><path d="M110 10 110 34 92 10z" fill="var(--wall)"/><circle cx="30" cy="30" r="3" fill="var(--crack)"/><path d="M30 30 40 44M30 30 22 42" stroke="var(--crack)" stroke-width="1.6"/>`),
+ door:S(`<rect x="36" y="6" width="48" height="74" fill="var(--wall-dark)" stroke="var(--crack)" stroke-width="2" transform="rotate(3 60 43)"/><rect x="34" y="4" width="52" height="76" fill="none" stroke="var(--crack)" stroke-width="3"/><circle cx="74" cy="46" r="3" fill="var(--crack)"/>`),
+ floor:S(`<path d="M0 60 120 48V80H0z" fill="var(--wall-dark)"/><circle cx="92" cy="44" r="7" fill="var(--navy)"/><path d="M76 44H52M58 38l-6 6 6 6" fill="none" stroke="var(--crack)" stroke-width="2.5"/>`),
+ found:S(`<rect width="120" height="40" fill="var(--wall)"/><rect y="40" width="120" height="40" fill="var(--wall-dark)"/><path d="M50 40 56 54 52 62 60 80" fill="none" stroke="var(--crack)" stroke-width="3.5"/>`),
+ none:null
+};
+// かんたんチェック
+const QUICK=[
+ {id:"leak",pt:10,urgent:true,q:"雨漏りや、天井・壁のシミがある",hint:"室内の天井や窓まわりに、茶色いシミや水のあとがないか見てください。",why:"建物の中まで水が入っている可能性があります。"},
+ {id:"thick",pt:4,serious:true,q:"壁に幅の広いヒビ割れがある",hint:"幅約0.3mm以上は、詳しく確認する目安の一つです。無理に物を差し込まず、定規や写真で記録してください。",why:"幅・深さ・動きによっては、雨水の浸入や下地の動きが関係することがあります。"},
+ {id:"peel",pt:4,serious:true,q:"塗装がはがれている・ふくれている",hint:"塗った表面がめくれたり、水ぶくれのように浮いている部分です。",why:"塗装が壁を守れなくなっている状態です。"},
+ {id:"seal",pt:3,q:"壁の継ぎ目のシーリングが割れている・やせている",hint:"板を張った外壁（サイディング）の、板と板のすき間を埋めているゴム状の部分です。",why:"継ぎ目は雨水が入りやすい場所です。"},
+ {id:"chalk",pt:3,q:"壁を手でこすると、白い粉がつく",hint:"「チョーキング」と呼ばれる、塗膜が古くなったサインの一つです。",why:"塗膜の劣化サインです。これだけで雨漏りや塗り替え時期が決まるものではありません。"},
+ {id:"thin",pt:2,q:"髪の毛くらいの細いヒビがある",hint:"近くで見るとわかる程度の、細くて浅いヒビです。",why:"写真と幅を記録し、広がる・水が入る・同じ場所に再発する場合は早めの確認が必要です。"},
+ {id:"moss",pt:2,q:"コケ・カビ・黒ずみが目立つ",hint:"北側の壁や、日当たりの悪いところに出やすいです。",why:"湿気がたまりやすく、塗装の傷みが早まります。"},
+ {id:"fade",pt:1,q:"色があせてきた・ツヤがなくなった",hint:"建てた時や前回塗った時とくらべて、色が薄くなった感じがするか。",why:"塗膜の変化を確認する手がかりです。ほかの症状と合わせて見ます。"},
+ {id:"years",pt:3,q:"前回の塗装（または新築）から10年以上たつ",hint:"はっきり覚えていなくても「たぶん10年以上」なら選んでください。",why:"耐用年数は塗料・下地・環境で異なります。10年を超えたら、施工履歴と今の状態を確認する目安になります。"}
+];
+// しっかりチェック
+const WALL=[
+ {id:"chalk",for:"all",pt:3,q:"壁を手でこすると、白い粉がつく",hint:"チョーキングと呼ばれる、塗膜が古くなったサインの一つです。",why:"塗膜の劣化サインです。ほかの症状や施工仕様と合わせて判断します。"},
+ {id:"fade",for:"all",pt:1,q:"色があせてきた・ツヤがなくなった",hint:"前回塗った時とくらべて、色が薄くなった感じがするか。",why:"塗膜の変化を確認する手がかりです。ほかの症状と合わせて見ます。"},
+ {id:"moss",for:"all",pt:2,q:"コケ・カビ・黒ずみが目立つ",hint:"北側や日当たりの悪い壁に出やすいです。",why:"湿気がたまりやすく、傷みが早まります。"},
+ {id:"peel",for:"all",pt:4,serious:true,q:"塗装がはがれている・ふくれている",hint:"表面がめくれたり、水ぶくれのように浮いている部分です。",why:"塗装が壁を守れなくなっている状態です。"},
+ {id:"thin",for:"all",pt:2,q:"髪の毛くらいの細いヒビがある",hint:"近くで見るとわかる程度の、浅いヒビです。",why:"写真と幅を記録し、広がる・水が入る・同じ場所に再発する場合は早めに確認します。"},
+ {id:"thick",for:"all",pt:4,serious:true,q:"幅の広いヒビがある",hint:"幅約0.3mm以上は、詳しく確認する目安の一つです。無理に物を差し込まず、定規や写真で記録してください。",why:"幅・深さ・動きによっては、雨水の浸入や下地の動きが関係することがあります。"},
+ {id:"diag",for:"mortar",pt:3,struct:true,q:"窓やドアの角から、斜めに伸びるヒビがある",hint:"開口部の角は、建物の動きの力が集まりやすい場所です。",why:"建物の揺れや動きが関係していることのあるヒビです。"},
+ {id:"repeat",for:"mortar",pt:3,struct:true,q:"補修したのに、同じ場所にまたヒビが出ている",hint:"補修のあとに沿って、ヒビが再び出ていないか見てください。",why:"壁が動き続けている場所の可能性があり、直し方の工夫が必要です。"},
+ {id:"float",for:"mortar",pt:4,serious:true,q:"壁の一部がふくらんでいる・たたくと軽い音がする",hint:"モルタルが下地から浮いているサインです。",why:"浮いた部分は、はがれ落ちるおそれがあります。"},
+ {id:"seal",for:"board",pt:3,q:"継ぎ目のシーリングが割れている・やせている・はがれている",hint:"板と板のすき間を埋めている、ゴム状の部分です。",why:"継ぎ目は雨水が入りやすい場所です。"},
+ {id:"warp",for:"board",pt:4,serious:true,q:"ボードが反っている・浮いている・すき間がある",hint:"壁を斜めから見るとわかりやすいです。",why:"ボードが水を吸って傷んでいる可能性があります。"},
+ {id:"chip",for:"board",pt:2,q:"ボードの角や、くぎ・ビスのまわりが欠けている・割れている",hint:"角や留め具の周りは、割れが出やすい場所です。",why:"割れた所から水が入り、傷みが広がります。"}
+];
+const INSIDE=[
+ {id:"leak",pt:10,urgent:true,q:"雨漏りや、天井・壁のシミがある",hint:"天井や窓まわりの、茶色いシミや水のあと。",why:"建物の中まで水が入っている可能性があります。"},
+ {id:"door",struct:true,q:"ドアや窓、ふすまの開け閉めが重くなった・すき間ができた",hint:"以前は問題なかったのに、というものが目安です。",why:"建物がわずかにゆがんでいることがあります。"},
+ {id:"floor",struct:true,q:"床の傾きを感じる",hint:"ビー玉が転がる、歩くと傾きを感じる、など。",why:"建物や地盤の動きが関係していることがあります。"},
+ {id:"found",struct:true,q:"基礎（建物の足元のコンクリート）にヒビがある",hint:"とくに幅の広いものや、斜めのヒビが目安です。",why:"建物を支える部分なので、原因の確認が大切です。"},
+ {id:"none",none:true,q:"どれも当てはまらない"}
+];
+const SITE=[
+ {id:"fill",q:"造成地（山を切り開いた土地、田畑や池を埋め立てた土地など）",why:"ヒビの原因を考えるときに、建物の履歴と合わせて確認する情報です。"},
+ {id:"slope",q:"坂の途中や、がけ・擁壁（土どめの壁）の近く",why:"ヒビの原因を考えるときに、周辺の地形と合わせて確認する情報です。"},
+ {id:"wet",q:"湿気がこもりやすい場所にある",hint:"川・池・海、森・林・田んぼの近くや、蒸気が出る所（煙突・排気口・温泉の噴気など）のそば。",why:"湿気でコケやカビが出やすく、傷みが早まります。"},
+ {id:"shake",q:"大きな道路や線路が近く、揺れを感じることがある",why:"ヒビの変化を確認するときの手がかりになります。"},
+ {id:"quake",q:"これまでに近くで大きな地震や工事があった",why:"発生時期とヒビの変化を照らし合わせる手がかりになります。"},
+ {id:"none",none:true,q:"どれも当てはまらない・わからない"}
+];
+const TYPE=[
+ {id:"mortar",q:"モルタル（塗り壁）",hint:"継ぎ目がなく、表面がザラザラしていたり模様がついている壁です。",art:"mortar"},
+ {id:"board",q:"ボード（サイディング・押出成形セメント板など）",hint:"板を張った壁で、板と板の間に継ぎ目（シーリング）があります。",art:"board"},
+ {id:"unknown",q:"わからない",hint:"両方の壁の質問をお見せします。"}
+];
+const AGE=[
+ {id:"a0",pt:0,q:"10年未満"},{id:"a1",pt:3,q:"10〜15年"},{id:"a2",pt:5,q:"15〜20年"},{id:"a3",pt:8,q:"20年以上"},{id:"a4",pt:1,q:"わからない"}
+];
+const ARTMAP={thick:"thick",peel:"peel",seal:"seal",chalk:"chalk",thin:"thin",moss:"moss",fade:"fade",years:"years",leak:"leak",diag:"diag",repeat:"repeat",float:"float",warp:"warp",chip:"chip",door:"door",floor:"floor",found:"found",mortar:"mortar",board:"board"};
+
+const $=id=>document.getElementById(id);
+const chk=`<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6" fill="none" stroke="var(--on-navy)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function card(it,pressed,label,onClick,prefix){
+  const b=document.createElement("button");b.type="button";b.id=prefix+"_"+it.id;
+  const art=it.art?ART[it.art]:ART[ARTMAP[it.id]];
+  b.className="item"+(art?"":" opt");
+  b.setAttribute("aria-pressed",pressed?"true":"false");
+  b.innerHTML=`${art||""}<div class="txt"><div class="q">${it.q}</div>${it.hint?`<div class="hint">${it.hint}</div>`:""}<div class="mark"><span class="box">${chk}</span><span>${label}</span></div></div>`;
+  b.addEventListener("click",onClick);return b;
+}
+function focusLater(target){requestAnimationFrame(()=>{const el=typeof target==="string"?document.querySelector(target):target;if(el)el.focus({preventScroll:true});});}
+function show(view,focusTarget){["home","quick","full","result"].forEach(v=>$(v).hidden=v!==view);window.scrollTo({top:0});if(focusTarget)focusLater(focusTarget);}
+function bar(btns){const el=$("bar");el.innerHTML="";el.hidden=!btns.length;el.className="bar"+(btns.length>1?" two":"");btns.forEach(([t,fn,ghost,dis])=>{const b=document.createElement("button");b.type="button";b.className="btn"+(ghost?" ghost":"");b.textContent=t;b.disabled=!!dis;b.addEventListener("click",fn);el.appendChild(b);});}
+
+/* かんたん */
+const qp=new Set();
+function startQuick(){
+  qp.clear();$("qlist").innerHTML="";
+  QUICK.forEach(it=>$("qlist").appendChild(card(it,false,"当てはまる",e=>{qp.has(it.id)?qp.delete(it.id):qp.add(it.id);e.currentTarget.setAttribute("aria-pressed",qp.has(it.id));qBar();},"q")));
+  $("lead").textContent="当てはまるものをタップしてください。家の外と中を見てできる簡易チェックです。";
+  show("quick","#quickHeading");qBar();
+}
+function qBar(){bar([["戻る",goHome,true],[qp.size?`結果を見る（${qp.size}個）`:"結果を見る",quickResult]]);}
+function quickResult(){
+  const sel=QUICK.filter(i=>qp.has(i.id));const score=sel.reduce((a,i)=>a+i.pt,0);
+  render({v:verdict(score,qp.has("leak"),false,sel.some(i=>i.serious)),sel,struct:[],site:[],type:null,mode:"quick"});
+}
+
+/* しっかり */
+const A={type:null,age:null,site:new Set(),wall:new Set(),inside:new Set()};
+let fstep=0;
+const FSTEPS=[
+ {key:"type",single:true,q:"お家の外壁は、どちらに近いですか？",h:"外から壁を見て、継ぎ目があるかどうかで見分けられます。",items:()=>TYPE},
+ {key:"age",single:true,q:"前回の塗装（または新築）から、何年くらいたちますか？",h:"だいたいで大丈夫です。",items:()=>AGE},
+ {key:"site",q:"お家の立地や土地について、当てはまるものはありますか？",h:"土地によっては、建物がわずかに動いてヒビが出やすくなることがあります。いくつ選んでも大丈夫です。",items:()=>SITE},
+ {key:"wall",q:"外壁に、当てはまる症状はありますか？",h:"当てはまるものをすべて選んでください。なければそのまま「次へ」で大丈夫です。",items:()=>WALL.filter(w=>w.for==="all"||A.type==="unknown"||w.for===A.type)},
+ {key:"inside",q:"家の中や基礎に、気になることはありますか？",h:"外壁のヒビと関係していることがあります。",items:()=>INSIDE}
+];
+function startFull(){A.type=null;A.age=null;A.site.clear();A.wall.clear();A.inside.clear();fstep=0;$("lead").textContent="5つの質問にお答えください。家の外と中を見てできる簡易チェックです。";show("full");drawFull(null,true);}
+function drawFull(focusId,focusHeading){
+  const st=FSTEPS[fstep];
+  $("prog").textContent=`質問 ${fstep+1} / ${FSTEPS.length}`;$("meter").style.width=((fstep+1)/FSTEPS.length*100)+"%";$("meterTrack").setAttribute("aria-valuenow",fstep+1);
+  $("fq").textContent=st.q;$("fh").textContent=st.h;
+  const list=$("flist");list.innerHTML="";
+  st.items().forEach(it=>{
+    const on=st.single?A[st.key]===it.id:A[st.key].has(it.id);
+    list.appendChild(card(it,on,st.single?"これに近い":"当てはまる",()=>{
+      if(st.single){A[st.key]=it.id;}
+      else{const set=A[st.key];
+        if(it.none){set.clear();set.add("none");}
+        else{set.delete("none");set.has(it.id)?set.delete(it.id):set.add(it.id);}}
+      drawFull("#f_"+it.id,false);
+    },"f"));
+  });
+  const last=fstep===FSTEPS.length-1;const need=st.single&&!A[st.key];
+  bar([[fstep===0?"戻る":"前へ",()=>{if(fstep===0)goHome();else{fstep--;drawFull(null,true);window.scrollTo({top:0});}},true],[last?"結果を見る":"次へ",()=>{if(last)fullResult();else{fstep++;drawFull(null,true);window.scrollTo({top:0});}},false,need]]);
+  if(focusId)focusLater(focusId);else if(focusHeading)focusLater("#fq");
+}
+function fullResult(){
+  const walls=WALL.filter(w=>A.wall.has(w.id)&&(w.for==="all"||A.type==="unknown"||w.for===A.type));
+  const ins=INSIDE.filter(i=>A.inside.has(i.id)&&!i.none);
+  const site=SITE.filter(s=>A.site.has(s.id)&&!s.none);
+  const age=AGE.find(a=>a.id===A.age);
+  const score=(age?age.pt:0)+walls.reduce((a,w)=>a+w.pt,0);
+  const struct=[...walls,...ins].filter(x=>x.struct);
+  const groundRisk=site.some(s=>["fill","slope","shake","quake"].includes(s.id));
+  if(groundRisk&&!struct.length&&(A.wall.has("thick"))) struct.push({q:"幅の広いヒビ（周辺環境に関する情報あり）",why:"周辺環境は原因を考える手がかりの一つです。簡易チェックだけでは原因を判断できません。"});
+  const sel=[...walls,...ins];
+  if(age&&age.pt>=2) sel.unshift({q:`前回の塗装から${age.q}`,why:"耐用年数は塗料・下地・環境で異なります。施工履歴と今の状態を確認する目安です。"});
+  render({v:verdict(score,A.inside.has("leak"),struct.length>0,walls.some(w=>w.serious)),sel,struct,site,type:A.type,groundRisk,mode:"full"});
+}
+
+function verdict(score,leak,struct,serious){
+  if(leak) return {lv:"high",tag:"早めのご相談を",title:"できるだけ早く、点検をおすすめします",body:"雨漏りやシミは、建物の中に水が入っているサインかもしれません。放っておくと、柱や下地まで傷んで工事が大きくなることがあります。"};
+  if(struct) return {lv:"high",tag:"原因の確認を",title:"ヒビの原因を確認することをおすすめします",body:"塗り替えの前に、ヒビが建物の動きによるものかどうかを見極めることが大切です。点検でヒビの幅・向き・場所を確認し、塗装と下地補修で対応できるか、別の工事が必要かをご説明します。"};
+  if(score>=8||serious) return {lv:"high",tag:"点検をおすすめ",title:"塗り替えの時期に来ている可能性が高いです",body:"いくつかの傷みのサインが重なっています。ひどくなる前に、一度プロの目で確認されると安心です。"};
+  if(score>=3||struct) return {lv:"mid",tag:"点検時期の確認を",title:"点検の時期を考えてもよさそうです",body:"簡易チェックでは工事時期を決められません。施工履歴と今の状態を確認しておくと、補修や塗り替えの計画を立てやすくなります。"};
+  if(score>=1) return {lv:"low",tag:"経過を確認",title:"気になる箇所を記録しておきましょう",body:"同じ場所を写真に残し、幅・範囲・色の変化を見てください。広がる、水が入る、同じ場所に再発する場合は早めの確認をおすすめします。"};
+  return {lv:"low",tag:"気になるサインなし",title:"今回の項目では、気になるサインは見つかりませんでした",body:"簡易チェックで見えない部分もあります。季節の変わり目や強い雨・地震のあとに、また確認してみてください。"};
+}
+
+function render(r){
+  const v=r.v;let h=`<div class="verdict lv-${v.lv}"><span class="pill">${v.tag}</span><h2 tabindex="-1">${v.title}</h2><p>${v.body}</p></div>`;
+  if(r.struct.length) h+=`<div class="alert"><h3>建物の動きに関わるサインがあります</h3><p>選ばれた項目の中に、塗装の傷みだけでなく、建物や土地の動きが関係していることのあるサインがあります。</p><ul>${r.struct.map(x=>`<li>${x.q}</li>`).join("")}</ul><p>点検では、ヒビの幅・向き・出ている場所を確認し、塗装と下地補修で対応できるものかどうかをご説明します。ヒビの原因を根本から直すには、建物の構造や地盤の工事が必要になる場合もあります。その際にお客様がご希望されれば、協力している専門の業者をご紹介します。費用や時期のご都合に合わせて、塗装と下地補修でできる対策もご提案します。</p></div>`;
+  else if(r.groundRisk) h+=`<p class="tip"><b>周辺環境について</b><br>選んだ内容は、ヒビが出たときに原因を考える手がかりになります。この回答だけで建物や地盤の状態を判断するものではありません。</p>`;
+  if(r.type==="mortar") h+=`<p class="tip"><b>モルタル壁の方へ</b><br>モルタル壁は、ヒビの直し方で仕上がりの長持ちが大きく変わります。ヒビの幅や出方に合わせて、Vカット補修や樹脂注入などを使い分けます。</p>`;
+  if(r.type==="board") h+=`<p class="tip"><b>ボードの壁の方へ</b><br>ボードの壁は、継ぎ目のシーリングの状態がとても大切です。塗装と合わせて、シーリングの打ち替えも確認します。</p>`;
+  if(r.sel.length) h+=`<div class="found"><h3>チェックした項目</h3><ul>${r.sel.map(i=>`<li>${i.q}<span>${i.why}</span></li>`).join("")}</ul></div>`;
+  if(r.site.length) h+=`<div class="found"><h3>立地・土地について</h3><ul>${r.site.map(i=>`<li>${i.q}<span>${i.why}</span></li>`).join("")}</ul></div>`;
+  h+=`<div class="cta"><h3>無料で点検いたします</h3><p>青木塗装工業の職人が伺い、写真を撮りながら今の状態をご説明します。必要な工事だけをご提案し、無理な営業はいたしません。</p><a class="btn" href="https://aokitosou-miniapp.web.app/index.html" id="form" target="_blank" rel="noopener noreferrer">無料点検を申し込む</a><p class="note">フォームは別画面で開きます。この結果は簡易チェックのため、現地で状態を確認します。</p></div>`;
+  if(r.mode==="quick") h+=`<button class="btn ghost" type="button" id="up">しっかりチェックもしてみる</button>`;
+  h+=`<p class="note">この結果は簡易チェックによる目安です。建物の構造や地盤の診断ではありません。実際の状態は、現地での点検で確認します。</p>`;
+  $("result").innerHTML=h;$("lead").textContent="チェックの結果です。";
+  if($("up"))$("up").addEventListener("click",startFull);
+  show("result","#result h2");bar([["最初に戻る",goHome,true]]);
+}
+function goHome(){$("lead").textContent="家の外と中を見てできる簡易チェックです。目的に合わせてお選びください。";show("home");bar([]);}
+$("toQuick").addEventListener("click",startQuick);
+$("toFull").addEventListener("click",startFull);
+goHome();
+</script>
+
+<script>
+  (function() {
+    var toggle = document.querySelector('.nav-toggle');
+    var nav = document.querySelector('.site-nav');
+    if (!toggle || !nav) return;
+    toggle.addEventListener('click', function() {
+      var open = nav.classList.toggle('open');
+      toggle.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.site-header')) {
+        nav.classList.remove('open');
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>

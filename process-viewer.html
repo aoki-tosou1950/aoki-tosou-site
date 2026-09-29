@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="index, follow">
+<title>外壁塗装の工程｜大分市の青木塗装工業</title>
+<meta name="description" content="外壁塗装の一般的な工程を断面図で確認できます。洗浄、下地補修、下塗り、中塗り、上塗りの役割と、ヒビ補修の考え方をご紹介します。">
+<link rel="canonical" href="https://aoki-tosou.net/process-viewer.html">
+<meta property="og:type" content="website"><meta property="og:title" content="外壁塗装の工程｜大分市の青木塗装工業"><meta property="og:description" content="塗り終わると見えなくなる外壁塗装の工程を断面図でご紹介します。"><meta property="og:url" content="https://aoki-tosou.net/process-viewer.html"><meta property="og:site_name" content="有限会社 青木塗装工業"><meta property="og:locale" content="ja_JP">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/plan1b.css">
+<style>
+/* 公式サイトV2に合わせた紺×明朝。上に外壁の断面図、下に工程の説明。つまみ1本と前後ボタンで進める */
+:root{
+  --bg:#f6f4ef; --card:#ffffff; --ink:#1b2438; --muted:#5a6272; --line:#e3ded4;
+  --navy:#14233a; --navy-soft:#e6e9ef; --on-navy:#ffffff;
+  --sub:#a9a59c; --sub-dot:#8d887e; --old:#cfc9bb; --crack:#4a4238; --filler:#e2d7bf;
+  --dirt:#5d6b3a; --seal:#6f7f8c; --resin:#c98a2b; --primer:#f4f1ea; --finish:#8a9aa6; --finish-top:#7b8d9a; --gloss:#ffffff; --water:#3f7fbf; --sky:#e9eef5;
+  --warn:#b3261e; --warn-bg:#fbeae8;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body.aoki-tool{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:18px;line-height:1.75;margin:0}
+.tool-main{min-height:60vh}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 48px;display:grid;gap:18px}
+.tool-intro{display:grid;gap:8px}
+.eyebrow{font-size:16px;color:var(--navy);font-weight:700;letter-spacing:.08em}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);line-height:1.35;margin:0;text-wrap:balance}
+.lead{margin:0;color:var(--muted)}
+.stage{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.stage svg{display:block;width:100%;height:auto}
+.cap{font-size:15px;color:var(--muted);padding:6px 14px 10px;margin:0}
+.ly{transition:opacity .45s, transform .45s}
+.off{opacity:0;transform:translateY(-14px)}
+.gone{opacity:0}
+.ctrl{display:grid;gap:12px}
+.steps{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.steps button{font:500 16px var(--f-body);padding:4px 12px;border-radius:99px;border:1.5px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;min-height:44px}
+.steps button[aria-current="step"]{background:var(--navy);border-color:var(--navy);color:var(--on-navy);font-weight:700}
+.steps button.done{border-color:var(--navy);color:var(--navy)}
+input[type=range]{width:100%;height:44px;accent-color:var(--navy);cursor:pointer}
+.nav{display:grid;grid-template-columns:1fr 1.4fr;gap:10px}
+.btn{display:inline-flex;justify-content:center;align-items:center;min-height:56px;padding:0 18px;border-radius:10px;border:0;background:var(--navy);color:var(--on-navy);font:700 19px var(--f-body);cursor:pointer;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--navy);border:2px solid var(--navy)}
+.btn:disabled{opacity:.35;cursor:default}
+.btn:focus-visible,.steps button:focus-visible,input:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.info{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:10px}
+.no{font-size:16px;font-weight:700;color:var(--navy);letter-spacing:.06em}
+.info h2{font-family:var(--f-display);font-weight:800;font-size:26px;line-height:1.4;margin:0}
+.info p{margin:0}
+.meth{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.mlabel{font-weight:700;font-size:16px;color:var(--navy)}
+.mbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mbtns button{font:700 16px var(--f-body);min-height:52px;padding:6px 8px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;line-height:1.35}
+.mbtns button small{display:block;font-weight:400;font-size:15px;color:var(--muted)}
+.mbtns button[aria-pressed="true"]{border-color:var(--navy);background:var(--navy-soft);color:var(--navy)}
+.mbtns button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.mbox{background:var(--navy-soft);border-radius:10px;padding:12px 14px;display:grid;gap:4px}
+.mbox b{color:var(--navy)}
+.mbox span{font-size:17px}
+.zoom{display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center;background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:12px;margin:0}
+.zoom svg{width:140px;height:auto;display:block;border-radius:8px;background:var(--sky)}
+.zoom.pop{animation:pop .5s ease-out}
+@keyframes pop{0%{box-shadow:0 0 0 0 var(--navy)}100%{box-shadow:0 0 0 10px transparent}}
+.zcap{display:grid;gap:6px;min-width:0}
+.zcap b{color:var(--navy);font-size:17px}
+.zsteps{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.zsteps li{font-size:16px;color:var(--muted);line-height:1.5}
+.zsteps li.on{color:var(--ink);font-weight:700}
+.zsteps li.on::before{content:"▶ ";color:var(--navy)}
+.zagain{justify-self:start;font:700 16px var(--f-body);min-height:44px;padding:0 14px;border-radius:8px;border:2px solid var(--navy);background:var(--card);color:var(--navy);cursor:pointer}
+.zagain:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+@media (max-width:420px){.zoom{grid-template-columns:110px 1fr}.zoom svg{width:110px}}
+@media (prefers-reduced-motion:reduce){.zoom.pop{animation:none}}
+.method-note{font-size:16px;color:var(--muted);margin:0}
+.skip{background:var(--warn-bg);border-radius:10px;padding:12px 14px;display:grid;gap:2px}
+.skip b{color:var(--warn);font-size:16px}
+.skip span{font-size:17px}
+.cta{background:var(--card);border:2px solid var(--navy);border-radius:12px;padding:20px 18px;display:grid;gap:12px}
+.cta h3{font-family:var(--f-display);font-size:22px;margin:0;color:var(--navy)}
+.cta p{margin:0}
+.proto{font-size:15px;color:var(--muted);border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin:0}
+@media (prefers-reduced-motion:reduce){.ly{transition:none}}
+</style>
+</head>
+<body class="aoki-tool">
+<header class="site-header">
+  <div class="header-inner">
+    <a class="header-logo" href="index.html"><span class="logo-sub logo-sub--desktop">大分市の外壁塗装・屋根塗装・防水工事</span><span class="logo-sub logo-sub--mobile">大分市の外壁・屋根塗装</span><span class="logo-name">有限会社 青木塗装工業</span></a>
+    <div class="header-right"><div class="header-contact"><span class="header-contact-label">お電話は24時間365日受付（自動応答）</span><a class="header-phone" href="tel:0975940076">☎ 097-594-0076</a><a class="header-line" href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div><button class="nav-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="site-menu"><span></span><span></span><span></span></button><nav class="site-nav" id="site-menu" aria-label="グローバルナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav></div>
+  </div>
+</header>
+<main id="main-content" class="tool-main">
+
+<div class="wrap">
+  <header class="tool-intro">
+    <div class="eyebrow">大分市 青木塗装工業</div>
+    <h1>外壁塗装の中身を<br>のぞいてみませんか</h1>
+    <p class="lead">一般的な外壁塗装の一例を、断面図で順番にお見せします。下地補修は、仕上がりと耐久性に関わる大切な工程の一つです。下のつまみを右へ動かすか、「次へ」を押してください。</p>
+  </header>
+
+  <div class="stage">
+    <svg viewBox="0 0 360 220" role="img" aria-labelledby="svgt">
+      <title id="svgt">外壁の断面図</title>
+      <rect width="360" height="220" fill="var(--sky)"/>
+      <!-- 外壁（下地） -->
+      <rect x="0" y="130" width="360" height="90" fill="var(--sub)"/>
+      <g fill="var(--sub-dot)"><circle cx="40" cy="160" r="3"/><circle cx="90" cy="190" r="2.5"/><circle cx="210" cy="175" r="3"/><circle cx="290" cy="200" r="2.5"/><circle cx="320" cy="155" r="2"/><circle cx="250" cy="150" r="2"/></g>
+      <!-- 古い塗膜 -->
+      <rect x="0" y="122" width="360" height="8" fill="var(--old)"/>
+      <!-- ヒビ -->
+      <path d="M150 122 L162 122 L158 150 L161 172 L156 150z" fill="var(--crack)"/>
+      <g id="fill" class="ly off">
+        <rect x="120" y="122" width="72" height="50" fill="var(--sub)"/>
+        <rect x="120" y="122" width="72" height="8" fill="var(--old)"/>
+        <!-- ヘアクラック：フィラーすり込み -->
+        <g id="m_hair"><path d="M156 124 L157 140 L155 152" fill="none" stroke="var(--crack)" stroke-width="1"/><rect x="140" y="119" width="32" height="4" rx="2" fill="var(--filler)" stroke="var(--crack)" stroke-width=".5"/></g>
+        <!-- Vカット：溝を切ってシーリング充填 -->
+        <g id="m_v"><path d="M156 150 L158 170" stroke="var(--crack)" stroke-width="1.2"/><path d="M143 122 L169 122 L156 150z" fill="var(--seal)" stroke="var(--crack)" stroke-width=".8"/><rect x="139" y="119" width="34" height="4" rx="2" fill="var(--filler)" stroke="var(--crack)" stroke-width=".5"/></g>
+        <!-- 樹脂注入：ヒビの奥まで樹脂を入れる -->
+        <g id="m_resin"><path d="M150 122 L162 122 L158 150 L161 172 L156 150z" fill="var(--resin)" stroke="var(--crack)" stroke-width=".6"/>
+          <g stroke="var(--crack)" stroke-width="1.2" fill="var(--card)"><rect x="147" y="96" width="6" height="18" rx="1.5"/><rect x="160" y="96" width="6" height="18" rx="1.5"/></g>
+          <g stroke="var(--resin)" stroke-width="2"><path d="M150 114V122M163 114V122"/></g></g>
+        <!-- 誘発目地：ヒビを集める目地を設ける -->
+        <g id="m_joint"><path d="M156 138 L158 160" stroke="var(--crack)" stroke-width="1.2"/><rect x="149" y="122" width="14" height="16" fill="var(--seal)" stroke="var(--crack)" stroke-width=".8"/><rect x="150" y="134" width="12" height="4" fill="var(--filler)"/></g>
+      </g>
+      <!-- 汚れ・コケ -->
+      <g id="dirt" class="ly">
+        <ellipse cx="60" cy="121" rx="26" ry="4" fill="var(--dirt)"/>
+        <ellipse cx="240" cy="121" rx="34" ry="4.5" fill="var(--dirt)"/>
+        <g fill="var(--gloss)" opacity=".9"><circle cx="110" cy="119" r="2"/><circle cx="118" cy="120" r="1.6"/><circle cx="300" cy="119" r="2"/><circle cx="310" cy="120" r="1.5"/><circle cx="200" cy="120" r="1.6"/></g>
+      </g>
+      <!-- 高圧洗浄の水 -->
+      <g id="wash" class="ly gone" stroke="var(--water)" stroke-width="2.5" stroke-linecap="round">
+        <path d="M70 40 90 110M100 40 120 110M200 40 220 110M260 40 280 110"/>
+        <g fill="var(--water)" stroke="none"><circle cx="95" cy="116" r="2.5"/><circle cx="225" cy="116" r="2.5"/><circle cx="285" cy="116" r="2.5"/></g>
+      </g>
+      <!-- 下塗り -->
+      <rect id="l3" class="ly off" x="0" y="110" width="360" height="12" fill="var(--primer)" stroke="var(--old)" stroke-width=".6"/>
+      <!-- 中塗り -->
+      <rect id="l4" class="ly off" x="0" y="94" width="360" height="16" fill="var(--finish)"/>
+      <!-- 上塗り -->
+      <g id="l5" class="ly off">
+        <rect x="0" y="78" width="360" height="16" fill="var(--finish-top)"/>
+        <path d="M0 80.5 H360" stroke="var(--gloss)" stroke-width="1.6" opacity=".7"/>
+        <g fill="var(--water)"><path d="M120 76a6 6 0 0 1 12 0z"/><path d="M200 76a5 5 0 0 1 10 0z"/><path d="M280 76a6 6 0 0 1 12 0z"/></g>
+      </g>
+      <!-- ラベル（左） -->
+      <g font-family="Zen Kaku Gothic New, sans-serif" font-size="11" font-weight="700">
+        <text x="10" y="205" fill="var(--ink)">外壁（下地）</text>
+        <text id="t5" class="ly off" x="10" y="90" fill="var(--on-navy)">上塗り</text>
+        <text id="t4" class="ly off" x="10" y="106" fill="var(--on-navy)">中塗り</text>
+        <text id="t3" class="ly off" x="10" y="119.5" fill="var(--ink)" font-size="9.5">下塗り</text>
+        <text id="tf" class="ly off" x="178" y="160" fill="var(--ink)">補修材</text>
+        <text id="tc" class="ly" x="170" y="160" fill="var(--ink)">ヒビ</text>
+      </g>
+    </svg>
+    <p class="cap">わかりやすくするため、塗膜の厚みは実際より大きく描いています。工程や塗り回数は、外壁材・既存塗膜・採用する製品仕様によって変わります。</p>
+  </div>
+
+  <div class="ctrl">
+    <ol class="steps" id="steps"></ol>
+    <label for="range" style="position:absolute;left:-9999px">工程</label>
+    <input type="range" id="range" min="0" max="5" step="1" value="0" aria-valuetext="今の外壁">
+    <div class="nav">
+      <button class="btn ghost" id="prev" type="button">前へ</button>
+      <button class="btn" id="next" type="button">次へ</button>
+    </div>
+  </div>
+
+  <section class="info" aria-live="polite">
+    <div class="no" id="no"></div>
+    <h2 id="h"></h2>
+    <p id="d"></p>
+    <div class="meth" id="meth" hidden>
+      <div class="mlabel">ヒビの状態で、直し方を変えます</div>
+      <div class="mbtns" id="mbtns"></div>
+      <figure class="zoom" id="zoom" aria-live="polite">
+        <svg id="zsvg" viewBox="128 90 58 86" role="img" aria-label="ヒビ補修の拡大図"></svg>
+        <figcaption class="zcap"><b id="zt"></b><ol class="zsteps" id="zsteps"></ol><button class="zagain" id="zagain" type="button">もう一度見る</button></figcaption>
+      </figure>
+      <div class="mbox"><b id="mt"></b><span id="md"></span></div>
+      <p class="method-note">壁の「浮き」は、ヒビへの樹脂注入と同じ扱いにせず、範囲・下地・剥離状態を調べて適した固定・注入方法を選びます。</p>
+    </div>
+    <div class="skip" id="skip"><b>この工程を省くと</b><span id="s"></span></div>
+  </section>
+
+  <div class="cta" id="cta" hidden>
+    <h3>見えない工程まで、きちんと</h3>
+    <p>外壁塗装は、塗り終わると中の工程が見えなくなります。まずは無料点検で、お家の今の状態をご確認ください。</p>
+    <a class="btn" href="https://aokitosou-miniapp.web.app/index.html" id="form" target="_blank" rel="noopener noreferrer">無料点検を申し込む</a>
+    <p class="note">フォームは別画面で開きます。実際の工程は外壁の状態と採用仕様を確認して決めます。</p>
+  </div>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner"><div class="footer-top"><div class="footer-company"><p class="footer-name">有限会社 青木塗装工業</p><p class="footer-address">〒870-0116 大分市大字常行180-5</p><p class="footer-area">対応エリア：大分市を中心に近郊地域</p></div><nav class="footer-nav" aria-label="フッターナビゲーション"><a href="index.html">ホーム</a><a href="works.html">施工事例</a><a href="index.html#services">対応工事</a><a href="faq.html">よくある質問</a><a href="about.html">会社案内</a></nav></div><div class="footer-bottom"><p class="footer-copy">© 有限会社 青木塗装工業</p><div class="footer-contact"><a href="tel:0975940076">097-594-0076</a><a href="https://page.line.me/148ilxnm" target="_blank" rel="noopener noreferrer">LINEで相談</a></div></div></div>
+</footer>
+
+<script src="js/analytics-v2-outbox-engine.js" defer></script>
+<script src="js/analytics-v2.js" defer></script>
+
+<script>
+const STEPS=[
+ {short:"今の外壁",h:"塗り替え前の外壁",d:"雨や日差しの影響で、表面に汚れ・コケ・古い塗膜の粉や細かなヒビが見られる場合があります。",s:"状態を確認せずに塗ると、密着不良や早期の不具合につながることがあります。"},
+ {short:"高圧洗浄",h:"洗浄で汚れを落とす",d:"外壁の状態に合わせた水圧と方法で、汚れ・コケ・古い塗膜の粉を洗い流します。洗浄後は、十分に乾燥させてから次へ進みます。",s:"汚れや粉が残ると、塗料の密着を妨げ、はがれやふくれの原因になり得ます。"},
+ {short:"下地補修",h:"下地補修：ヒビの状態に合う方法を選ぶ",d:"下地補修は、仕上がりと耐久性に関わる大切な工程の一つです。ヒビの幅・深さ・動き・外壁材を確認し、適した方法を選びます。下のボタンで代表例を切り替えられます。",s:"状態に合わない補修や表面だけの処理では、雨水浸入やヒビ再発の原因が残ることがあります。"},
+ {short:"下塗り",h:"下塗り：下地を整えて密着させる",d:"下地と仕上げ塗料の密着を助けます。吸い込みを抑える、弱った面を固めるなど、製品と下地によって役割が変わります。",s:"省いたり適合しない材料を使ったりすると、はがれや色ムラなどの原因になり得ます。"},
+ {short:"中塗り",h:"中塗り：必要な塗膜をつくる",d:"採用する塗装仕様に沿って塗り重ね、必要な塗布量と膜厚を確保します。上塗り塗料を中塗りにも使う製品があります。",s:"製品仕様どおりの塗布量や乾燥時間を守らないと、本来の性能が得られにくくなります。"},
+ {short:"上塗り",h:"上塗り：表面を保護し、仕上げる",d:"所定の塗布量で表面を整え、色・質感・耐候性などの仕上げ性能をつくります。ツヤの有無は採用する仕上げで変わります。",s:"塗布量不足やムラは、見た目や保護性能に影響することがあります。"}
+];
+const METHODS=[
+ {id:"v",name:"V・Uカット補修",tag:"幅・深さ・動きで選ぶ",t:"溝を設ける補修が適する場合に",d:"ヒビに沿って溝を設け、プライマーやシーリング材などで処理します。適否はヒビの幅だけで決めず、深さ・動き・外壁材・漏水状況を確認して判断します。"},
+ {id:"resin",name:"樹脂注入",tag:"注入が適するヒビ",t:"内部まで充填する補修が適する場合に",d:"専用器具で樹脂をゆっくり注入し、ヒビの内部を充填します。材料や注入方法は、ヒビの状態と下地に合わせて選びます。"},
+ {id:"joint",name:"誘発目地",tag:"動きを目地で受ける",t:"位置と原因を確認して適用",d:"ヒビが集中しやすい位置に目地を設け、壁の動きを目地で受けやすくする方法です。適用する位置や納まりは、原因と壁の構成を確認して決めます。"},
+ {id:"hair",name:"フィラー刷り込み",tag:"表面の細いヒビ",t:"表面処理が適する細いヒビに",d:"下地調整用の塗材を細いヒビに刷り込み、表面を整える方法です。動きや深さがあるヒビには、別の補修方法を検討します。"}
+];
+let method="v";
+const $=id=>document.getElementById(id);
+METHODS.forEach(m=>{const b=document.createElement("button");b.type="button";b.id="mb_"+m.id;b.innerHTML=`${m.name}<small>${m.tag}</small>`;b.addEventListener("click",()=>{method=m.id;paintMethod();playZoom();});$("mbtns").appendChild(b);});
+function paintMethod(){
+  METHODS.forEach(m=>{$("mb_"+m.id).setAttribute("aria-pressed",m.id===method);$("m_"+m.id).style.display=m.id===method?"":"none";});
+  const m=METHODS.find(x=>x.id===method);$("mt").textContent=`${m.name}（${m.t}）`;$("md").textContent=m.d;
+  $("tf").textContent=m.name;
+}
+
+// 拡大図：工法ボタンを押すと、図の近くで補修の手順を順番に見せる
+const Z_BASE='<rect x="120" y="80" width="80" height="100" fill="var(--sky)"/><rect x="120" y="130" width="80" height="50" fill="var(--sub)"/><rect x="120" y="122" width="80" height="8" fill="var(--old)"/><circle cx="136" cy="160" r="1.6" fill="var(--sub-dot)"/><circle cx="176" cy="150" r="1.4" fill="var(--sub-dot)"/>';
+const Z_CRACK='<path d="M150 122 L162 122 L158 150 L161 172 L156 150z" fill="var(--crack)"/>';
+const Z_THIN='<path d="M156 122 L157 140 L155 152" fill="none" stroke="var(--crack)" stroke-width="1.2"/>';
+const ZOOM={
+ v:[["ヒビを確認",Z_CRACK],
+    ["ヒビに沿って溝を設ける",'<path d="M143 122 L169 122 L156 150z" fill="var(--crack)" opacity=".85"/><path d="M156 150 L158 170" stroke="var(--crack)" stroke-width="1.2"/>'],
+    ["シーリング材などを充填",'<path d="M143 122 L169 122 L156 150z" fill="var(--seal)" stroke="var(--crack)" stroke-width=".8"/><path d="M156 150 L158 170" stroke="var(--crack)" stroke-width="1.2"/>'],
+    ["表面を整える",'<path d="M143 122 L169 122 L156 150z" fill="var(--seal)" stroke="var(--crack)" stroke-width=".8"/><path d="M156 150 L158 170" stroke="var(--crack)" stroke-width="1.2"/><rect x="139" y="119" width="34" height="4" rx="2" fill="var(--filler)" stroke="var(--crack)" stroke-width=".5"/>']],
+ resin:[["ヒビを確認",Z_CRACK],
+    ["注入器具を取り付ける",Z_CRACK+'<g stroke="var(--crack)" stroke-width="1.2" fill="var(--card)"><rect x="147" y="98" width="6" height="18" rx="1.5"/><rect x="160" y="98" width="6" height="18" rx="1.5"/></g><path d="M150 116V122M163 116V122" stroke="var(--crack)" stroke-width="1.5"/>'],
+    ["樹脂をゆっくり注入",'<path d="M150 122 L162 122 L158 150 L161 172 L156 150z" fill="var(--resin)" stroke="var(--crack)" stroke-width=".6"/><g stroke="var(--crack)" stroke-width="1.2" fill="var(--card)"><rect x="147" y="98" width="6" height="18" rx="1.5"/><rect x="160" y="98" width="6" height="18" rx="1.5"/></g><path d="M150 116V122M163 116V122" stroke="var(--resin)" stroke-width="2.5"/>'],
+    ["器具を外して表面を整える",'<path d="M150 122 L162 122 L158 150 L161 172 L156 150z" fill="var(--resin)" stroke="var(--crack)" stroke-width=".6"/><rect x="143" y="119" width="26" height="4" rx="2" fill="var(--filler)" stroke="var(--crack)" stroke-width=".5"/>']],
+ joint:[["ヒビが集まりやすい位置を確認",Z_CRACK],
+    ["目地（溝）を設ける",'<path d="M156 138 L158 160" stroke="var(--crack)" stroke-width="1.2"/><rect x="149" y="122" width="14" height="16" fill="var(--crack)" opacity=".85"/>'],
+    ["シーリング材などを充填",'<path d="M156 138 L158 160" stroke="var(--crack)" stroke-width="1.2"/><rect x="149" y="122" width="14" height="16" fill="var(--seal)" stroke="var(--crack)" stroke-width=".8"/><rect x="150" y="134" width="12" height="4" fill="var(--filler)"/>']],
+ hair:[["表面の細いヒビを確認",Z_THIN],
+    ["下地調整材を刷り込む",Z_THIN+'<rect x="140" y="119" width="32" height="4" rx="2" fill="var(--filler)" stroke="var(--crack)" stroke-width=".5"/>']]
+};
+let zTimers=[];
+function playZoom(){
+  zTimers.forEach(clearTimeout);zTimers=[];
+  const m=METHODS.find(x=>x.id===method), frames=ZOOM[method];
+  $("zt").textContent="拡大図："+m.name;
+  $("zsteps").innerHTML=frames.map((f,i)=>`<li id="zs${i}">${i+1}. ${f[0]}</li>`).join("");
+  const show=i=>{$("zsvg").innerHTML=Z_BASE+frames[i][1];frames.forEach((_,j)=>$("zs"+j).classList.toggle("on",j===i));};
+  const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(reduce){show(frames.length-1);return;}
+  const z=$("zoom");z.classList.remove("pop");void z.offsetWidth;z.classList.add("pop");
+  frames.forEach((_,i)=>zTimers.push(setTimeout(()=>show(i),i*900)));
+}
+$("zagain").addEventListener("click",playZoom);
+const range=$("range"), stepsEl=$("steps");
+STEPS.forEach((st,i)=>{const li=document.createElement("li");const b=document.createElement("button");b.type="button";b.id="st_"+i;b.textContent=st.short;b.addEventListener("click",()=>go(i));li.appendChild(b);stepsEl.appendChild(li);});
+function vis(id,on,cls="off"){$(id).classList.toggle(cls,!on);}
+function go(n){
+  n=Math.max(0,Math.min(5,n)); range.value=n;
+  vis("dirt",n<1,"gone"); vis("wash",n===1,"gone");
+  vis("fill",n>=2); vis("tf",n>=2); vis("tc",n<2,"gone");
+  vis("l3",n>=3); vis("t3",n>=3); vis("l4",n>=4); vis("t4",n>=4); vis("l5",n>=5); vis("t5",n>=5);
+  const st=STEPS[n];
+  $("no").textContent=n===0?"はじめに":`工程 ${n} / 5`;
+  $("h").textContent=st.h; $("d").textContent=st.d; $("s").textContent=st.s;
+  range.setAttribute("aria-valuetext",st.short);
+  $("skip").querySelector("b").textContent=n===0?"このままだと":"この工程を省くと";
+  STEPS.forEach((_,i)=>{const b=$("st_"+i);b.toggleAttribute("aria-current",i===n);if(i===n)b.setAttribute("aria-current","step");b.classList.toggle("done",i<n);});
+  const wasHidden=$("meth").hidden;$("meth").hidden=n!==2;if(n===2&&wasHidden&&typeof playZoom==="function")playZoom();
+  $("prev").disabled=n===0;
+  $("next").textContent=n===5?"最初から見る":"次へ";
+  $("cta").hidden=n!==5;
+}
+range.addEventListener("input",()=>go(+range.value));
+$("prev").addEventListener("click",()=>go(+range.value-1));
+$("next").addEventListener("click",()=>go(+range.value===5?0:+range.value+1));
+paintMethod();
+go(0);
+</script>
+
+<script>
+  (function() {
+    var toggle = document.querySelector('.nav-toggle');
+    var nav = document.querySelector('.site-nav');
+    if (!toggle || !nav) return;
+    toggle.addEventListener('click', function() { var open = nav.classList.toggle('open'); toggle.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open)); });
+    document.addEventListener('click', function(e) { if (!e.target.closest('.site-header')) { nav.classList.remove('open'); toggle.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); } });
+  })();
+</script>
+
+</body>
+</html>
