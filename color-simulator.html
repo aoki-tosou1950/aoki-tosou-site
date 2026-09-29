@@ -79,6 +79,14 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);l
 @media (max-width:420px){.parts .chip{font-size:14px}.sw-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (prefers-reduced-motion:reduce){.sel-outline{animation:none}.house svg{transition:none}}
 .small{font-size:16px;color:var(--muted);margin:0}
+.photo-banner{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:6px;padding:14px 16px;border-radius:12px;background:var(--navy);color:var(--on-navy);text-decoration:none}
+.photo-banner:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.pb-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);flex:none;color:#e8c48e}
+.pb-text{display:grid;gap:2px;flex:1 1 220px;min-width:0}
+.pb-text b{font-size:19px}
+.pb-text span{font-size:16px;color:#e3e8ef;line-height:1.6}
+.pb-go{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 16px;border-radius:10px;background:#fff;color:var(--navy);font-weight:700;font-size:17px;flex:none}
+@media (max-width:480px){.pb-go{flex:1 1 100%}}
 .photo-cta{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:10px}
 .photo-cta h2{font-family:var(--f-display);font-size:22px;margin:0;color:var(--navy)}
 .photo-cta p{margin:0}
@@ -98,6 +106,11 @@ h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,7vw,40px);l
     <div class="eyebrow">大分市 青木塗装工業</div>
     <h1>外壁カラー<br>シミュレーター</h1>
     <p class="lead">屋根・外壁・雨樋などの色を選んで、塗り替え後のイメージを確かめられます。家の絵の気になる場所をタップするか、下の色を選んでください。</p>
+    <a class="photo-banner" href="color-photo.html">
+      <span class="pb-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
+      <span class="pb-text"><b>ご自宅の写真でも試せます</b><span>お家の写真に色をのせて、塗り替え後を確かめられます。写真は送信されません。</span></span>
+      <span class="pb-go">写真で試す →</span>
+    </a>
   </header>
 
   <div class="stage">
