@@ -1,5 +1,16 @@
 # 青木塗装 集客ファネル v1
 
+## 工事挨拶のお知らせ用QR（2026-10-30登録）
+
+- 媒体コード: `kinrin_notice_v1`（現場名を含めず、他現場でも同一の工事挨拶書面に再利用する）
+- 完全URL: `https://aoki-tosou.net/?from=kinrin_notice_v1`
+- 媒体表示名: 「近隣お知らせ（工事挨拶）」
+- 運用正本: Googleスプレッドシート「青木塗装_集客OS_現行正本」→「媒体コードマスタ」M204。ここで使用状況・用途・QR保管先・開始日を管理する。
+- 既存の `meishi` と `area_check_v1` は変更せず、新規媒体として識別する。
+- `js/analytics-v2.js` の `from` 生値取得と `logInteractionV2` 送信の既存経路を利用。媒体追加だけを理由としたサイト・Functionsの変更はしない。
+- QR画像のデコード検査は合格。印刷前のスマートフォンでの実読取と本番計測ログでの照合は別途受入が必要。
+
+
 ## データ契約
 
 日別の集計正本は Firestore の `funnel_daily/{YYYY-MM-DD}`。サイトイベントの重複排除は同日の `events/{eventId}`、匿名訪問者の重複排除は `visitors/{sha256(日付:匿名ID)}`、LINE webhook は `line_events/{webhookEventId}` を使う。IP、LINE userId、氏名、電話、住所は集計領域へ保存しない。
