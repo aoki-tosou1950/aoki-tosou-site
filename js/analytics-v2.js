@@ -74,7 +74,7 @@
     // 猶予中の古い保持系リトライエントリ・別ページ由来のエントリを、離脱を理由に
     // 強制フラッシュしない）。
     var pageOriginEventIds = {};
-    // beaconSentEventIds：このページの生存中に既にsendBeaconを試みたevent_idの集合。
+    // beaconSentEventIds：このページでsendBeaconがキューへ受け付けたevent_idの集合。
     // visibilitychange(hidden)→pagehideが連続しても、同じイベントを二重beacon
     // 送信しない。hidden後に新規発生したイベントは、この集合にまだ無いため、
     // 後続のpagehideで1回だけ送信できる。
@@ -330,20 +330,17 @@
     function sendViaBeaconBestEffort(event) {
       try {
         if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
-        // 監査差し戻し（独立監査再提出R7）#6：ENDPOINTはサイト（aoki-tosou.net）とは別オリジン
-        // （...cloudfunctions.net）のため、sendBeacon()は必ずcross-originのリクエストになる。
-        // sendBeacon()はpreflight（OPTIONS）を一切行えない設計のため、Blobのtypeを
-        // 'application/json'にすると、ブラウザによってはCORS safelisted値ではない
-        // Content-Typeとして扱われ、cross-origin時に送信内容や到達性が不安定になり得る。
-        // サーバー（parseRequestBody・handleV2Wireのcontent-typeチェック）は元々
-        // 'text/plain'も明示的に許容している（V2_MAX_BODY_BYTES等のcontent-typeチェックが
-        // application/jsonとtext/plainの両方をOKとする設計）ため、CORS safelistedな
-        // 'text/plain'へ変更する（実際の送信内容＝JSON文字列は無変更。Content-Type表示だけ
-        // 変える）。既存の実務手法（Google Analytics等の主要な計測クライアントが
-        // 同じ理由でsendBeaconにtext/plainを使う）と同じ対処。
+        // CORS safelisted text/plain avoids a preflight to the existing writer.
+        // true means queued by the browser, not acknowledged by Firestore.
         var blob = new Blob([JSON.stringify(event)], { type: 'text/plain' });
         return navigator.sendBeacon(ENDPOINT, blob);
       } catch (err) { return false; }
+    }
+
+    function sendViaBeaconOnce(event) {
+      if (beaconSentEventIds[event.event_id]) return;
+      // false/throw means not queued: hidden/pagehide may safely try again.
+      if (sendViaBeaconBestEffort(event)) beaconSentEventIds[event.event_id] = true;
     }
 
     function track(eventType, extra) {
@@ -354,6 +351,9 @@
       // 限定するため。停止中でも記録自体は行う＝停止解除後に判定材料として使える）。
       pageOriginEventIds[event.event_id] = true;
       if (isStopped()) return; // outboxには積むが、停止中は送信を試みない（次回の試験再送・復帰を待つ）
+      // Queue before the external app opens; lifecycle events are not guaranteed.
+      // The fetch acknowledgement and beacon share the server's idempotency key.
+      if (eventType === 'line_click') sendViaBeaconOnce(event);
       sendViaFetch({ event: event, attempts: 0 });
     }
 
@@ -370,18 +370,25 @@
      *    新規発生したイベントは、この集合にまだ無いため後続のpagehideで1回だけ送れる。 */
     function flushOutboxViaBeacon() {
       if (isStopped()) return;
-      pruneOutbox(loadOutbox()).forEach(function(item) {
+      var list = pruneOutbox(loadOutbox());
+      saveOutbox(list);
+      list.forEach(function(item) {
         var eventId = item.event && item.event.event_id;
         if (!eventId) return;
         if (!pageOriginEventIds[eventId]) return;
         if (beaconSentEventIds[eventId]) return;
-        beaconSentEventIds[eventId] = true;
-        sendViaBeaconBestEffort(item.event);
+        sendViaBeaconOnce(item.event);
       });
     }
 
     function isLineUrl(href) {
-      try { var host = new URL(href, safeHref()).hostname; return host === 'line.me' || host.slice(-8) === '.line.me'; } catch (err) { return false; }
+      try {
+        var url = new URL(href, safeHref());
+        if (url.protocol === 'line:') return true; // Measure existing legacy links only.
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+        var host = url.hostname.toLowerCase();
+        return host === 'line.me' || host.slice(-8) === '.line.me' || host === 'lin.ee';
+      } catch (err) { return false; }
     }
     function passMediaToForm(link, href) {
       var target = new URL(href, safeHref());
@@ -401,8 +408,9 @@
       } catch (err) {}
     }
     function bindClicks() {
-      document.addEventListener('click', function(event) {
+      function handleClick(event) {
         try {
+          if (event.type === 'auxclick' && event.button !== 1) return;
           var link = event.target.closest && event.target.closest('a[href]');
           if (!link) return;
           var href = link.getAttribute('href') || '';
@@ -410,7 +418,14 @@
           if (isLineUrl(href)) return track('line_click', { contactChannel: 'LINE' });
           if (href.toLowerCase().indexOf('tel:') === 0) track('phone_click', { contactChannel: '電話' });
         } catch (err) {}
-      }, true);
+      }
+      document.addEventListener('click', handleClick, true);
+      document.addEventListener('auxclick', handleClick, true);
+    }
+
+    function wakeOutbox() {
+      if (isStopped()) scheduleTrialTimer_();
+      else flushOutboxViaFetch();
     }
 
     function init() {
@@ -433,9 +448,12 @@
       try {
         document.addEventListener('visibilitychange', function() {
           if (document.visibilityState === 'hidden') flushOutboxViaBeacon();
+          else if (document.visibilityState === 'visible') wakeOutbox();
         });
       } catch (err) {}
       try { window.addEventListener('pagehide', flushOutboxViaBeacon); } catch (err) {}
+      try { window.addEventListener('online', wakeOutbox); } catch (err) {}
+      try { window.addEventListener('pageshow', wakeOutbox); } catch (err) {}
     }
 
     init();

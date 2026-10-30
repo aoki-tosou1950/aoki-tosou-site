@@ -49,7 +49,12 @@
     var RETRYABLE_STATUSES = [408, 429];
 
     var memoryStopState = null;
+    var stopStateStorageUnavailable = false;
     var trialTimerHandle = null;
+    var retryTimerHandle = null;
+    var inFlightEventIds = {};
+    var memoryOutbox = [];
+    var outboxStorageUnavailable = false;
 
     function safeLocalGet(key) { try { return window.localStorage.getItem(key); } catch (err) { return null; } }
     function safeLocalSet(key, value) { try { window.localStorage.setItem(key, value); return true; } catch (err) { return false; } }
@@ -57,14 +62,21 @@
 
     /* ---- outbox ---- */
     function loadOutbox() {
+      if (outboxStorageUnavailable) return memoryOutbox.slice();
       try {
-        var raw = safeLocalGet(OUTBOX_KEY);
-        if (!raw) return [];
-        var parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch (err) { return []; }
+        var raw = window.localStorage.getItem(OUTBOX_KEY);
+        var parsed = raw ? JSON.parse(raw) : [];
+        memoryOutbox = Array.isArray(parsed) ? parsed : [];
+      } catch (err) { outboxStorageUnavailable = true; }
+      return memoryOutbox.slice();
     }
-    function saveOutbox(list) { safeLocalSet(OUTBOX_KEY, JSON.stringify(list)); }
+    function saveOutbox(list) {
+      memoryOutbox = list.slice();
+      if (outboxStorageUnavailable) return;
+      var value = JSON.stringify(list);
+      // A quota error or a silently ignored write must not erase the page's queue.
+      if (!safeLocalSet(OUTBOX_KEY, value) || safeLocalGet(OUTBOX_KEY) !== value) outboxStorageUnavailable = true;
+    }
     function loadDiagnostics() {
       try {
         var raw = safeLocalGet(OUTBOX_DIAG_KEY);
@@ -87,9 +99,17 @@
       var expiredCount = 0;
       var filtered = (list || []).filter(function(item) {
         if (!item || item.generation !== WRITER_GENERATION || !item.event || !item.event.event_id) return false;
-        var expired = (now - Number(item.addedAt || 0)) > OUTBOX_MAX_AGE_MS;
+        if (typeof item.addedAt !== 'number' || !isFinite(item.addedAt) || item.addedAt < 0 || item.addedAt > now + 5 * 60 * 1000) return false;
+        var expired = (now - item.addedAt) > OUTBOX_MAX_AGE_MS;
         if (expired) expiredCount++;
         return !expired;
+      }).map(function(item) {
+        var attempts = Number(item.attempts);
+        var nextRetryAt = Number(item.nextRetryAt);
+        return Object.assign({}, item, {
+          attempts: isFinite(attempts) && attempts >= 0 ? Math.floor(attempts) : 0,
+          nextRetryAt: isFinite(nextRetryAt) && nextRetryAt >= 0 ? Math.min(nextRetryAt, now + RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1]) : 0
+        });
       });
       if (expiredCount) recordExpiredDiscard(expiredCount);
       if (filtered.length > OUTBOX_MAX_ITEMS) filtered = filtered.slice(filtered.length - OUTBOX_MAX_ITEMS);
@@ -117,16 +137,22 @@
 
     /* ---- PROD 401 サーキットブレーカー（確定契約） ---- */
     function loadStopState() {
+      if (stopStateStorageUnavailable) return memoryStopState;
       try {
-        var raw = safeLocalGet(STOP_STATE_KEY);
-        if (raw) { var parsed = JSON.parse(raw); if (parsed && parsed.stoppedAt) return parsed; }
-      } catch (err) {}
+        var raw = window.localStorage.getItem(STOP_STATE_KEY);
+        var parsed = raw ? JSON.parse(raw) : null;
+        memoryStopState = parsed && parsed.stoppedAt ? parsed : null;
+      } catch (err) { stopStateStorageUnavailable = true; }
       return memoryStopState;
     }
     function saveStopState(state) {
       memoryStopState = state;
-      safeLocalSet(STOP_STATE_KEY, state ? JSON.stringify(state) : '');
-      if (!state) { try { window.localStorage.removeItem(STOP_STATE_KEY); } catch (err) {} }
+      if (stopStateStorageUnavailable) return;
+      var value = state ? JSON.stringify(state) : '';
+      if (!safeLocalSet(STOP_STATE_KEY, value) || safeLocalGet(STOP_STATE_KEY) !== value) stopStateStorageUnavailable = true;
+      if (!state && !stopStateStorageUnavailable) {
+        try { window.localStorage.removeItem(STOP_STATE_KEY); } catch (err) { stopStateStorageUnavailable = true; }
+      }
     }
     function isStopped() { return !!loadStopState(); }
     /** drain-onlyローダー等が「finalStopped後は一切自動試験しない」ことを明示的に
@@ -163,6 +189,7 @@
 
     function beginStop() {
       var now = nowMs();
+      clearRetryTimer_();
       saveStopState({ stoppedAt: now, trialCount: 0, totalAttempts: 0, nextTrialAt: now + backoffForAttempts(1), finalStopped: false });
       scheduleTrialTimer_();
     }
@@ -199,15 +226,50 @@
       return 'retry';
     }
 
+    function clearRetryTimer_() {
+      if (retryTimerHandle !== null) {
+        try { window.clearTimeout(retryTimerHandle); } catch (err) {}
+        retryTimerHandle = null;
+      }
+    }
+    function scheduleRetryTimer_() {
+      clearRetryTimer_();
+      if (isStopped() || typeof window.fetch !== 'function') return;
+      var list = pruneOutbox(loadOutbox());
+      saveOutbox(list);
+      var next = null;
+      list.forEach(function(item) {
+        if (inFlightEventIds[item.event.event_id]) return;
+        var at = Number(item.nextRetryAt || 0);
+        if (next === null || at < next) next = at;
+      });
+      if (next === null) return;
+      try {
+        retryTimerHandle = window.setTimeout(function() {
+          retryTimerHandle = null;
+          flushOutboxViaFetch();
+        }, Math.max(0, next - nowMs()));
+      } catch (err) {}
+    }
+
     /** 単一イベントをfetchで送信し、応答に応じてoutboxを更新する（確定契約）。
      * フルトラッカーの通常送信・試験再送、drain-onlyの排出のいずれからも、
      * この同じ関数だけを呼ぶ（401時のbeginStop呼び出しを含め、二重実装しない）。 */
     function sendViaFetch(item, onSettled) {
       if (typeof window.fetch !== 'function') { if (onSettled) onSettled('skipped'); return; }
       var event = item.event;
+      if (inFlightEventIds[event.event_id]) { if (onSettled) onSettled('in_flight'); return; }
+      inFlightEventIds[event.event_id] = true;
+      function settled(kind) {
+        delete inFlightEventIds[event.event_id];
+        if (onSettled) onSettled(kind);
+        scheduleRetryTimer_();
+      }
       try {
         window.fetch(ENDPOINT, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          // The writer already accepts JSON encoded as text/plain. This avoids
+          // a cross-origin OPTIONS round trip just as the LINE app is opening.
+          method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: JSON.stringify(event), keepalive: true
         }).then(function(res) {
           var kind = classifyResponseStatus(res ? res.status : 0);
@@ -221,16 +283,16 @@
             var attempts = Number(item.attempts || 0) + 1;
             updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
           }
-          if (onSettled) onSettled(kind);
+          settled(kind);
         }).catch(function() {
           var attempts = Number(item.attempts || 0) + 1;
           updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
-          if (onSettled) onSettled('network_error');
+          settled('network_error');
         });
       } catch (err) {
         var attempts = Number(item.attempts || 0) + 1;
         updateOutboxItem(event.event_id, { attempts: attempts, nextRetryAt: nowMs() + backoffForAttempts(attempts) });
-        if (onSettled) onSettled('exception');
+        settled('exception');
       }
     }
 
@@ -240,9 +302,12 @@
     function flushOutboxViaFetch() {
       if (isStopped()) return;
       var now = nowMs();
-      pruneOutbox(loadOutbox()).forEach(function(item) {
+      var list = pruneOutbox(loadOutbox());
+      saveOutbox(list);
+      list.forEach(function(item) {
         if (Number(item.nextRetryAt || 0) <= now) sendViaFetch(item);
       });
+      scheduleRetryTimer_();
     }
 
     /** 停止中：outbox最古の1件だけを試験再送する。エスカレートするnextTrialAtを
@@ -256,6 +321,7 @@
       var now = nowMs();
       if (now < Number(stopState.nextTrialAt || 0)) return;
       var list = pruneOutbox(loadOutbox());
+      saveOutbox(list);
       if (!list.length) { rescheduleTrialWait(); return; }
       var totalAttempts = Number(stopState.totalAttempts || 0);
       if (totalAttempts >= STOP_TOTAL_ATTEMPT_LIMIT) {
@@ -263,8 +329,9 @@
         clearTrialTimer_();
         return;
       }
-      saveStopState(Object.assign({}, stopState, { totalAttempts: totalAttempts + 1 }));
       var oldest = list.reduce(function(a, b) { return Number(a.addedAt) <= Number(b.addedAt) ? a : b; });
+      if (inFlightEventIds[oldest.event.event_id]) { rescheduleTrialWait(); return; }
+      saveStopState(Object.assign({}, stopState, { totalAttempts: totalAttempts + 1 }));
       sendViaFetch(oldest, function(kind) {
         if (kind === 'success') { clearStop(); flushOutboxViaFetch(); }
         else if (kind === 'stop') { rescheduleTrialAfterFailedAttempt(); }

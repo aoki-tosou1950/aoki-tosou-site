@@ -1337,6 +1337,8 @@ exports.getFunnelInsights = onRequest(
   {
     region: 'us-central1',
     cors: false,
+    minInstances: 0,
+    maxInstances: 2,
     secrets: ['FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {
@@ -1367,6 +1369,8 @@ exports.getFunnelRecentActivity = onRequest(
   {
     region: 'us-central1',
     cors: false,
+    minInstances: 0,
+    maxInstances: 2,
     secrets: ['FUNNEL_DASHBOARD_TOKEN']
   },
   async (req, res) => {

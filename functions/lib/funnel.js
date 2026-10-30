@@ -596,12 +596,23 @@ async function loadInteractionRows_(db, startAt, endAt) {
     const createdAt = data.created_at && typeof data.created_at.toDate === 'function' ? data.created_at.toDate() : null;
     if (!createdAt) return;
     const dayKey = jstDateKey(createdAt);
+    const isV2 = data.schema_version === 2;
+    const visitId = isV2 && typeof data.visit_id === 'string' && /^[A-Za-z0-9_-]{16,100}$/.test(data.visit_id) ? data.visit_id : '';
+    const occurredCandidate = isV2 && Number.isInteger(data.occurred_at) && data.occurred_at > 0 ? new Date(data.occurred_at) : null;
+    const hasOccurredAt = Boolean(occurredCandidate && Number.isFinite(occurredCandidate.getTime()));
     const source = normalizeLabel(data.source);
     if (isLegacyExcludedSource_(source, dayKey)) return;
     rows.push({
       eventType: String(data.event_type || ''),
+      // Preserve existing receipt-time headings, pages and actions. A separate
+      // timeline carries occurrence order without moving an existing visit.
       at: createdAt,
+      occurredAt: hasOccurredAt ? occurredCandidate : createdAt,
+      hasOccurredAt,
+      eventId: typeof doc.id === 'string' ? doc.id : '',
       dayKey,
+      isV2,
+      visitId,
       source,
       // 2026-08-31追加：媒体識別（from）はsourceと独立に保持する（無ければ空文字。
       // 2026-08-31より前に記録された行はfromフィールド自体が存在しないため必ず空になる
@@ -619,13 +630,62 @@ function visitKey_(dayKey, visitorHashValue) {
   return dayKey + ':' + (visitorHashValue || '(不明)');
 }
 
+function pageViewGroupKey_(row) {
+  // Keep the existing day/hash visitor count. Without a hash, an explicit V2
+  // visit ID keeps unrelated anonymous visits out of the same unknown card.
+  if (!row.visitorHashValue && row.visitId) return row.dayKey + ':(visit_' + row.visitId + ')';
+  return visitKey_(row.dayKey, row.visitorHashValue);
+}
+
+function buildVisitIdIndex_(visitGroups) {
+  const index = new Map();
+  index.legacyKeys = new Set();
+  visitGroups.forEach((pageViews, groupKey) => {
+    if (pageViews.some((row) => !row.isV2)) index.legacyKeys.add(groupKey);
+    pageViews.forEach((row) => {
+      if (!row.visitId) return;
+      const idKey = row.visitId;
+      // A split/contradictory identity is not evidence for choosing a visitor.
+      if (index.has(idKey) && index.get(idKey) !== groupKey) index.set(idKey, null);
+      else if (!index.has(idKey)) index.set(idKey, groupKey);
+    });
+  });
+  return index;
+}
+
+function actionGroupKey_(row, visitIdIndex) {
+  if (row.isV2) return row.visitId ? (visitIdIndex.get(row.visitId) || null) : null;
+  if (!row.visitorHashValue) return null; // A shared day/unknown bucket is not identity.
+  const key = visitKey_(row.dayKey, row.visitorHashValue);
+  return visitIdIndex.legacyKeys.has(key) ? key : null;
+}
+
+function buildVisitTimeline_(rows) {
+  const types = { page_view: 'pageView', line_click: 'lineClick', phone_click: 'phoneClick' };
+  const ordered = rows.filter((row) => types[row.eventType]).slice().sort((a, b) =>
+    (a.occurredAt - b.occurredAt) || (a.at - b.at) || a.eventId.localeCompare(b.eventId));
+  const accesses = new Map();
+  return ordered.map((row) => {
+    if (row.visitId && !accesses.has(row.visitId)) accesses.set(row.visitId, accesses.size + 1);
+    const page = humanizePage_(row.currentPage);
+    return {
+      type: types[row.eventType],
+      at: row.occurredAt.toISOString(),
+      recordedAt: row.at.toISOString(),
+      timeBasis: row.hasOccurredAt ? 'occurred' : 'recorded',
+      accessIndex: row.visitId ? accesses.get(row.visitId) : 0,
+      page: { label: page.label, path: page.path }
+    };
+  });
+}
+
 /** page_view行を「日付＋visitor_hash」単位（visitors集計と同じ単位）でまとめ、
  * 各訪問へ流入元（from優先・無ければsource）・Web参照元・ページ内訳・
  * ページカテゴリ（見込み度判定用）を付与する（2026-08-31追加）。 */
 function groupVisits_(rows) {
   const visitGroups = new Map();
   rows.filter((r) => r.eventType === 'page_view').forEach((row) => {
-    const key = visitKey_(row.dayKey, row.visitorHashValue);
+    const key = pageViewGroupKey_(row);
     if (!visitGroups.has(key)) visitGroups.set(key, []);
     visitGroups.get(key).push(row);
   });
@@ -673,12 +733,12 @@ function buildVisitSummary_(pageViews, dayKey) {
 function buildPriorVisitIndex_(lookbackRows) {
   const byHash = new Map();
   const lookbackGroups = groupVisits_(lookbackRows);
+  const visitIdIndex = buildVisitIdIndex_(lookbackGroups);
   lookbackGroups.forEach((pageViews, key) => {
-    const sepIdx = key.lastIndexOf(':');
-    const dayKey = key.slice(0, sepIdx);
-    const hashPart = key.slice(sepIdx + 1);
-    if (hashPart === '(不明)') return; // visitor_hash不明の訪問は再訪判定の対象外（誤って同一人物と推測しない）
-    const hadAction = lookbackRows.some((r) => r.eventType !== 'page_view' && r.dayKey === dayKey && r.visitorHashValue === hashPart);
+    const dayKey = pageViews[0].dayKey;
+    const hashPart = pageViews[0].visitorHashValue;
+    if (!hashPart) return; // No cross-visit identity is inferred from a visit ID.
+    const hadAction = lookbackRows.some((r) => r.eventType !== 'page_view' && actionGroupKey_(r, visitIdIndex) === key);
     if (!byHash.has(hashPart)) byHash.set(hashPart, []);
     byHash.get(hashPart).push({ dayKey, pageCount: pageViews.length, hadAction });
   });
@@ -705,27 +765,27 @@ function findPriorVisit_(priorIndex, visitorHash, beforeDayKey, inPeriodPriorLis
  */
 function buildScoredVisits_(rows, visitGroups, priorIndex) {
   const inPeriodByHash = new Map();
+  const visitIdIndex = buildVisitIdIndex_(visitGroups);
   visitGroups.forEach((pageViews, key) => {
-    const sepIdx = key.lastIndexOf(':');
-    const dayKey = key.slice(0, sepIdx);
-    const hashPart = key.slice(sepIdx + 1);
-    if (hashPart === '(不明)') return;
-    const hadAction = rows.some((r) => r.eventType !== 'page_view' && r.dayKey === dayKey && r.visitorHashValue === hashPart);
+    const dayKey = pageViews[0].dayKey;
+    const hashPart = pageViews[0].visitorHashValue;
+    if (!hashPart) return;
+    const hadAction = rows.some((r) => r.eventType !== 'page_view' && actionGroupKey_(r, visitIdIndex) === key);
     if (!inPeriodByHash.has(hashPart)) inPeriodByHash.set(hashPart, []);
     inPeriodByHash.get(hashPart).push({ dayKey, pageCount: pageViews.length, hadAction });
   });
   return Array.from(visitGroups.entries()).map(([key, pageViews]) => {
-    const sepIdx = key.lastIndexOf(':');
-    const dayKey = key.slice(0, sepIdx);
-    const visitorHashValue = key.slice(sepIdx + 1) === '(不明)' ? '' : key.slice(sepIdx + 1);
+    const dayKey = pageViews[0].dayKey;
+    const visitorHashValue = pageViews[0].visitorHashValue || '';
     const summary = buildVisitSummary_(pageViews, dayKey);
-    const actions = rows
-      .filter((r) => r.eventType !== 'page_view' && r.dayKey === dayKey && (r.visitorHashValue || '(不明)') === (visitorHashValue || '(不明)'))
-      .sort((a, b) => a.at - b.at)
-      .map((r) => ({ type: r.eventType === 'line_click' ? 'lineClick' : 'phoneClick', at: r.at.toISOString() }));
+    const reactionRows = rows
+      .filter((r) => r.eventType !== 'page_view' && actionGroupKey_(r, visitIdIndex) === key)
+      .sort((a, b) => a.at - b.at);
+    const actions = reactionRows.map((r) => ({ type: r.eventType === 'line_click' ? 'lineClick' : 'phoneClick', at: r.at.toISOString() }));
+    const timeline = buildVisitTimeline_(pageViews.concat(reactionRows));
     const prior = visitorHashValue ? findPriorVisit_(priorIndex, visitorHashValue, dayKey, inPeriodByHash.get(visitorHashValue)) : null;
     const leadScore = computeLeadScore_(Object.assign({}, summary, { actions }), prior);
-    return Object.assign({}, summary, { key, dayKey, visitorHashValue, actions, leadScore });
+    return Object.assign({}, summary, { key, dayKey, visitorHashValue, actions, timeline, leadScore });
   }).sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
@@ -743,6 +803,7 @@ function visitToClientItem_(v) {
     pageCount: v.pageCount,
     pages: v.pages,
     actions: v.actions,
+    timeline: v.timeline,
     leadScore: { level: v.leadScore.level, score: v.leadScore.score, reasons: v.leadScore.reasons, revisit: v.leadScore.revisit }
   };
 }
@@ -807,6 +868,7 @@ async function funnelDrilldown(db, metric, bounds) {
   // lineClicks / phoneClicks: 実イベント件数＝集計値。行は間引かず、同じ訪問（あれば）の
   // 文脈（閲覧ページ数・見込み度）だけを添える。
   const scoredByKey = new Map(scoredVisits.map((v) => [v.key, v]));
+  const visitIdIndex = buildVisitIdIndex_(visitGroups);
   const items = rows
     .filter((r) => r.eventType === eventType)
     .sort((a, b) => (a.at < b.at ? 1 : -1))
@@ -815,7 +877,7 @@ async function funnelDrilldown(db, metric, bounds) {
       const src = humanizeSource_(row.source, row.referrer);
       const referrerInfo = humanizeReferrer_(row.referrer);
       const page = humanizePage_(row.currentPage);
-      const visit = scoredByKey.get(visitKey_(row.dayKey, row.visitorHashValue));
+      const visit = scoredByKey.get(actionGroupKey_(row, visitIdIndex));
       // page_view記録が無い反応（例：計測開始前後の手動バックフィル）は、存在しない
       // 閲覧文脈を捏造せず、見込み度を「判定不能」と明示する。
       const leadScore = visit ? visit.leadScore : { level: '判定不能', score: null, reasons: ['行動の前後にページ閲覧記録なし'], revisit: { isReturning: false, daysSincePrevious: null, deeperThanPrevious: false, strongerReactionThanPrevious: false } };
@@ -829,6 +891,7 @@ async function funnelDrilldown(db, metric, bounds) {
         pageLabel: page.label,
         pagePath: page.path,
         visitPageCount: visit ? visit.pageCount : null,
+        timeline: visit ? visit.timeline : buildVisitTimeline_([row]),
         leadScore
       };
     });
@@ -856,8 +919,9 @@ async function funnelInsights(db, bounds) {
   const leadScoreBreakdown = { 高: 0, 中: 0, 低: 0, 判定不能: 0 };
   visits.forEach((v) => { leadScoreBreakdown[v.leadScore.level] += 1; });
   const visitKeysSet = new Set(Array.from(visitGroups.keys()));
+  const visitIdIndex = buildVisitIdIndex_(visitGroups);
   rows.filter((r) => r.eventType !== 'page_view').forEach((r) => {
-    if (visitKeysSet.has(visitKey_(r.dayKey, r.visitorHashValue))) return; // 訪問側で既に加算済み
+    if (visitKeysSet.has(actionGroupKey_(r, visitIdIndex))) return; // 訪問側で既に加算済み
     leadScoreBreakdown.判定不能 += 1;
   });
 
@@ -885,7 +949,7 @@ async function funnelInsights(db, bounds) {
   rows.filter((r) => r.eventType !== 'page_view').forEach((r) => {
     const group = ensureSourceGroup_(r.from || '', humanizeSource_(r.source, r.referrer).label);
     group.lineOrPhoneReactions += 1;
-    if (!visitKeysSet.has(visitKey_(r.dayKey, r.visitorHashValue))) group.unknown += 1;
+    if (!visitKeysSet.has(actionGroupKey_(r, visitIdIndex))) group.unknown += 1;
   });
   const sourceQuality = Array.from(bySource.values()).sort((a, b) => b.visits - a.visits || b.lineOrPhoneReactions - a.lineOrPhoneReactions);
 
